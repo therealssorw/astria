@@ -178,6 +178,12 @@ mixed pile.
   arms are anchored to the TORSO's frame — which is why the undead arms, drawn
   up at shoulder height, land there instead of at the hips. "Adjust placement"
   per slot is the escape hatch when art needs a nudge.
+- Parts never draw over each other. A voxel an earlier slot already fills is
+  dropped from the later one (slot order: feet, body, arms, head), because
+  models get drawn with their neighbours in view for reference and exported
+  with them still there — the base arms carry a complete copy of the torso.
+  Two parts painting one cell means two coincident surfaces z-fighting, which
+  looks like the NPC flickering inside out. The test asserts it never happens.
 - Colour: a model's Goxel palette becomes one swatch per entry. Past 8 entries
   the model is hand-shaded (the zombie parts run to dozens of noise shades) and
   only the per-part tint is offered — the tint multiplies over everything and

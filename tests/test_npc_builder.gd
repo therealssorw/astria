@@ -20,6 +20,8 @@ func _ready() -> void:
 	_check_library()
 	for category in NpcRig.list_categories():
 		_check_set(category)
+	for category in NpcRig.list_categories():
+		_check_no_coincident_surfaces(category)
 	_check_reproportioning()
 	_check_rebuild_is_stable()
 	_check_colours()
@@ -141,6 +143,40 @@ func _check_animation_drives(visual: NpcVisual, label: String) -> void:
 	var posed := visual.skeleton.get_bone_global_pose(bone).origin
 	_expect(rest.distance_to(posed) > 0.05,
 			"%s: walking does not move the hand off its rest pose" % label)
+
+## No two parts may draw the same voxel.
+##
+## Voxel models get drawn with their neighbours in view for reference and
+## exported with them still in place -- the base arms shipped carrying a whole
+## copy of the torso. Both meshes then render the same surface and the two
+## z-fight, which reads as the NPC flickering inside out.
+func _check_no_coincident_surfaces(category: String) -> void:
+	var visual := _spawn(_definition_for(category))
+	if not _expect(visual.skeleton != null, "%s overlap test built no skeleton" % category):
+		_drop(visual)
+		return
+	var scale: float = visual.layout["voxel_scale"]
+	var owner_of := {}
+	var clashes := 0
+	var example := ""
+	for mi: MeshInstance3D in visual.skeleton.find_children("*", "MeshInstance3D", false, false):
+		var arrays := mi.mesh.surface_get_arrays(0)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var cells := {}
+		for t in range(0, verts.size() - 2, 3):
+			var centre := (verts[t] + verts[t + 1] + verts[t + 2]) / 3.0
+			cells[Vector3i(((centre - norms[t] * scale * 0.5) / scale * 2.0).round())] = true
+		for cell: Vector3i in cells:
+			if owner_of.has(cell):
+				clashes += 1
+				example = "%s over %s" % [mi.name, owner_of[cell]]
+			else:
+				owner_of[cell] = mi.name
+	_expect(clashes == 0,
+			"%s has %d voxels drawn by two parts at once (%s) -- they will z-fight"
+					% [category, clashes, example])
+	_drop(visual)
 
 ## The skeleton must end up shaped like the voxel art, not like Rouge.
 func _check_reproportioning() -> void:

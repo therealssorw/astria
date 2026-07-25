@@ -123,11 +123,20 @@ static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 
 	var skin := skeleton.create_skin_from_rest_transforms()
 	var segments := _segments(skeleton)
+	# Voxels an earlier part already fills. Models are routinely drawn with
+	# their neighbours in view for reference and exported with them still
+	# there -- the base arms carry a whole copy of the torso -- and two parts
+	# painting the same cell means two coincident surfaces fighting over every
+	# pixel. Slot order decides who wins: the torso beats the arms laid over it.
+	var claimed := {}
 	for slot: String in NpcDefinition.SLOTS:
 		if not parts.has(slot):
 			continue
 		var mi := _build_mesh(slot, parts[slot], def.get_part(slot),
-				layout["part_xf"][slot], skeleton, segments)
+				layout["part_xf"][slot], skeleton, segments,
+				layout["voxel_scale"], claimed)
+		if mi == null:
+			continue
 		mi.name = slot.capitalize()
 		mi.skin = skin
 		skeleton.add_child(mi)
@@ -579,7 +588,8 @@ static func _segments(skeleton: Skeleton3D) -> Dictionary:
 	return out
 
 static func _build_mesh(slot: String, data: Dictionary, spec: NpcPart, xf: Transform3D,
-		skeleton: Skeleton3D, segments: Dictionary) -> MeshInstance3D:
+		skeleton: Skeleton3D, segments: Dictionary, voxel_scale: float,
+		claimed: Dictionary) -> MeshInstance3D:
 	var candidates: Array[int] = []
 	for bone: String in BIND_SETS[slot]:
 		var i := skeleton.find_bone(bone)
@@ -604,20 +614,38 @@ static func _build_mesh(slot: String, data: Dictionary, spec: NpcPart, xf: Trans
 	bones.resize(src_verts.size() * 4)
 	weights.resize(src_verts.size() * 4)
 
+	var mine := {}
+	var kept := 0
 	for t in range(0, src_verts.size() - 2, 3):
 		# One bone for the whole triangle, chosen from the centre of the voxel
 		# the triangle is a face of -- picking per vertex would tear voxels in
 		# half at the joints.
 		var centre := (src_verts[t] + src_verts[t + 1] + src_verts[t + 2]) / 3.0
 		var cell := xf * (centre - src_norms[t] * 0.5)
+		var key := _cell_key(cell, voxel_scale)
+		if claimed.has(key):
+			continue
+		mine[key] = true
 		var bone := _nearest_bone(cell, candidates, segments)
 		for c in 3:
-			var i := t + c
-			verts[i] = xf * src_verts[i]
-			norms[i] = (xf.basis * src_norms[i]).normalized()
-			cols[i] = _colour(spec, palette, entry[i])
+			var i := kept * 3 + c
+			var src := t + c
+			verts[i] = xf * src_verts[src]
+			norms[i] = (xf.basis * src_norms[src]).normalized()
+			cols[i] = _colour(spec, palette, entry[src])
 			bones[i * 4] = bone
 			weights[i * 4] = 1.0
+		kept += 1
+
+	claimed.merge(mine)
+	if kept == 0:
+		return null
+	# Trim to what survived the occlusion pass.
+	verts.resize(kept * 3)
+	norms.resize(kept * 3)
+	cols.resize(kept * 3)
+	bones.resize(kept * 12)
+	weights.resize(kept * 12)
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -646,6 +674,14 @@ static func _colour(spec: NpcPart, palette: PackedColorArray, index: int) -> Col
 	elif index < palette.size():
 		base = palette[index]
 	return base * spec.tint if spec != null else base
+
+## Identifies the voxel a point sits in, on a grid shared by every part. Half a
+## voxel of resolution, so a part deliberately offset by half a step is treated
+## as its own geometry rather than a duplicate.
+static func _cell_key(point: Vector3, voxel_scale: float) -> Vector3i:
+	if voxel_scale <= 0.0:
+		return Vector3i.ZERO
+	return Vector3i((point / voxel_scale * 2.0).round())
 
 static func _nearest_bone(point: Vector3, candidates: Array[int], segments: Dictionary) -> int:
 	var best := candidates[0]
