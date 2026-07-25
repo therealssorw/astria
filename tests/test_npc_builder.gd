@@ -24,6 +24,7 @@ func _ready() -> void:
 		_check_no_coincident_surfaces(category)
 	_check_reproportioning()
 	_check_rebuild_is_stable()
+	_check_parts_line_up_in_depth()
 	_check_build_is_once()
 	_check_colours()
 	_check_save_roundtrip()
@@ -226,6 +227,33 @@ func _check_rebuild_is_stable() -> void:
 	_expect(visual.skeleton.find_children("*", "MeshInstance3D", false, false).size()
 			== NpcDefinition.SLOTS.size(), "re-rigging left duplicate or missing part meshes")
 	_drop(visual)
+
+## Every part lines up front-to-back, whichever models are mixed.
+##
+## Parts are modelled wherever was convenient in the Goxel grid, so the rig
+## centres each one before stacking. Left-to-right it does that by fitting the
+## art against its own mirror image, which is right: a character IS symmetric
+## about that axis, and the fit ignores a stray voxel that would drag a
+## bounding box sideways. Front-to-back nothing is symmetric -- a foot has toes
+## at one end -- so the same scoring just picked whichever alignment happened to
+## overlap most, and it stood the feet a whole voxel ahead of the torso.
+func _check_parts_line_up_in_depth() -> void:
+	for category in NpcRig.list_categories():
+		for slot: String in NpcDefinition.SLOTS:
+			for model in NpcRig.list_parts(slot, category):
+				var def := _definition_for("Base")
+				def.get_part(slot).model_path = model
+				var visual := _spawn(def)
+				if not _expect(visual.skeleton != null,
+						"%s built no skeleton" % model.get_file()):
+					_drop(visual)
+					continue
+				for mi: MeshInstance3D in visual.skeleton.find_children("*", "MeshInstance3D", false, false):
+					var depth: float = (mi.mesh.get_aabb() as AABB).get_center().z
+					_expect(absf(depth) < 0.001,
+							"with %s in the %s slot, %s sits %.3fm off the centre line front-to-back"
+									% [model.get_file(), slot, mi.name, depth])
+				_drop(visual)
 
 ## However many times a visual is asked to build, it builds once.
 ##

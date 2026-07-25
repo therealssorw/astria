@@ -261,17 +261,22 @@ static func _layout(def: NpcDefinition, parts: Dictionary) -> Dictionary:
 	for slot: String in parts:
 		var spec: NpcPart = def.get_part(slot)
 		var verts: PackedVector3Array = parts[slot]["verts"]
-		var xs := PackedFloat32Array()
 		var zs := PackedFloat32Array()
 		var lo := Vector3.INF
 		var hi := -Vector3.INF
 		for v in verts:
-			xs.append(v.x)
 			zs.append(v.z)
 			lo = lo.min(v)
 			hi = hi.max(v)
+		# Model Z is the character's LEFT-RIGHT axis (the parts are yawed a
+		# quarter turn below), and that is the one a character is symmetric
+		# about, so it gets the mirror fit. Model X is front-to-back, where
+		# nothing is symmetric -- a foot has toes at one end -- and scoring it
+		# for symmetry just picks whichever alignment happens to overlap most:
+		# it put the feet a whole voxel ahead of the torso. Depth is the plain
+		# bounding-box middle.
 		metrics[slot] = {
-			"centre": Vector3(_symmetry_centre(xs), lo.y, _symmetry_centre(zs)),
+			"centre": Vector3((lo.x + hi.x) * 0.5, lo.y, _symmetry_centre(zs)),
 			"size": (hi - lo) * spec.scale,
 		}
 	# Arms are modelled in the TORSO's vertical frame, not their own: the base

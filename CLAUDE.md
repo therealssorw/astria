@@ -171,10 +171,13 @@ mixed pile.
   `python tools/voxel/gox_to_gltf.py <in.gox> <out.gltf>` used instead. If a
   part looks like an edit you know you made never landed, check whether the
   `.gox` is newer than the `.gltf`.
-- Parts are auto-fitted, never hand-placed. Each is centred by matching the art
-  against its own mirror image rather than by its bounding box (a stray voxel
-  off to one side is common in a work-in-progress model, and a bbox centre would
-  let it drag the whole model sideways). Feet/body/head then stack, while the
+- Parts are auto-fitted, never hand-placed. Left-to-right each is centred by
+  matching the art against its own mirror image rather than by its bounding box
+  (a stray voxel off to one side is common in a work-in-progress model, and a
+  bbox centre would let it drag the whole model sideways). Front-to-back it is
+  the plain bbox middle: nothing about a character is symmetric on that axis —
+  a foot has toes at one end — so a mirror fit there scores noise and used to
+  stand the feet a voxel ahead of the torso. Feet/body/head then stack, while the
   arms are anchored to the TORSO's frame — which is why the undead arms, drawn
   up at shoulder height, land there instead of at the hips. "Adjust placement"
   per slot is the escape hatch when art needs a nudge.
