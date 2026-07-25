@@ -159,11 +159,15 @@ mixed pile.
   <Slot>/`. `<Set>` is a character family (`Base`, `Undead`) and becomes its
   own section in the builder's menus; `<Slot>` is Head/Body/Arms/Feet. Drop a
   Goxel glTF export in the right folder and press "Rescan parts" — there is no
-  metadata to register. `tools/voxel/gox_to_gltf.py` converts a `.gox` if the
-  glTF export was never made.
+  metadata to register.
+- The builder only ever reads the **glTF**. Editing a `.gox` and saving it
+  changes nothing on its own — Goxel's "Export as glTF" has to be run again, or
+  `python tools/voxel/gox_to_gltf.py <in.gox> <out.gltf>` used instead. If a
+  part looks like an edit you know you made never landed, check whether the
+  `.gox` is newer than the `.gltf`.
 - Parts are auto-fitted, never hand-placed. Each is centred by matching the art
-  against its own mirror image rather than by its bounding box (the template
-  feet model has a stray 1x1 column beside the legs, and a bbox centre would
+  against its own mirror image rather than by its bounding box (a stray voxel
+  off to one side is common in a work-in-progress model, and a bbox centre would
   let it drag the whole model sideways). Feet/body/head then stack, while the
   arms are anchored to the TORSO's frame — which is why the undead arms, drawn
   up at shoulder height, land there instead of at the hips. "Adjust placement"
