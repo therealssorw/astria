@@ -13,6 +13,15 @@ const CLIPS := {
 	"run": {"path": ANIM_DIR + "Movement/Running/Running.fbx", "speed": 1.0, "loop": true},
 	"slide": {"path": ANIM_DIR + "Movement/Sliding/Running Slide.fbx", "speed": 1.0, "loop": true},
 	"block": {"path": ANIM_DIR + "Combat/Blocking/Boxing.fbx", "speed": 1.0, "loop": true},
+	# One 1.9s Mixamo cycle: crouch, launch, apex, touchdown, recover. Only the
+	# airborne slice is used. The leading crouch is anticipation the gameplay
+	# never has (a jump press sets velocity.y the same frame, so a crouch would
+	# play while already rising), and the trailing landing would fight the
+	# grounded clips, so the slice runs from mid-extension (0.45, just before
+	# the feet leave at 0.50) to touchdown (1.10). It does not loop: the last
+	# frame is the legs-reaching-down pose, which holds for the rest of a fall.
+	"jump": {"path": ANIM_DIR + "Movement/Jumping/Jumping.fbx", "speed": 1.0, "loop": false,
+			"slice": [0.45, 1.10], "pin_hips_at": 0.0},
 	"strafe_l": {"path": ANIM_DIR + "Movement/Strafing/Left Strafe Walking.fbx", "speed": 1.0, "loop": true},
 	"strafe_r": {"path": ANIM_DIR + "Movement/Strafing/Right Strafe Walking.fbx", "speed": 1.0, "loop": true},
 	"walk_back": {"path": ANIM_DIR + "Movement/Walking/Walking Backwards.fbx", "speed": 1.0, "loop": true},
@@ -55,7 +64,16 @@ func _ready() -> void:
 		var src: Node = (load(cfg.path) as PackedScene).instantiate()
 		var src_ap: AnimationPlayer = src.find_children("*", "AnimationPlayer", true, false)[0]
 		var anim: Animation = src_ap.get_animation("mixamo_com").duplicate(true)
+		# Read the neutral standing hips off the FULL clip before any slicing:
+		# a slice starting mid-motion has no neutral frame of its own.
+		var neutral_hips := Vector3.ZERO
+		if cfg.has("pin_hips_at"):
+			neutral_hips = _sample_hips(anim, cfg.pin_hips_at)
+		if cfg.has("slice"):
+			anim = _slice(anim, cfg.slice[0], cfg.slice[1])
 		_repath_tracks(anim, skel_path)
+		if cfg.has("pin_hips_at"):
+			_pin_hips(anim, neutral_hips)
 		if cfg.loop:
 			anim.loop_mode = Animation.LOOP_LINEAR
 		clip_lengths[key] = anim.length
@@ -149,6 +167,55 @@ func _repath_tracks(anim: Animation, skel_path: String) -> void:
 			for k in anim.track_get_key_count(i):
 				var v: Vector3 = anim.track_get_key_value(i, k)
 				anim.track_set_key_value(i, k, Vector3(first.x, v.y, first.z))
+
+## Hips position at `time` in an un-repathed imported clip (the neutral pose
+## reference for _pin_hips).
+func _sample_hips(anim: Animation, time: float) -> Vector3:
+	for i in anim.get_track_count():
+		var p := anim.track_get_path(i)
+		if p.get_subname_count() > 0 and p.get_subname(0) == "Hips" \
+				and anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+			return anim.position_track_interpolate(i, time)
+	return Vector3.ZERO
+
+## Extracts [from, to] of `anim` as a standalone clip, resampled at the 30 fps
+## import rate so nothing is lost. Lets one imported cycle provide a phase of
+## itself (the jump's airborne portion) instead of needing a pre-trimmed FBX.
+func _slice(anim: Animation, from: float, to: float) -> Animation:
+	const FPS := 30.0
+	var out := Animation.new()
+	var dur := to - from
+	out.length = dur
+	for i in anim.get_track_count():
+		var type := anim.track_get_type(i)
+		if type not in [Animation.TYPE_POSITION_3D, Animation.TYPE_ROTATION_3D,
+				Animation.TYPE_SCALE_3D]:
+			continue
+		var t := out.add_track(type)
+		out.track_set_path(t, anim.track_get_path(i))
+		for s in int(ceil(dur * FPS)) + 1:
+			var local := minf(float(s) / FPS, dur)
+			var at := from + local
+			match type:
+				Animation.TYPE_POSITION_3D:
+					out.track_insert_key(t, local, anim.position_track_interpolate(i, at))
+				Animation.TYPE_ROTATION_3D:
+					out.track_insert_key(t, local, anim.rotation_track_interpolate(i, at))
+				_:
+					out.track_insert_key(t, local, anim.scale_track_interpolate(i, at))
+	return out
+
+## Freezes the hips at `neutral`, killing the clip's vertical root motion too
+## (unlike _repath_tracks, which keeps the Y bounce). The jump clip lifts the
+## hips ~1m, but gameplay physics already moves the capsule — keeping that rise
+## would double-count it and float the model off the collision shape.
+func _pin_hips(anim: Animation, neutral: Vector3) -> void:
+	for i in anim.get_track_count():
+		var p := anim.track_get_path(i)
+		if p.get_subname_count() > 0 and p.get_subname(0) == "Hips" \
+				and anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+			for k in anim.track_get_key_count(i):
+				anim.track_set_key_value(i, k, neutral)
 
 func _setup_materials() -> void:
 	# The FBX references its textures by filename, but they live in TEX_DIR
@@ -244,7 +311,8 @@ func tick(delta: float, anim: String, _t := 0.0, speed_ratio := 0.0) -> void:
 		"run":
 			_play("run" if speed_ratio > 0.65 else "walk")
 		"air":
-			_play("idle")
+			# short blend so the push-off reads snappy instead of fading in
+			_play("jump", 0.1)
 		"block":
 			_play("block")
 		"strafe_l", "strafe_r", "walk_back":
