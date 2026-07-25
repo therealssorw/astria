@@ -256,16 +256,23 @@ mixed pile.
   The three swords share one model and differ only by size and tint until each
   has art of its own.
 - `"anim_set": "sword"` swaps in the clips in `HumanoidVisual.SWORD_CLIPS`
-  while that item is held — idle, walk, run, the three light swings and the
-  heavy. `_clip_for()` does the swap inside `_play`/`_restart`, so anything
-  with no sword version (block, slide, jump) keeps the bare-handed clip, and a
+  while that item is held — idle, walk, run, the light swings and the heavy.
+  `_clip_for()` does the swap inside `_play`/`_restart`, so anything with no
+  sword version (block, slide, jump) keeps the bare-handed clip, and a
   character built without the sword clips falls back instead of erroring.
 - Those clips are the Mocap Online TC Sword pack on the MotusMan rig, whose
   bones are Mixamo's names minus the `mixamorig_` prefix — hence
   `bonemap_motusman.tres`, the Mixamo map with the prefix stripped, wired into
-  each clip's `.import` exactly like the Mixamo ones. The pack ships ONE long
-  combo take, so the four swings are `"slice"` ranges cut out of it, chosen
-  from where the sword arm actually accelerates.
+  each clip's `.import` exactly like the Mixamo ones.
+- The pack ships ONE 5.5s combo take, and most of it is danced in a deep mocap
+  crouch: the hips stand at 1.00, sink to ~0.75 through the middle cuts and to
+  0.67 in the lunge near 4.1s, which on this character reads as squatting. So
+  only the FIRST cut is used — `"slice": [0.58, 0.98]`, which starts from the
+  standing ready pose and is out before the crouch settles. Every light swing
+  plays that one slash (`sword_slash`) and the heavy is the same slice at a
+  slower `"speed"`, which is also what makes it the slower, heavier-looking
+  swing. If more sword moves are ever wanted they need a take that stays on
+  its feet, not another slice of this one.
 - `HumanoidVisual.set_held_item(id)` parents the model to a `BoneAttachment3D`
   on `RightHand`, so it follows every clip and both Rouge and voxel NPCs get
   it for free. Calling it with the same id twice does nothing.

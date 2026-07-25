@@ -9,6 +9,9 @@ extends Node3D
 const ITEM := "iron_sword"
 ## Which pose to hold: "idle", "run", "attack_light_0"... anything tick() takes.
 const ANIM := "idle"
+## How many 60ths of a second to let it run before the shot — bump it to catch
+## a later frame of a swing.
+const FRAMES := 30
 const OUT := "user://hold_preview.png"
 
 func _ready() -> void:
@@ -36,7 +39,7 @@ func _ready() -> void:
 
 	# let the clip settle on a real pose, not the rest skeleton — with a sword
 	# in hand that is the sword idle, which is the point of looking at this
-	for i in 30:
+	for i in FRAMES:
 		vis.tick(1.0 / 60.0, ANIM, 0.0, 1.0)
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw

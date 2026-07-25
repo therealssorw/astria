@@ -41,7 +41,7 @@ const ITEMS := {
 		"price": 20,
 		"desc": "A splintered practice blade.",
 		"icon": "res://Assets/Textures/Items/Weapons/wooden_sword.png",
-		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.0, 1.0, 2.0),
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.6, 1.0, 2.4),
 				"tint": Color(0.52, 0.36, 0.19), "anim_set": "sword"},
 	},
 	"copper_sword": {
@@ -49,7 +49,7 @@ const ITEMS := {
 		"price": 50,
 		"desc": "Soft metal, but it holds an edge.",
 		"icon": "res://Assets/Textures/Items/Weapons/copper_sword.png",
-		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.2, 1.08, 2.2),
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.9, 1.08, 2.7),
 				"tint": Color(0.85, 0.52, 0.28), "anim_set": "sword"},
 	},
 	"iron_sword": {
@@ -57,7 +57,7 @@ const ITEMS := {
 		"price": 100,
 		"desc": "Forge-work worth carrying.",
 		"icon": "res://Assets/Textures/Items/Weapons/iron_sword.png",
-		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.4, 1.15, 2.4),
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(3.2, 1.15, 3.0),
 				"anim_set": "sword"},
 	},
 }

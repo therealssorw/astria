@@ -37,28 +37,29 @@ const CLIPS := {
 	"light_2": {"path": ANIM_DIR + "Combat/LightM1/Elbow Uppercut Combo.fbx", "speed": 1.55, "loop": false},
 	"heavy": {"path": ANIM_DIR + "Combat/HeavyM1/Cross Punch.fbx", "speed": 1.35, "loop": false},
 	# --- with a sword in hand (Mocap Online TC pack, MotusMan rig) ---
-	# The pack ships ONE 5.5s combo take, so the swings are sliced out of it by
-	# where the sword arm actually accelerates: three cuts at ~0.8 / ~1.6 /
-	# ~2.5, then a last one at ~4.2 that serves as the heavy. Slice bounds sit
-	# in the quiet frames on either side so each starts and ends near rest.
+	# The pack ships ONE 5.5s combo take, and most of it is spent in a deep
+	# mocap fighting crouch: the hips sit at 1.00 standing and sink to 0.75
+	# through the middle cuts and to 0.67 in the lunge at ~4.1, which on this
+	# character reads as squatting. So only the FIRST cut is used — it starts
+	# from the standing ready pose (~0.6), the blade goes through at ~0.8, and
+	# it is out before the crouch settles. Every light swing plays it, and the
+	# heavy is the same slash at a slower rate.
 	"sword_idle": {"path": ANIM_DIR + "Sword/Idle/Sword Idle.fbx", "speed": 1.0, "loop": true},
 	"sword_walk": {"path": ANIM_DIR + "Sword/Walking/Sword Walk.fbx", "speed": 1.0, "loop": true},
 	"sword_run": {"path": ANIM_DIR + "Sword/Running/Sword Run.fbx", "speed": 1.0, "loop": true},
-	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
-			"loop": false, "slice": [0.45, 1.30]},
-	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
-			"loop": false, "slice": [1.25, 2.05]},
-	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
-			"loop": false, "slice": [2.20, 3.10]},
-	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.35,
-			"loop": false, "slice": [3.90, 4.90]},
+	"sword_slash": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
+			"loop": false, "slice": [0.58, 0.98]},
+	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 0.75,
+			"loop": false, "slice": [0.58, 0.98]},
 }
 ## Clip swaps applied while a sword is in hand. Anything not listed keeps its
-## bare-handed clip, so blocking, sliding and jumping are unchanged.
+## bare-handed clip, so blocking, sliding and jumping are unchanged. All three
+## light swings are the same slash — the take only has one that stays standing,
+## and repeats still cross-blend through the "__alt" copy.
 const SWORD_CLIPS := {
 	"idle": "sword_idle", "walk": "sword_walk", "run": "sword_run",
-	"light_0": "sword_light_0", "light_1": "sword_light_1",
-	"light_2": "sword_light_2", "heavy": "sword_heavy",
+	"light_0": "sword_slash", "light_1": "sword_slash",
+	"light_2": "sword_slash", "heavy": "sword_heavy",
 }
 ## Guard-up movement clips built at load: legs from the locomotion clip on the
 ## right, upper body grafted from the block stance — so circling an opponent
