@@ -4,3 +4,6 @@
 
 # Exported binaries (rebuild with --headless --export-release)
 /build/
+
+# Claude Code local session artifacts
+/.claude/scheduled_tasks.lock
