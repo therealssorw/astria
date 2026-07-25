@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://npctest0astria"]
+[gd_scene format=3 uid="uid://baoo66jj5yh21"]
 
 [ext_resource type="Script" path="res://tests/test_npc_builder.gd" id="1_test"]
 
