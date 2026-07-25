@@ -17,7 +17,7 @@ extends CharacterBody3D
 @export var max_health := 100.0
 @export_range(0.0, 1.0) var knockback_resistance := 0.6
 @export_group("Movement")
-@export var move_speed := 3.5
+@export var move_speed := 4.0
 @export var turn_speed_deg := 360.0
 @export var repath_interval := 0.5
 @export_group("Attack")
@@ -26,12 +26,13 @@ extends CharacterBody3D
 @export var attack_cone_deg := 80.0
 @export var attack_reach := 1.0
 @export var attack_radius := 0.55
-## Seconds into the swing when the hit lands.
-@export var attack_windup := 0.6
+## Seconds into the swing when the hit lands. Short enough to demand a real
+## reaction, long enough to read off the telegraph star.
+@export var attack_windup := 0.45
 ## Total swing length — the punch animation stretches to fit this.
-@export var attack_duration := 1.4
+@export var attack_duration := 1.05
 ## Minimum time between swing starts.
-@export var attack_cooldown := 2.0
+@export var attack_cooldown := 1.15
 @export_group("Sound")
 ## This character's grunt pair — played (one random grunt) whenever it takes
 ## damage. Each character gets exactly one pair.
@@ -56,16 +57,28 @@ extends CharacterBody3D
 ## Speed multiplier while swooping in for a punch.
 @export var swoop_speed_mult := 1.5
 ## Movement speed while strafing in RETREAT.
-@export var strafe_speed := 2.6
+@export var strafe_speed := 3.0
 ## Preferred circling distance band while retreating.
 @export var retreat_min_dist := 2.8
 @export var retreat_max_dist := 4.6
 ## Damage multiplier while blocking (0 = full negate).
 @export_range(0.0, 1.0) var block_damage_mult := 0.25
+## The guard only covers this cone in front — go around it and it's worthless.
+@export var block_arc_deg := 120.0
 ## How fast the urge to attack builds while circling.
 @export var aggression_rate := 0.45
+## Extra urge per second while the player just sits behind a raised guard:
+## turtling invites pressure instead of stalling the fight.
+@export var block_bait_rate := 0.6
 ## Player swings starting within this range can trigger a reflex block/dodge.
 @export var block_reflex_dist := 3.5
+## Flat knockback that rocks it out of whatever it was doing — heavies and
+## combo enders clear this bar, ordinary jabs don't (so no stun-locking).
+@export var flinch_knockback := 6.5
+@export var flinch_time := 0.4
+## Damage taken while staggered (parried, or rocked by a heavy) — the payoff
+## for reading the fight instead of mashing.
+@export var stagger_damage_mult := 1.4
 @export_group("Death")
 @export var despawn_delay := 5.0
 
@@ -78,6 +91,8 @@ var puppet := false   # true on clients: no AI, just replicated state
 
 var health: float
 var dead := false
+## >0: wide open — parried or rocked back, no AI, no guard, free hits.
+var stagger_left := 0.0
 var cooldown_left := 0.0
 var repath_left := 0.0
 var attacking := false
@@ -170,6 +185,18 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, 8.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, 8.0 * delta)
 		move_and_slide()
+		return
+
+	# staggered: no decisions, no guard, no swing — just stumble it out
+	if stagger_left > 0.0:
+		stagger_left -= delta
+		attacking = false
+		velocity.x = move_toward(velocity.x, 0.0, 12.0 * delta)
+		velocity.z = move_toward(velocity.z, 0.0, 12.0 * delta)
+		if not is_on_floor():
+			velocity.y -= _gravity() * delta
+		move_and_slide()
+		_animate(delta)
 		return
 
 	# always fight the nearest living player; re-checked on an interval so a
@@ -281,15 +308,18 @@ func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	net_attacking = is_attacking
 	_net_has_state = true
 
-func net_apply_damage(new_health: float, blocked: bool) -> void:
+func net_apply_damage(new_health: float, result: int, attacker := 0) -> void:
 	health = new_health
-	_damage_fx(blocked)
+	_damage_fx(result)
+	if attacker != 0 and attacker == multiplayer.get_unique_id():
+		Player.local_hit_feedback(get_tree(), result)
 
 func net_die() -> void:
 	if dead:
 		return
 	dead = true
 	attacking = false
+	stagger_left = 0.0
 	collision_layer = 0
 	if _death_player:
 		_death_player.play()
@@ -331,7 +361,11 @@ func _start_swing() -> void:
 ## RETREAT: circle the player — sideways, in, out, or diagonals — while
 ## staying in the fight; the urge to attack builds the longer it circles.
 func _tick_retreat(delta: float, dist: float) -> void:
-	aggression = minf(aggression + aggression_rate * delta, 1.2)
+	# a player parked behind a guard is baiting a stalemate — press them
+	var urge := aggression_rate
+	if bool(player.get("blocking")):
+		urge += block_bait_rate
+	aggression = minf(aggression + urge * delta, 1.2)
 	var to_p := player.global_position - global_position
 	to_p.y = 0
 	to_p = to_p.normalized()
@@ -479,7 +513,8 @@ func _attack_trace() -> void:
 		var flat := Vector3(to_p.x, 0, to_p.z).normalized()
 		if fwd.dot(flat) < cos(deg_to_rad(attack_cone_deg)):
 			continue
-		p.server_take_damage(attack_damage, flat * 3.0 + Vector3.UP * 1.5, 0)
+		# `self` goes along so a parried swing staggers us in return
+		p.server_take_damage(attack_damage, flat * 3.0 + Vector3.UP * 1.5, 0, self)
 
 ## Sees the player only when close, in front, and unobstructed.
 func _can_see_player(dist: float) -> bool:
@@ -514,36 +549,81 @@ func windup_progress() -> float:
 	return clampf(attack_timer / maxf(attack_windup, 0.01), 0.0, 1.0)
 
 ## SERVER ONLY: all enemy damage funnels through here (attacker = peer id
-## of the puncher, for kill credit; 0 = environment).
-func take_damage(amount: float, knockback: Vector3, attacker := 0) -> float:
+## of the puncher, for kill credit; 0 = environment). `source` is the node
+## that swung, so a parry can be paid back — enemies don't parry, but the
+## same signature keeps the player and enemy damage paths interchangeable.
+func take_damage(amount: float, knockback: Vector3, attacker := 0,
+		_source: Node = null) -> float:
 	if puppet or dead:
 		return 0.0
 	aggroed = true # getting hit always wakes it up
-	var blocked := state == CombatState.BLOCK and not attacking
+	var blocked := state == CombatState.BLOCK and not attacking \
+			and stagger_left <= 0.0 and _guard_covers(knockback)
+	var result := Player.Guard.BLOCKED if blocked else Player.Guard.HIT
 	if blocked:
 		# guarded hit: chip damage, barely budges
 		amount *= block_damage_mult
 		knockback *= 0.25
 	else:
+		if stagger_left > 0.0:
+			amount *= stagger_damage_mult # punish window: hits land harder
 		# getting tagged makes it warier: sometimes an immediate guard,
 		# and it stews toward a comeback swing
 		aggression = minf(aggression + 0.15, 1.2)
 		if not attacking and state == CombatState.RETREAT and _next_pattern() < 0.35:
 			_enter(CombatState.BLOCK, 0.5 + _next_pattern() * 0.5)
+		# a heavy or a combo ender rocks it back out of whatever it was doing
+		if Vector2(knockback.x, knockback.z).length() >= flinch_knockback:
+			server_stagger(flinch_time)
 	health -= amount
 	velocity += knockback * (1.0 - knockback_resistance)
-	Net.server_broadcast_enemy_damage(String(name), health, blocked)
-	_damage_fx(blocked)
+	Net.server_broadcast_enemy_damage(String(name), health, result, attacker)
+	_damage_fx(result)
+	if attacker != 0 and attacker == multiplayer.get_unique_id():
+		Player.local_hit_feedback(get_tree(), result) # host punched it itself
 	if health <= 0.0:
 		_die(attacker)
 	return amount
 
+## The guard only covers the front — `knockback` points attacker -> us, so
+## the attacker sits opposite it. Circle behind a blocking bandit and the
+## block stops mattering.
+func _guard_covers(knockback: Vector3) -> bool:
+	var away := Vector3(knockback.x, 0.0, knockback.z)
+	if away.length_squared() < 0.0001:
+		return true
+	var fwd := body_visual.global_transform.basis.z
+	fwd.y = 0
+	if fwd.length_squared() < 0.0001:
+		return true
+	return fwd.normalized().dot(-away.normalized()) >= cos(deg_to_rad(block_arc_deg * 0.5))
+
+## SERVER: wide open for a beat — parried, or rocked by a big hit.
+func server_stagger(duration: float) -> void:
+	if puppet or dead:
+		return
+	Net.server_broadcast_enemy_stagger(String(name), duration)
+
+## Runs on every peer so the helpless pose matches the server's punish window.
+func net_stagger(duration: float) -> void:
+	if dead:
+		return
+	stagger_left = maxf(stagger_left, duration)
+	attacking = false
+	if not puppet:
+		cooldown_left = maxf(cooldown_left, duration)
+		aggression = minf(aggression + 0.3, 1.2)
+		_enter(CombatState.RETREAT, 0.9) # comes back circling, not swinging
+	body_visual.play_stagger(duration)
+
 ## Flash + sounds — runs on the server (host view) and on every client.
-func _damage_fx(blocked: bool) -> void:
-	if blocked:
+func _damage_fx(result: int) -> void:
+	if result == Player.Guard.BLOCKED:
 		body_visual.flash(Color(0.4, 0.7, 1.0), 0.15)
 	else:
 		body_visual.flash(Color(1.0, 0.85, 0.3), 0.12)
+		body_visual.hit_react(0.28)
+		body_visual.hitstop(0.06)
 	if _impact_player:
 		_impact_player.play()
 	if _grunt_player and health > 0.0:
@@ -562,7 +642,9 @@ func _animate(delta: float) -> void:
 	var anim := "idle"
 	var t := 0.0
 	var ratio := h_speed / move_speed
-	if attacking:
+	if stagger_left > 0.0:
+		anim = "idle" # the visual holds its own recoil pose over this
+	elif attacking:
 		anim = "attack_light_0"
 		t = attack_timer / attack_duration
 	elif state == CombatState.BLOCK:

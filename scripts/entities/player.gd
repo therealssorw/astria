@@ -13,16 +13,34 @@ extends CharacterBody3D
 
 # --- Movement ---
 @export var walk_speed := 6.5            # was 5.0 (spec 500 cm/s)
-@export var block_walk_speed := 1.5      # 150 cm/s
+@export var block_walk_speed := 3.6      # a guard is a fighting stance, not a crawl
 @export var jump_velocity := 5.0         # 500
 @export var air_control := 0.35
 @export var ground_accel := 40.0
 @export var orient_speed_deg := 500.0    # body orient-to-movement
 @export var locked_orient_speed_deg := 540.0
+## Squared-up movement caps (fractions of the current speed): sidesteps and
+## backpedals are slower than driving forward, so ring position is a choice.
+@export var strafe_speed_mult := 0.85
+@export var back_speed_mult := 0.68
+## Speed kept while a swing is out — punches commit you.
+@export var attack_move_mult := 0.4
+## Speed kept while staggered (parried / guard broken).
+@export var stagger_move_mult := 0.15
+## Inside this range the body squares up to the lock target and the legs
+## strafe instead of turning to follow the movement.
+@export var stance_range := 8.0
 
 # --- Attacks ---
 @export var heavy_attack_hold_time := 0.28
 @export var combo_input_cache_tolerance := 0.5
+## Third light punch closes the chain: this much extra damage and knockback
+## (and enough force to rock an enemy back — see Enemy.flinch_knockback).
+@export var combo_finisher_mult := 1.5
+## Step into a locked target that is out of reach when the swing starts, so a
+## committed punch closes the gap instead of hitting air.
+@export var attack_lunge := 3.4
+@export var attack_lunge_time := 0.15
 @export var light_damage := 10.0
 @export var light_reach := 1.4
 @export var light_radius := 0.7
@@ -42,10 +60,33 @@ extends CharacterBody3D
 @export var heavy_duration := 0.6
 @export var heavy_hit_time := 0.3
 
+# --- Guard ---
+## Blocking only covers the front: a hit landing outside this cone (measured
+## from where the body faces) goes straight through the guard.
+@export var block_arc_deg := 120.0
+## Fraction of a blocked hit's damage that still gets through (chip).
+@export var block_chip_mult := 0.15
+## Stamina a blocked hit drains, per point of damage absorbed. Run dry and the
+## guard breaks — the block is a resource, not an off switch.
+@export var block_stamina_per_damage := 0.7
+## Stamina needed to hold a guard up at all.
+@export var block_min_stamina := 8.0
+## Raising the guard this soon before a hit lands is a PARRY: no damage at all
+## and the attacker is left wide open.
+@export var parry_window := 0.22
+@export var parry_stamina_refund := 30.0
+## How long a parried attacker / guard-broken defender stays helpless.
+@export var parry_stagger_time := 0.9
+@export var guard_break_stagger_time := 1.15
+
 # --- Stamina ---
 @export var max_stamina := 100.0
-@export var stamina_cost := 10.0
-@export var stamina_regen := 10.0
+@export var stamina_cost := 8.0
+@export var heavy_stamina_cost := 16.0
+@export var stamina_regen := 16.0
+## Regen pauses this long after a swing (and entirely while guarding), so
+## flurries and turtling both actually cost something.
+@export var stamina_regen_delay := 0.4
 
 # --- Slide / dive ---
 @export var dive_speed := 9.5            # 950
@@ -101,9 +142,13 @@ var peer_id := 1
 var username := ""
 var is_local := true
 
+## How an incoming hit resolved — drives damage, feedback and the HUD.
+enum Guard { HIT = 0, BLOCKED = 1, PARRIED = 2, BROKEN = 3 }
+
 const NET_SEND_INTERVAL := 1.0 / 20.0
 const ANIM_WHITELIST := ["idle", "run", "air", "block", "slide", "dive",
 		"strafe_l", "strafe_r", "walk_back",
+		"block_fwd", "block_back", "block_l", "block_r",
 		"attack_heavy", "attack_light_0", "attack_light_1", "attack_light_2"]
 # movement validation: fastest legit burst (slide jump 13 + knockback 7.5)
 const MAX_H_SPEED := 26.0
@@ -114,6 +159,10 @@ var stamina: float
 var blocking := false
 var dead := false
 var ui_open := false # set by the inventory UI; freezes combat/movement input
+## >0: parried or guard broken — no attacking, no guard, barely any movement.
+var stagger_time := 0.0
+## When the guard last went UP (the parry window is measured from here).
+var block_start_time := -10.0
 
 # attack state
 var attacking := false
@@ -123,12 +172,23 @@ var attack_did_hit := false
 var combo_index := 0
 var attack_duration := 0.45
 var attack_hit_time := 0.18
+var attack_combo_time := 0.3
 var hit_actors := {}
 var attack_face_dir := Vector3.FORWARD
+var lunge_left := 0.0
+var lunge_dir := Vector3.ZERO
 # tap/hold
 var holding_attack := false
 var hold_time := 0.0
 var cached_press_time := -10.0
+var cached_press_heavy := false
+
+# local-only feedback timers, read by the HUD
+var fx_hitmarker_time := 0.0
+var fx_parry_time := 0.0
+var fx_break_time := 0.0
+var _shake := 0.0
+var _stam_hold := 0.0 # regen pause after spending stamina
 
 # slide state
 var sliding := false
@@ -234,7 +294,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	_time += delta
+	stagger_time = maxf(0.0, stagger_time - delta)
 	if is_local:
+		_tick_local_fx(delta)
 		_local_tick(delta)
 	else:
 		_puppet_tick(delta)
@@ -256,9 +318,12 @@ func _local_tick(delta: float) -> void:
 	if not ui_open:
 		_update_lockon(delta)
 		_camera_assist(delta)
-		_handle_block()
-		_handle_attack_input(delta)
-		_handle_slide_input()
+		if stagger_time <= 0.0: # helpless: no guard, no swings, no slides
+			_handle_block()
+			_handle_attack_input(delta)
+			_handle_slide_input()
+		else:
+			blocking = false
 	_tick_attack(delta)
 	_tick_slide(delta)
 	_move(delta)
@@ -266,6 +331,23 @@ func _local_tick(delta: float) -> void:
 	_regen_stamina(delta)
 	_animate(delta)
 	_net_send(delta)
+
+## Owner-only presentation: HUD cue timers and the camera kick from impacts.
+func _tick_local_fx(delta: float) -> void:
+	fx_hitmarker_time = maxf(0.0, fx_hitmarker_time - delta)
+	fx_parry_time = maxf(0.0, fx_parry_time - delta)
+	fx_break_time = maxf(0.0, fx_break_time - delta)
+	if _shake <= 0.0 or camera == null:
+		return
+	_shake = maxf(0.0, _shake - delta * 3.2)
+	# offsets, not rotation: a shake must never fight the player's aim
+	var s := _shake * _shake
+	camera.h_offset = sin(_time * 61.0) * 0.07 * s
+	camera.v_offset = cos(_time * 47.0) * 0.05 * s
+
+func _add_shake(amount: float) -> void:
+	if is_local:
+		_shake = minf(_shake + amount, 1.0)
 
 func _net_send(delta: float) -> void:
 	_net_send_accum += delta
@@ -294,14 +376,24 @@ func _puppet_tick(delta: float) -> void:
 func _server_sim_tick(delta: float) -> void:
 	if dead:
 		return
-	blocking = net_blocking and not attacking
+	blocking = net_blocking and not attacking and stagger_time <= 0.0 \
+			and stamina >= block_min_stamina
+	_regen_stamina(delta) # same rule as the owner: none while guarding/swinging
 	if not attacking:
-		stamina = minf(max_stamina, stamina + stamina_regen * delta)
 		return
 	attack_timer += delta
 	if not attack_did_hit and attack_timer >= attack_hit_time:
 		attack_did_hit = true
 		_do_attack_trace()
+	# a queued request chains at the combo point, matching the owner's predicted
+	# timing — otherwise the server would lag a punch behind every chain
+	if attack_did_hit and not attack_is_heavy and attack_timer >= attack_combo_time \
+			and _time - _srv_pending_time <= combo_input_cache_tolerance:
+		var pending_heavy := _srv_pending_heavy
+		var pending_lock := _srv_pending_lock
+		_srv_pending_time = -10.0
+		_srv_try_start(pending_heavy, pending_lock)
+		return
 	if attack_timer >= attack_duration:
 		attacking = false
 		if attack_is_heavy:
@@ -320,6 +412,13 @@ func server_body_pos() -> Vector3:
 	if not is_local and _net_has_state:
 		return net_pos
 	return global_position
+
+## Where the body faces, from the server's point of view (the owner's last
+## accepted yaw claim for a remote pawn). Guard arcs are judged against this.
+func server_facing() -> Vector3:
+	if not is_local and _net_has_state:
+		return Vector3(sin(net_yaw), 0.0, cos(net_yaw))
+	return _body_forward()
 
 ## SERVER: apply + validate an owner's state report. False = rejected.
 func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
@@ -341,6 +440,10 @@ func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	net_anim = anim if ANIM_WHITELIST.has(anim) else "idle"
 	net_anim_t = clampf(anim_t, 0.0, 10.0)
 	net_ratio = clampf(ratio, 0.0, 3.0)
+	# the guard going up is what the parry window is measured from; a report
+	# lands within 50 ms of the press, well inside the window
+	if blocking_flag and not net_blocking:
+		block_start_time = _time
 	net_blocking = blocking_flag
 	_net_has_state = true
 	return true
@@ -396,7 +499,16 @@ func _move(delta: float) -> void:
 
 	var dir := _input_dir()
 	var speed := block_walk_speed if blocking else walk_speed
+	if attacking:
+		speed *= attack_move_mult
+	if stagger_time > 0.0:
+		speed *= stagger_move_mult
+	if dir != Vector3.ZERO and _in_stance():
+		speed *= _directional_mult(dir)
 	var target := dir * speed
+	if lunge_left > 0.0:
+		lunge_left = maxf(0.0, lunge_left - delta)
+		target = lunge_dir * attack_lunge # the step into a swing owns movement
 	var accel := ground_accel if was_on_floor else ground_accel * air_control
 	velocity.x = move_toward(velocity.x, target.x, accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, accel * delta)
@@ -413,13 +525,53 @@ func _move(delta: float) -> void:
 			pending_landing_slide = false
 			_start_ground_slide()
 
+## Squared-up fighting stance: the body holds its guard toward the threat and
+## the legs sidestep/backpedal, instead of the body turning to chase movement.
+## Guarding always counts; a lock-on only once the fight is actually close.
+func _in_stance() -> bool:
+	if sliding or diving:
+		return false
+	if blocking:
+		return true
+	return is_instance_valid(lock_target) \
+			and global_position.distance_to(lock_target.global_position) <= stance_range
+
+## The direction the stance is squared up to: the locked opponent, else wherever
+## the camera looks (guarding without a lock still faces the threat).
+func _stance_forward() -> Vector3:
+	if is_instance_valid(lock_target):
+		var to_t := lock_target.global_position - global_position
+		to_t.y = 0
+		if to_t.length_squared() > 0.001:
+			return to_t.normalized()
+	if camera:
+		var cam_fwd := -camera.global_transform.basis.z
+		cam_fwd.y = 0
+		if cam_fwd.length_squared() > 0.001:
+			return cam_fwd.normalized()
+	return _body_forward()
+
+## Sidesteps and backpedals are slower than a straight advance; the two caps
+## blend by how much of the input runs along the facing axis (so diagonals sit
+## in between instead of snapping between speeds).
+func _directional_mult(dir: Vector3) -> float:
+	var fwd := _stance_forward()
+	if fwd.length_squared() < 0.001:
+		return 1.0
+	var along := dir.dot(fwd)
+	var axial := 1.0 if along >= 0.0 else back_speed_mult
+	return lerpf(strafe_speed_mult, axial, absf(along))
+
 func _orient_body(delta: float) -> void:
 	var target_dir := Vector3.ZERO
 	var rate := orient_speed_deg
-	# lock-on no longer steers the body — only the camera tracks the target;
-	# attacks still aim via attack_face_dir (which uses the lock target)
+	# a lock-on alone doesn't steer the body — but a fighting stance does:
+	# it holds the front toward the threat so the legs can strafe around it
 	if attacking:
 		target_dir = attack_face_dir
+		rate = locked_orient_speed_deg
+	elif _in_stance():
+		target_dir = _stance_forward()
 		rate = locked_orient_speed_deg
 	else:
 		var h := Vector3(velocity.x, 0, velocity.z)
@@ -439,14 +591,20 @@ func _body_forward() -> Vector3:
 
 func _handle_block() -> void:
 	# punching overrides blocking: the guard only holds while not swinging,
-	# and comes back up on its own after the swing if block is still held
-	blocking = Input.is_action_pressed("block") and not attacking
+	# and comes back up on its own after the swing if block is still held.
+	# An empty guard meter can't hold anything up (see server_take_damage).
+	var want := Input.is_action_pressed("block") and not attacking \
+			and stamina >= block_min_stamina
+	if want and not blocking:
+		block_start_time = _time # a fresh guard can parry
+	blocking = want
 
 # ---------------- attacks ----------------
 
 func _handle_attack_input(delta: float) -> void:
 	if Input.is_action_just_pressed("attack"):
 		cached_press_time = _time
+		cached_press_heavy = false
 		holding_attack = true
 		hold_time = 0.0
 		_auto_lockon()
@@ -454,24 +612,28 @@ func _handle_attack_input(delta: float) -> void:
 		hold_time += delta
 		if hold_time >= heavy_attack_hold_time:
 			holding_attack = false
+			# a hold that matured mid-swing queues a HEAVY as the chain ender
+			cached_press_heavy = true
+			cached_press_time = _time
 			_try_start_attack(true)
 		elif Input.is_action_just_released("attack"):
 			holding_attack = false
 			_try_start_attack(false)
 
 func _try_start_attack(heavy: bool) -> void:
-	if dead or sliding:
+	if dead or sliding or stagger_time > 0.0:
 		return
 	if attacking:
 		return # press already cached for the combo check
-	if stamina < stamina_cost:
+	if stamina < (heavy_stamina_cost if heavy else stamina_cost):
 		return
 	_start_swing(heavy, 0 if heavy else combo_index)
 
-func _start_swing(heavy: bool, section: int) -> void:
-	stamina -= stamina_cost
-	if _woosh_player:
-		_woosh_player.play()
+## Shared swing bookkeeping — the owner's prediction and the server's
+## authoritative copy must start from identical numbers.
+func _begin_swing(heavy: bool, section: int) -> void:
+	stamina -= heavy_stamina_cost if heavy else stamina_cost
+	_stam_hold = stamina_regen_delay
 	attacking = true
 	blocking = false # guard drops the moment the punch starts
 	attack_is_heavy = heavy
@@ -479,16 +641,28 @@ func _start_swing(heavy: bool, section: int) -> void:
 	attack_did_hit = false
 	combo_index = section
 	hit_actors = {}
-	# swing timing comes from the actual clip at montage rate (1.45x light /
-	# 1.25x heavy) when the visual provides it; exports are the fallback
+	# swing timing comes from the actual clip at montage rate when the visual
+	# provides it; exports are the fallback
 	if body_visual.has_method("get_attack_info"):
 		var info: Dictionary = body_visual.get_attack_info(heavy, section)
 		attack_duration = info.duration
 		attack_hit_time = info.hit
-		body_visual.on_attack_started(heavy, section)
+		attack_combo_time = info.combo
 	else:
 		attack_duration = heavy_duration if heavy else light_duration
 		attack_hit_time = heavy_hit_time if heavy else light_hit_time
+		attack_combo_time = attack_duration * 0.7
+
+func _start_swing(heavy: bool, section: int) -> void:
+	_begin_swing(heavy, section)
+	# the press that fed this swing is spent — otherwise one tap would keep
+	# chaining itself now that a chain starts well before the clip ends
+	cached_press_time = -10.0
+	cached_press_heavy = false
+	if _woosh_player:
+		_woosh_player.play()
+	if body_visual.has_method("on_attack_started"):
+		body_visual.on_attack_started(heavy, section)
 	# facing: locked target first, else velocity, else camera forward
 	if lock_target:
 		attack_face_dir = lock_target.global_position - global_position
@@ -499,6 +673,7 @@ func _start_swing(heavy: bool, section: int) -> void:
 	attack_face_dir.y = 0
 	if attack_face_dir.length_squared() > 0.001:
 		attack_face_dir = attack_face_dir.normalized()
+	_attack_lunge_step(heavy)
 	# the owner's swing is a prediction — only the server's copy of this
 	# swing (host pawn, or _srv_start_swing for remote pawns) deals damage
 	if multiplayer.is_server():
@@ -509,32 +684,49 @@ func _start_swing(heavy: bool, section: int) -> void:
 			lock_path = lock_target.get_path()
 		Net.request_attack(heavy, lock_path)
 
+## A committed swing steps into a locked opponent that is out of reach, so
+## punching at the edge of the ring closes the gap instead of hitting air.
+func _attack_lunge_step(heavy: bool) -> void:
+	if attack_lunge <= 0.0 or sliding or not is_instance_valid(lock_target):
+		return
+	var reach := heavy_reach if heavy else light_reach
+	if global_position.distance_to(lock_target.global_position) <= reach:
+		return
+	# held for a beat by _move — a one-frame impulse would be scrubbed out by
+	# the ground accel long before it moved anyone
+	lunge_left = attack_lunge_time
+	lunge_dir = attack_face_dir
+	velocity.x = lunge_dir.x * attack_lunge
+	velocity.z = lunge_dir.z * attack_lunge
+
 func _tick_attack(delta: float) -> void:
 	if not attacking:
 		return
 	attack_timer += delta
-	var dur := attack_duration
-	var hit_t := attack_hit_time
 
-	if not attack_did_hit and attack_timer >= hit_t:
+	if not attack_did_hit and attack_timer >= attack_hit_time:
 		attack_did_hit = true
 		if multiplayer.is_server(): # only the server's trace deals damage
 			_do_attack_trace()
 
-	if attack_timer >= dur:
-		# the swing must fully finish before the next one; a press cached
-		# within the tolerance window chains into the next combo section
-		if not attack_is_heavy \
-				and (_time - cached_press_time) <= combo_input_cache_tolerance \
-				and _time - cached_press_time > 0.01 and stamina >= stamina_cost:
-			_start_swing(false, (combo_index + 1) % 3)
+	# a press cached during the swing chains at the combo point — after contact
+	# but before the clip's recovery tail, which is what makes punches flow.
+	# A matured hold chains into a heavy as the ender.
+	var queued := _time - cached_press_time
+	if not attack_is_heavy and attack_did_hit and attack_timer >= attack_combo_time \
+			and queued <= combo_input_cache_tolerance and queued > 0.01:
+		var next_heavy := cached_press_heavy
+		if stamina >= (heavy_stamina_cost if next_heavy else stamina_cost):
+			_start_swing(next_heavy, 0 if next_heavy else (combo_index + 1) % 3)
 			return
+
+	if attack_timer >= attack_duration:
 		attacking = false
 		combo_index = 0
 
 ## SERVER: a remote client pressed attack. Validate, don't trust.
 func server_handle_attack_request(heavy: bool, lock_path: NodePath) -> void:
-	if dead or sliding:
+	if dead or sliding or stagger_time > 0.0:
 		return
 	if attacking:
 		# cache it like the local combo buffer does
@@ -545,11 +737,15 @@ func server_handle_attack_request(heavy: bool, lock_path: NodePath) -> void:
 	_srv_try_start(heavy, lock_path)
 
 func _srv_try_start(heavy: bool, lock_path: NodePath) -> void:
-	if dead or stamina < stamina_cost:
+	if dead or stagger_time > 0.0:
+		return
+	if stamina < (heavy_stamina_cost if heavy else stamina_cost):
 		return
 	var section := 0
 	if not heavy and _time <= _srv_combo_deadline:
 		section = (combo_index + 1) % 3
+	elif not heavy and attacking:
+		section = (combo_index + 1) % 3 # chaining straight out of a live swing
 	# resolve the claimed lock target; the trace still range-checks it
 	lock_target = null
 	if not lock_path.is_empty():
@@ -557,17 +753,7 @@ func _srv_try_start(heavy: bool, lock_path: NodePath) -> void:
 		if t is Node3D and t != self \
 				and (t.is_in_group("enemies") or t.is_in_group("player")):
 			lock_target = t
-	stamina -= stamina_cost
-	attacking = true
-	blocking = false
-	attack_is_heavy = heavy
-	attack_timer = 0.0
-	attack_did_hit = false
-	combo_index = section
-	hit_actors = {}
-	var info: Dictionary = body_visual.get_attack_info(heavy, section)
-	attack_duration = info.duration
-	attack_hit_time = info.hit
+	_begin_swing(heavy, section)
 	if lock_target:
 		attack_face_dir = lock_target.global_position - server_body_pos()
 	else:
@@ -592,6 +778,12 @@ func _do_attack_trace() -> void:
 	var damage := heavy_damage if attack_is_heavy else light_damage
 	var knockback := heavy_knockback if attack_is_heavy else light_knockback
 	var launch := heavy_launch if attack_is_heavy else light_launch
+	# the third light punch is the ender: it hits like a heavy, which is also
+	# what lets it rock an enemy back (Enemy.flinch_knockback)
+	if not attack_is_heavy and combo_index == 2:
+		damage *= combo_finisher_mult
+		knockback *= combo_finisher_mult
+		launch *= combo_finisher_mult
 
 	var origin := server_body_pos() + Vector3.UP * 1.0
 	var fwd := attack_face_dir
@@ -624,10 +816,11 @@ func _do_attack_trace() -> void:
 			hit_actors[e] = true
 			var away := flat if flat.length_squared() > 0.001 else fwd
 			var kb := away * knockback + Vector3.UP * launch
+			# `self` goes along so a parry can stagger whoever swung
 			if e is Player:
-				e.server_take_damage(damage, kb, peer_id)
+				e.server_take_damage(damage, kb, peer_id, self)
 			else:
-				e.take_damage(damage, kb, peer_id)
+				e.take_damage(damage, kb, peer_id, self)
 
 func _auto_lockon() -> void:
 	var nearest := _nearest_target(auto_lockon_range)
@@ -673,6 +866,7 @@ func _start_ground_slide() -> void:
 	sliding = true
 	slide_timer = 0.0
 	attacking = false
+	lunge_left = 0.0
 	var shape: CapsuleShape3D = col_shape.shape
 	shape.height = slide_capsule_half_height * 2.0
 	col_shape.position.y = slide_capsule_half_height
@@ -802,42 +996,154 @@ func _camera_assist(delta: float) -> void:
 # ---------------- stamina / health ----------------
 
 func _regen_stamina(delta: float) -> void:
-	if not attacking:
-		stamina = minf(max_stamina, stamina + stamina_regen * delta)
+	_stam_hold = maxf(0.0, _stam_hold - delta)
+	# a raised guard is holding the meter, and a swing just spent from it
+	if attacking or blocking or _stam_hold > 0.0:
+		return
+	stamina = minf(max_stamina, stamina + stamina_regen * delta)
 
-## SERVER ONLY: all player damage funnels through here.
-func server_take_damage(amount: float, knockback: Vector3, attacker := 0) -> float:
+## The guard only covers the front. `away` is the hit's push direction, i.e.
+## attacker -> me, so the attacker sits opposite it.
+func _guard_covers(knockback: Vector3) -> bool:
+	var away := Vector3(knockback.x, 0.0, knockback.z)
+	if away.length_squared() < 0.0001:
+		return true # no direction to judge (environment) — don't punish it
+	var facing := server_facing()
+	facing.y = 0.0
+	if facing.length_squared() < 0.0001:
+		return true
+	return facing.normalized().dot(-away.normalized()) >= cos(deg_to_rad(block_arc_deg * 0.5))
+
+## SERVER ONLY: all player damage funnels through here. The guard resolves in
+## one of three ways — parried (guard raised on the beat: nothing gets through
+## and the attacker is left open), blocked (chip damage, guard meter drains) or
+## broken (meter empty: the hit lands clean and leaves you helpless).
+func server_take_damage(amount: float, knockback: Vector3, attacker := 0,
+		source: Node = null) -> float:
 	if not multiplayer.is_server() or dead:
 		return 0.0
-	var blocked := blocking
-	if not blocked:
-		health -= amount
-	Net.server_broadcast_player_damage(peer_id, health, blocked, knockback)
-	if not blocked and health <= 0.0:
+	var result := Guard.HIT
+	var dealt := amount
+	var kb := knockback
+	if blocking and _guard_covers(knockback):
+		if _time - block_start_time <= parry_window:
+			result = Guard.PARRIED
+			dealt = 0.0
+			kb = Vector3.ZERO
+			stamina = minf(max_stamina, stamina + parry_stamina_refund)
+			if source and source.has_method("server_stagger"):
+				source.server_stagger(parry_stagger_time)
+		else:
+			var guard_cost := amount * block_stamina_per_damage
+			if stamina >= guard_cost:
+				result = Guard.BLOCKED
+				stamina -= guard_cost
+				dealt = amount * block_chip_mult
+				kb = knockback * 0.3 # pushed back, but still standing
+			else:
+				result = Guard.BROKEN
+				stamina = 0.0
+				blocking = false
+				server_stagger(guard_break_stagger_time)
+	health -= dealt
+	Net.server_broadcast_player_damage(peer_id, health, result, kb, stamina, attacker)
+	if health <= 0.0:
 		_server_die(attacker)
-	return 0.0 if blocked else amount
+	return dealt
 
 ## SERVER ONLY: unconditional kill (fell off the island, admin, ...).
 func server_kill(attacker: int) -> void:
 	if not multiplayer.is_server() or dead:
 		return
 	health = 0.0
-	Net.server_broadcast_player_damage(peer_id, 0.0, false, Vector3.ZERO)
+	Net.server_broadcast_player_damage(peer_id, 0.0, Guard.HIT, Vector3.ZERO,
+			stamina, attacker)
 	_server_die(attacker)
 
+## SERVER: leave this fighter wide open (parried, or their guard broke).
+func server_stagger(duration: float) -> void:
+	if not multiplayer.is_server() or dead:
+		return
+	Net.server_broadcast_player_stagger(peer_id, duration)
+
+## Helpless for a beat — runs on every peer so the pose matches everywhere.
+## Players are only ever staggered by a parry or a guard break: raw hits don't
+## stun, so a flurry can't lock someone down in PvP.
+func net_stagger(duration: float) -> void:
+	if dead:
+		return
+	stagger_time = maxf(stagger_time, duration)
+	attacking = false
+	blocking = false
+	holding_attack = false
+	combo_index = 0
+	lunge_left = 0.0
+	cached_press_time = -10.0
+	block_start_time = -10.0
+	_srv_pending_time = -10.0
+	_srv_combo_deadline = -10.0
+	if sliding:
+		if is_local:
+			_end_slide()
+		else:
+			sliding = false
+	body_visual.play_stagger(duration)
+	_add_shake(0.4)
+
 ## Damage feedback on every peer; the owner also takes the knockback.
-func net_apply_damage(new_health: float, blocked: bool, knockback: Vector3) -> void:
+func net_apply_damage(new_health: float, result: int, knockback: Vector3,
+		new_stamina: float, attacker := 0) -> void:
 	health = new_health
+	stamina = new_stamina # the guard meter is server-owned, no drift allowed
 	if _impact_player:
 		_impact_player.play() # the punch landed, guard up or not
-	if blocked:
-		body_visual.flash(Color(0.4, 0.7, 1.0), 0.2) # BlockedDamage event
-		return
-	body_visual.flash(Color(1.0, 0.3, 0.3), 0.15)
-	if _grunt_player and health > 0.0:
-		_grunt_player.play() # lethal hits voice the death sound instead
-	if is_local and not dead:
-		velocity += knockback * 0.5
+	match result:
+		Guard.PARRIED:
+			body_visual.flash(Color(1.0, 0.95, 0.6), 0.25)
+			if is_local:
+				fx_parry_time = 0.55
+			_add_shake(0.35)
+		Guard.BLOCKED:
+			body_visual.flash(Color(0.4, 0.7, 1.0), 0.2) # BlockedDamage event
+			_add_shake(0.2)
+			if is_local and not dead:
+				velocity += knockback * 0.5 # already softened server-side
+		Guard.BROKEN:
+			body_visual.flash(Color(1.0, 0.55, 0.15), 0.3)
+			body_visual.hit_react(0.35)
+			if is_local:
+				fx_break_time = 0.9
+			_add_shake(0.6)
+			if _grunt_player and health > 0.0:
+				_grunt_player.play()
+			if is_local and not dead:
+				velocity += knockback * 0.5
+		_:
+			body_visual.flash(Color(1.0, 0.3, 0.3), 0.15)
+			body_visual.hit_react(0.3)
+			body_visual.hitstop(0.06)
+			_add_shake(0.5)
+			if _grunt_player and health > 0.0:
+				_grunt_player.play() # lethal hits voice the death sound instead
+			if is_local and not dead:
+				velocity += knockback * 0.5
+	if attacker != 0 and attacker == multiplayer.get_unique_id():
+		local_hit_feedback(get_tree(), result)
+
+## Impact feedback for whoever threw the punch, wherever their pawn is.
+static func local_hit_feedback(tree: SceneTree, result: int) -> void:
+	var puncher := tree.get_first_node_in_group("local_player")
+	if puncher is Player:
+		(puncher as Player).on_hit_landed(result)
+
+## One of our punches connected: freeze the swing for a beat and mark it.
+func on_hit_landed(result: int) -> void:
+	if not is_local or result == Guard.PARRIED:
+		return # a parried swing gets a stagger, not a hit confirm
+	var solid: bool = result == Guard.HIT or result == Guard.BROKEN
+	fx_hitmarker_time = 0.18
+	body_visual.hitstop(0.07 if solid else 0.05)
+	_add_shake(0.28 if solid else 0.16)
 
 func _server_die(attacker: int) -> void:
 	# records the death/kill on the server scoreboard AND broadcasts the
@@ -858,6 +1164,8 @@ func net_die() -> void:
 	pending_landing_slide = false
 	blocking = false
 	holding_attack = false
+	stagger_time = 0.0
+	lunge_left = 0.0
 	lock_target = null
 	collision_layer = 0
 	if is_local:
@@ -883,8 +1191,22 @@ func net_respawn(pos: Vector3) -> void:
 	diving = false
 	pending_landing_slide = false
 	slide_cooldown_left = 0.0
+	stagger_time = 0.0
+	lunge_left = 0.0
+	blocking = false
+	holding_attack = false
+	block_start_time = -10.0
+	cached_press_time = -10.0
+	_stam_hold = 0.0
 	if is_local:
 		_restore_capsule()
+		_shake = 0.0
+		fx_hitmarker_time = 0.0
+		fx_parry_time = 0.0
+		fx_break_time = 0.0
+		if camera:
+			camera.h_offset = 0.0
+			camera.v_offset = 0.0
 	_srv_combo_deadline = -10.0
 	net_pos = pos
 	net_anim = "idle"
@@ -897,8 +1219,31 @@ func net_respawn(pos: Vector3) -> void:
 
 # ---------------- animation ----------------
 
+## Directional locomotion: squared up, the legs pick a sidestep or a backpedal
+## from where we are actually going relative to the guard — and keep the fists
+## up while blocking. Free-running just plays the run cycle.
+func _locomotion_anim(h_vel: Vector3) -> String:
+	if not _in_stance():
+		return "run"
+	var fwd := _body_forward()
+	fwd.y = 0
+	if fwd.length_squared() < 0.001:
+		return "run"
+	fwd = fwd.normalized()
+	var ahead := h_vel.dot(fwd)
+	var to_left := h_vel.dot(Vector3.UP.cross(fwd))
+	var lateral := absf(to_left) > absf(ahead)
+	if blocking:
+		if lateral:
+			return "block_l" if to_left > 0.0 else "block_r"
+		return "block_back" if ahead < 0.0 else "block_fwd"
+	if lateral:
+		return "strafe_l" if to_left > 0.0 else "strafe_r"
+	return "walk_back" if ahead < 0.0 else "run"
+
 func _animate(delta: float) -> void:
-	var h_speed := Vector3(velocity.x, 0, velocity.z).length()
+	var h_vel := Vector3(velocity.x, 0, velocity.z)
+	var h_speed := h_vel.length()
 	var ratio := h_speed / walk_speed
 	var anim := "idle"
 	var t := 0.0
@@ -909,12 +1254,14 @@ func _animate(delta: float) -> void:
 		anim = "slide"
 	elif diving:
 		anim = "dive"
-	elif blocking:
-		anim = "block"
 	elif not is_on_floor():
 		anim = "air"
+	elif stagger_time > 0.0:
+		anim = "idle" # the visual holds its own recoil pose over this
 	elif h_speed > 0.3:
-		anim = "run"
+		anim = _locomotion_anim(h_vel)
+	elif blocking:
+		anim = "block"
 	last_anim = anim
 	last_anim_t = t
 	last_ratio = ratio

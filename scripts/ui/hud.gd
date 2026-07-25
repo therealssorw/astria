@@ -8,9 +8,15 @@ var player: Player
 var hp_fill: ColorRect
 var stam_fill: ColorRect
 var reticle: Control
+var combat_fx: Control
 var death_overlay: Control
 
 const BAR_W := 280.0
+## The stamina bar doubles as the guard meter — it reads as one while blocking,
+## and as a warning the moment the guard is gone.
+const STAMINA_COLOR := Color(0.95, 0.8, 0.25)
+const GUARD_COLOR := Color(0.45, 0.72, 1.0)
+const BROKEN_COLOR := Color(1.0, 0.35, 0.2)
 
 func _ready() -> void:
 	var root := Control.new()
@@ -25,6 +31,11 @@ func _ready() -> void:
 	reticle.set_anchors_preset(Control.PRESET_FULL_RECT)
 	reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(reticle)
+
+	combat_fx = CombatFxControl.new()
+	combat_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
+	combat_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(combat_fx)
 
 	var telegraph := TelegraphControl.new()
 	telegraph.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -92,9 +103,16 @@ func _process(_delta: float) -> void:
 		if players.size() > 0:
 			player = players[0]
 			(reticle as ReticleControl).player = player
+			(combat_fx as CombatFxControl).player = player
 		return
 	hp_fill.size.x = (BAR_W - 4) * clampf(player.health / player.max_health, 0.0, 1.0)
 	stam_fill.size.x = (BAR_W - 4) * clampf(player.stamina / player.max_stamina, 0.0, 1.0)
+	if player.stagger_time > 0.0:
+		stam_fill.color = BROKEN_COLOR
+	elif player.blocking:
+		stam_fill.color = GUARD_COLOR
+	else:
+		stam_fill.color = STAMINA_COLOR
 	death_overlay.visible = player.dead
 
 
@@ -139,6 +157,10 @@ class ReticleControl:
 	extends Control
 	var player: Player
 
+	const LOCK_COLOR := Color(1, 0.35, 0.25, 0.9)
+	## Amber ring = the target is staggered: punish it now.
+	const OPEN_COLOR := Color(1.0, 0.8, 0.25, 0.95)
+
 	func _process(_delta: float) -> void:
 		queue_redraw()
 
@@ -152,5 +174,57 @@ class ReticleControl:
 		if cam.is_position_behind(world_pos):
 			return
 		var p := cam.unproject_position(world_pos)
-		draw_arc(p, 18.0, 0, TAU, 32, Color(1, 0.35, 0.25, 0.9), 3.0)
-		draw_circle(p, 3.0, Color(1, 0.35, 0.25, 0.9))
+		var open := _target_is_open()
+		var color := OPEN_COLOR if open else LOCK_COLOR
+		draw_arc(p, 22.0 if open else 18.0, 0, TAU, 32, color, 3.0)
+		draw_circle(p, 3.0, color)
+
+	## Enemies count down `stagger_left`, players `stagger_time` — either way
+	## the target is helpless right now.
+	func _target_is_open() -> bool:
+		var t: Node = player.lock_target
+		var left: Variant = t.get("stagger_left")
+		if left == null:
+			left = t.get("stagger_time")
+		return left != null and float(left) > 0.0
+
+
+class CombatFxControl:
+	extends Control
+	## Screen-centre combat reads: hit confirms on your own punches, and the
+	## two guard events worth calling out — a parry and a broken guard.
+
+	var player: Player
+
+	func _process(_delta: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		if not is_instance_valid(player):
+			return
+		var mid := size / 2.0
+		if player.fx_hitmarker_time > 0.0:
+			_draw_hitmarker(mid, clampf(player.fx_hitmarker_time / 0.18, 0.0, 1.0))
+		if player.fx_parry_time > 0.0:
+			_draw_banner(mid, "PARRY", Color(1.0, 0.95, 0.6),
+					clampf(player.fx_parry_time / 0.55, 0.0, 1.0))
+		elif player.fx_break_time > 0.0:
+			_draw_banner(mid, "GUARD BROKEN", Color(1.0, 0.4, 0.25),
+					clampf(player.fx_break_time / 0.9, 0.0, 1.0))
+
+	## Four ticks flicking outward from the crosshair as they fade.
+	func _draw_hitmarker(mid: Vector2, life: float) -> void:
+		var color := Color(1, 1, 1, 0.9 * life)
+		var inner := 7.0 + 6.0 * (1.0 - life)
+		for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			draw_line(mid + d * inner, mid + d * (inner + 7.0), color, 2.0)
+
+	func _draw_banner(mid: Vector2, text: String, color: Color, life: float) -> void:
+		var font := get_theme_default_font()
+		if font == null:
+			return
+		var font_size := 34
+		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		var pos := mid + Vector2(-w * 0.5, -64.0 - 14.0 * (1.0 - life))
+		draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size,
+				Color(color.r, color.g, color.b, life))

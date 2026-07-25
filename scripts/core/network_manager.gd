@@ -371,18 +371,34 @@ func cl_play_swing(id: int, heavy: bool, section: int) -> void:
 	if pawn and not pawn.is_local:
 		pawn.puppet_play_swing(heavy, section)
 
-func server_broadcast_player_damage(id: int, health: float, blocked: bool,
-		knockback: Vector3) -> void:
-	rpc("cl_player_damaged", id, health, blocked, knockback)
+## `result` is a Player.Guard value (hit / blocked / parried / guard broken);
+## stamina rides along because the guard meter is server-owned.
+func server_broadcast_player_damage(id: int, health: float, result: int,
+		knockback: Vector3, stamina: float, attacker: int) -> void:
+	rpc("cl_player_damaged", id, health, result, knockback, stamina, attacker)
 	var pawn := _pawn(id)  # host applies its own fx locally too
 	if pawn:
-		pawn.net_apply_damage(health, blocked, knockback)
+		pawn.net_apply_damage(health, result, knockback, stamina, attacker)
 
 @rpc("authority", "call_remote", "reliable")
-func cl_player_damaged(id: int, health: float, blocked: bool, knockback: Vector3) -> void:
+func cl_player_damaged(id: int, health: float, result: int, knockback: Vector3,
+		stamina: float, attacker: int) -> void:
 	var pawn := _pawn(id)
 	if pawn:
-		pawn.net_apply_damage(health, blocked, knockback)
+		pawn.net_apply_damage(health, result, knockback, stamina, attacker)
+
+## Parried or guard-broken: everyone plays the helpless pose for the same beat.
+func server_broadcast_player_stagger(id: int, duration: float) -> void:
+	rpc("cl_player_staggered", id, duration)
+	var pawn := _pawn(id)
+	if pawn:
+		pawn.net_stagger(duration)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_player_staggered(id: int, duration: float) -> void:
+	var pawn := _pawn(id)
+	if pawn:
+		pawn.net_stagger(duration)
 
 func server_record_player_death(victim: int, attacker: int) -> void:
 	var victim_name: String = players[victim]["name"] if players.has(victim) else str(victim)
@@ -463,17 +479,29 @@ func cl_enemy_states(batch: Array) -> void:
 		if e:
 			e.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
 
-func server_broadcast_enemy_damage(enemy_name: String, health: float, blocked: bool) -> void:
-	rpc("cl_enemy_damaged", enemy_name, health, blocked)
+## The host already ran its own fx inside take_damage — clients only.
+func server_broadcast_enemy_damage(enemy_name: String, health: float,
+		result: int, attacker: int) -> void:
+	rpc("cl_enemy_damaged", enemy_name, health, result, attacker)
 
 @rpc("authority", "call_remote", "reliable")
-func cl_enemy_damaged(enemy_name: String, health: float, blocked: bool) -> void:
-	var en := _enemies_node()
-	if en == null:
-		return
-	var e := en.get_node_or_null(enemy_name)
+func cl_enemy_damaged(enemy_name: String, health: float, result: int,
+		attacker: int) -> void:
+	var e := _enemy(enemy_name)
 	if e:
-		e.net_apply_damage(health, blocked)
+		e.net_apply_damage(health, result, attacker)
+
+func server_broadcast_enemy_stagger(enemy_name: String, duration: float) -> void:
+	rpc("cl_enemy_staggered", enemy_name, duration)
+	var e := _enemy(enemy_name)  # host plays the pose locally too
+	if e:
+		e.net_stagger(duration)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_enemy_staggered(enemy_name: String, duration: float) -> void:
+	var e := _enemy(enemy_name)
+	if e:
+		e.net_stagger(duration)
 
 func server_record_enemy_kill(enemy_name: String, attacker: int) -> void:
 	if attacker > 0 and players.has(attacker):
@@ -599,3 +627,7 @@ func _enemies_node() -> Node:
 func _pawn(id: int) -> Node:
 	var pn := _players_node()
 	return pn.get_node_or_null(str(id)) if pn else null
+
+func _enemy(enemy_name: String) -> Node:
+	var en := _enemies_node()
+	return en.get_node_or_null(enemy_name) if en else null
