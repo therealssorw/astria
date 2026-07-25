@@ -33,9 +33,15 @@ const GOLD_DESPAWN_SECONDS := 120.0        # unclaimed piles vanish after this
 ## cover the lag between the client's view of its position and the server's.
 const SHOP_RANGE_SLACK := 2.5
 
-## peer_id -> {"name", "kills", "deaths", "gold", "items"}. Server-owned.
-## "gold"/"items" are private to their owner: they are stripped before the
-## registry is broadcast, and each owner gets theirs alone through cl_purse.
+## Quick-use bar: which carried item each of the 9 slots points at, and which
+## slot is in hand. Server-owned like the bag itself — what you are holding is
+## gameplay, not a screen decoration.
+const HOTBAR_SLOTS := 9
+
+## peer_id -> {"name", "kills", "deaths", "gold", "items", "hotbar", "hot_slot"}.
+## Server-owned. "gold"/"items"/"hotbar"/"hot_slot" are private to their owner:
+## they are stripped before the registry is broadcast, and each owner gets
+## theirs alone through cl_purse.
 var players := {}
 var is_dedicated := false
 var active := false            # hosting or connected right now
@@ -50,6 +56,9 @@ signal join_failed(reason: String)
 signal purse_changed
 ## Server's verdict on a trade the local player asked for.
 signal trade_result(message: String, ok: bool)
+## The server acted on a "use the held item" request. `item_id` is "" when
+## there was nothing to use; `message` is the line to show the player.
+signal item_used(item_id: String, message: String)
 
 var _upnp_thread: Thread
 var _upnp_cleanup_thread: Thread
@@ -221,7 +230,8 @@ func _handle_world_ready(id: int) -> void:
 	if dn:
 		for d in dn.get_children():
 			rpc_id(id, "cl_spawn_gold", String(d.name), d.global_position, d.amount)
-	rpc_id(id, "cl_sync_players", players)
+	# the public slice only — a newcomer has no business seeing anyone's purse
+	rpc_id(id, "cl_sync_players", _public_players())
 	# then their own pawn, broadcast to everyone (including them)
 	_server_spawn_player(id)
 
@@ -278,8 +288,17 @@ func _public_players() -> Dictionary:
 	return out
 
 func _make_entry(username: String) -> Dictionary:
-	return {"name": username, "kills": 0, "deaths": 0, "gold": 0,
-			"items": _starting_items()}
+	var entry := {"name": username, "kills": 0, "deaths": 0, "gold": 0,
+			"items": _starting_items(), "hotbar": _empty_hotbar(), "hot_slot": 0,
+			"seen": {}} # items already offered a hotbar slot (server-side only)
+	_refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
+	return entry
+
+func _empty_hotbar() -> Array:
+	var bar := []
+	bar.resize(HOTBAR_SLOTS)
+	bar.fill("")
+	return bar
 
 ## Testing aid: launch the SERVER with --dev-items and everyone who joins it
 ## starts with one of every item in the catalogue. It is deliberately a server
@@ -386,7 +405,7 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 		entry["gold"] = gold + price
 		_trade_reply(id, "Sold %s for %d gold." % [label, price], true)
 
-	_send_purse(id)
+	_bag_changed(id)
 
 # ---------------- cheats (development only) ----------------
 #
@@ -424,7 +443,147 @@ func _server_cheat_give(id: int, item_id: String) -> void:
 	var items: Dictionary = players[id]["items"]
 	items[item_id] = int(items.get(item_id, 0)) + 1
 	_trade_reply(id, "Gave %s." % ItemDb.item_name(item_id), true)
+	_bag_changed(id)
+
+# ---------------- hotbar (server-owned) ----------------
+#
+# The bar is part of the registry, not a client-side view of it: what you are
+# holding decides what "use" does, so a client only ever ASKS to move the
+# selection or to put an item in a slot. Picking anything up drops it onto the
+# first free slot, and an item that leaves the bag leaves the bar with it.
+
+## Put NEWLY carried items on the first free slot, and take gone ones off.
+## Called after every change to a bag, so something just picked up is in hand
+## without a trip to the inventory screen. Only the first copy of an item does
+## this, and only once: "seen" remembers what has already been offered a slot,
+## so clearing a slot by hand stays cleared instead of filling itself back in
+## the next time anything at all changes. A full bar keeps what it has, and
+## dropping an item entirely forgets it — buy it again and it comes back.
+func _refill_hotbar(entry: Dictionary) -> void:
+	var bar: Array = entry["hotbar"]
+	var items: Dictionary = entry["items"]
+	var seen: Dictionary = entry["seen"]
+	# an item that is gone from the bag can't stay in a slot, or be remembered
+	for i in bar.size():
+		if bar[i] != "" and int(items.get(bar[i], 0)) <= 0:
+			bar[i] = ""
+	for known: String in seen.keys():
+		if int(items.get(known, 0)) <= 0:
+			seen.erase(known)
+	for item_id: String in items:
+		if seen.has(item_id):
+			continue
+		seen[item_id] = true
+		if bar.has(item_id):
+			continue
+		var free := bar.find("")
+		if free < 0:
+			continue # bar is full — this one waits in the bag
+		bar[free] = item_id
+
+## Anything that adds to or takes from a bag ends here: the bar is brought back
+## in line with what is actually carried, then the owner is re-synced.
+func _bag_changed(id: int) -> void:
+	if players.has(id):
+		_refill_hotbar(players[id])
 	_send_purse(id)
+
+## Client -> server: I'm holding this slot now (R1/L1, or a click in the panel).
+func request_hotbar_select(slot: int) -> void:
+	if multiplayer.is_server():
+		_server_hotbar_select(multiplayer.get_unique_id(), slot)
+	else:
+		rpc_id(1, "sv_hotbar_select", slot)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_hotbar_select(slot: int) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_hotbar_select(multiplayer.get_remote_sender_id(), slot)
+
+func _server_hotbar_select(id: int, slot: int) -> void:
+	if not players.has(id) or slot < 0 or slot >= HOTBAR_SLOTS:
+		return
+	players[id]["hot_slot"] = slot
+	_send_purse(id)
+
+## Client -> server: put this carried item in this slot (empty id clears it).
+func request_hotbar_assign(slot: int, item_id: String) -> void:
+	if multiplayer.is_server():
+		_server_hotbar_assign(multiplayer.get_unique_id(), slot, item_id)
+	else:
+		rpc_id(1, "sv_hotbar_assign", slot, item_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_hotbar_assign(slot: int, item_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_hotbar_assign(multiplayer.get_remote_sender_id(), slot, item_id)
+
+func _server_hotbar_assign(id: int, slot: int, item_id: String) -> void:
+	if not players.has(id) or slot < 0 or slot >= HOTBAR_SLOTS:
+		return
+	var entry: Dictionary = players[id]
+	var bar: Array = entry["hotbar"]
+	if item_id == "":
+		bar[slot] = ""
+		_send_purse(id)
+		return
+	# you can only put something on the bar that you are actually carrying
+	if int(entry["items"].get(item_id, 0)) <= 0:
+		_trade_reply(id, "You aren't carrying that.", false)
+		_send_purse(id)
+		return
+	var already: int = bar.find(item_id)
+	if already >= 0:
+		bar[already] = bar[slot] # swap, so a drag never duplicates an entry
+	bar[slot] = item_id
+	entry["hot_slot"] = slot
+	_send_purse(id)
+
+## Client -> server: use whatever is in the slot I'm holding.
+func request_use_item() -> void:
+	if multiplayer.is_server():
+		_server_use_item(multiplayer.get_unique_id())
+	else:
+		rpc_id(1, "sv_use_item")
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_use_item() -> void:
+	if not multiplayer.is_server():
+		return
+	_server_use_item(multiplayer.get_remote_sender_id())
+
+## The server decides what using an item does — never the client. Right now no
+## item in the catalogue has an effect, so this validates and reports; give an
+## item one by branching on item_id here (consume a stack, heal, equip...),
+## and remember to _bag_changed(id) if the bag changed.
+func _server_use_item(id: int) -> void:
+	if not players.has(id):
+		return
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		return
+	var entry: Dictionary = players[id]
+	var slot := int(entry.get("hot_slot", 0))
+	var bar: Array = entry["hotbar"]
+	if slot < 0 or slot >= bar.size():
+		return
+	var item_id: String = bar[slot]
+	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
+		_use_reply(id, "", "Nothing in that slot.")
+		return
+	_use_reply(id, item_id, "%s — nothing happens yet." % ItemDb.item_name(item_id))
+
+func _use_reply(id: int, item_id: String, message: String) -> void:
+	if id == multiplayer.get_unique_id():
+		cl_item_used(item_id, message)
+	else:
+		rpc_id(id, "cl_item_used", item_id, message)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_item_used(item_id: String, message: String) -> void:
+	item_used.emit(item_id, message)
 
 ## Is this player actually standing at that NPC? The server owns every pawn's
 ## position (speed-validated in sv_player_state), so this can't be spoofed.
@@ -456,15 +615,19 @@ func _send_purse(id: int) -> void:
 	var entry: Dictionary = players.get(id, {})
 	var gold := int(entry.get("gold", 0))
 	var items: Dictionary = entry.get("items", {})
+	var bar: Array = entry.get("hotbar", _empty_hotbar())
+	var slot := int(entry.get("hot_slot", 0))
 	if id == multiplayer.get_unique_id():
-		cl_purse(gold, items)
+		cl_purse(gold, items, bar, slot)
 	else:
-		rpc_id(id, "cl_purse", gold, items)
+		rpc_id(id, "cl_purse", gold, items, bar, slot)
 
 @rpc("authority", "call_remote", "reliable")
-func cl_purse(gold: int, items: Dictionary) -> void:
+func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int) -> void:
 	GameStats.coins = gold
 	GameStats.items = items.duplicate(true) # never alias the server's dictionary
+	GameStats.hotbar = hotbar.duplicate()
+	GameStats.hot_slot = hot_slot
 	GameStats.changed.emit()
 
 # ---------------- state replication ----------------

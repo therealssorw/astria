@@ -14,6 +14,8 @@ signal changed
 
 var coins := 0
 var items := {}   # item id (see ItemDb) -> how many are carried
+var hotbar: Array = []  # 9 slots, each an item id or "" — filled by the server
+var hot_slot := 0       # which of those slots is in hand
 
 func item_count(id: String) -> int:
 	return int(items.get(id, 0))
@@ -21,3 +23,15 @@ func item_count(id: String) -> int:
 ## Carried item ids, in the order the server holds them.
 func owned_ids() -> Array:
 	return items.keys()
+
+## What the selected hotbar slot holds, or "" when it is empty.
+func held_id() -> String:
+	if hot_slot < 0 or hot_slot >= hotbar.size():
+		return ""
+	return str(hotbar[hot_slot])
+
+## The item in a slot, or "" — safe to call before the first purse sync.
+func hotbar_id(slot: int) -> String:
+	if slot < 0 or slot >= hotbar.size():
+		return ""
+	return str(hotbar[slot])

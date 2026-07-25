@@ -342,6 +342,7 @@ func _local_tick(delta: float) -> void:
 		_gamepad_look(delta)
 		_update_lockon(delta)
 		_camera_assist(delta)
+		_handle_hotbar_input()
 		if stagger_time <= 0.0: # helpless: no guard, no swings, no slides
 			_handle_block()
 			_handle_attack_input(delta)
@@ -356,6 +357,21 @@ func _local_tick(delta: float) -> void:
 	_regen_stamina(delta)
 	_animate(delta)
 	_net_send(delta)
+
+## R1/L1 (or ] and [) walk the hotbar selection, and use_item uses whatever
+## that slot holds. Both are requests: the server owns the bar and decides what
+## using an item does, so nothing is applied here.
+func _handle_hotbar_input() -> void:
+	var step := 0
+	if Input.is_action_just_pressed("hotbar_next"):
+		step += 1
+	if Input.is_action_just_pressed("hotbar_prev"):
+		step -= 1
+	if step != 0:
+		var slots: int = Net.HOTBAR_SLOTS
+		Net.request_hotbar_select(posmod(GameStats.hot_slot + step, slots))
+	if Input.is_action_just_pressed("use_item"):
+		Net.request_use_item()
 
 ## Owner-only presentation: HUD cue timers and the camera kick from impacts.
 func _tick_local_fx(delta: float) -> void:
@@ -927,16 +943,10 @@ func _handle_slide_input() -> void:
 	pending_slide_time = _time
 	if sliding or slide_cooldown_left > 0.0:
 		return
+	# A press with both feet down does nothing: slide shares the jump button, so
+	# on the ground that press IS the jump. Every slide is landed into — dive out
+	# of the air, or press just before touching down (slide_input_buffer below).
 	if is_on_floor():
-		# grounded press: slide right now in the direction of travel
-		var ground_dir := _input_dir()
-		if ground_dir == Vector3.ZERO:
-			var h := Vector3(velocity.x, 0, velocity.z)
-			if h.length() < 0.5:
-				return # standing still — nothing to slide into
-			ground_dir = h.normalized()
-		slide_dir = ground_dir
-		_start_ground_slide()
 		return
 	# air press: dive, then slide on landing
 	var dir := _input_dir()

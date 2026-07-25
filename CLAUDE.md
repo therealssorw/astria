@@ -68,9 +68,20 @@ mixed pile.
   input map. Keyboard/mouse bindings can be proposed as usual, but the pad half
   is always the user's call — the layout is a design decision, and a clash with
   slide/lock-on/interact is invisible from the code.
-- Bindings today: `attack` = LMB / RT, `block` = RMB / LT, `slide` = Space /
-  B (cross), `lock_on` = MMB / R3, `interact` = E / Y (triangle), `inventory` =
-  Tab / D-pad left, `sprint` = Shift, with no pad button by request.
+- Bindings today: `attack` = LMB / RT, `block` = RMB / LT, `jump` = Space /
+  A (cross), `slide` = Space or Ctrl / A (cross) — the SAME button as jump,
+  `lock_on` = MMB / R3, `interact` = E / Y (triangle), `inventory` = Tab /
+  D-pad left, `sprint` = Shift, with no pad button by request.
+
+## Movement: sliding
+
+- Slide and jump share a button on purpose, and there is no standing slide:
+  a press with both feet down is the jump, a press in the air is the dive, and
+  the dive turns into the slide when you land (`_handle_slide_input` returns
+  early on `is_on_floor`). Pressing it just before touching down counts too —
+  `slide_input_buffer` is what makes a jump-then-slide feel forgiving.
+- So every slide is landed into. If a slide is ever wanted from a standing
+  start again, it needs its own button first (see Controls).
 
 ## Movement: sprinting
 
@@ -131,6 +142,11 @@ mixed pile.
   `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
   WASD/arrows + E/Enter, or gamepad stick + A. It sets the player's `ui_open`
   while it is showing. Purely local — nothing about dialog is networked.
+- `NpcInteractable` opens the box from `_unhandled_input`, NEVER by polling
+  `is_action_just_pressed`: the box marks its own interact presses handled, and
+  polling let the press that walked off the last line reopen the conversation
+  in the same frame — you could not leave. Any future "press E at a thing" must
+  read the event, not the action state, for the same reason.
 - The in-world marker is a HUD overlay, not a 3D node: `NpcInteractable` only
   keeps a `prompt_alpha` and a `prompt_anchor()`, and
   `scripts/ui/dialog/npc_prompt_overlay.gd` (added by `hud.gd`) projects that
@@ -180,6 +196,33 @@ mixed pile.
 - `GameStats.coins` / `.items` are read-only MIRRORS that `cl_purse` fills, so
   UI code reads them instead of the network layer. Writing to them changes
   nothing real.
+
+## Hotbar
+
+- Nine slots, server-owned like the bag: `Net.players[id]["hotbar"]` (item id
+  or "" per slot) and `["hot_slot"]` (which one is in hand). They ride along
+  with `cl_purse` into `GameStats.hotbar` / `.hot_slot`, so the UI reads the
+  mirror and never writes it.
+- Picking anything up drops it on the first free slot — `Net._refill_hotbar`,
+  called from `_bag_changed(id)`, which every bag mutation must go through
+  instead of `_send_purse` directly. It only does this the FIRST time an item
+  is carried (`entry["seen"]`), so clearing a slot by hand stays cleared;
+  losing the item entirely forgets it again.
+- Requests: `request_hotbar_select(slot)` (R1/L1 in the world, a click in the
+  panel), `request_hotbar_assign(slot, id)` ("" clears; assigning something
+  already on the bar swaps rather than duplicating) and `request_use_item()`.
+- Using is server-side: `Net._server_use_item` checks the pawn is alive and
+  the slot really holds a carried item, then answers on the `item_used`
+  signal. No item has an effect yet — that branch is the hook, and anything
+  that changes the bag there must end in `_bag_changed(id)`.
+- `inventory_ui.gd` draws both copies of the bar (the always-on one and the
+  labelled "Hotbar" row at the top of the panel) from the same mirror. Slots
+  are Buttons so the mouse clicks them and a gamepad walks them with focus;
+  `ui_accept` (PS5 Cross / Xbox A) selects. A bag slot puts its item in the
+  held hotbar slot; the held slot again clears it.
+- Test: `--headless res://tests/test_hotbar.tscn` (prints
+  `HOTBARTEST RESULT=PASS/FAIL`) — auto-placement, wrap/refusal of bad slots,
+  swap-not-duplicate, cleared slots staying cleared, and use replies.
 
 ## Development cheats
 
