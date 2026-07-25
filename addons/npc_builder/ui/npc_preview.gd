@@ -78,8 +78,9 @@ func apply(def: NpcDefinition) -> void:
 		_visual = NpcVisual.new()
 		_visual.name = "Npc"
 		_visual.definition = def
+		# Adding it builds it, clips and all -- the preview has an animation
+		# picker. Do not also call build(): that is what draws the NPC twice.
 		_viewport.add_child(_visual)
-		_visual.build()
 	else:
 		_visual.rebuild(def)
 	_focus = float(_visual.layout.get("crown", 1.85)) * 0.55

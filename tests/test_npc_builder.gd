@@ -24,6 +24,7 @@ func _ready() -> void:
 		_check_no_coincident_surfaces(category)
 	_check_reproportioning()
 	_check_rebuild_is_stable()
+	_check_build_is_once()
 	_check_colours()
 	_check_save_roundtrip()
 	_check_rouge_still_builds()
@@ -224,6 +225,29 @@ func _check_rebuild_is_stable() -> void:
 	_expect(drift < 0.0001, "re-rigging moved bones by %.4fm; it should be idempotent" % drift)
 	_expect(visual.skeleton.find_children("*", "MeshInstance3D", false, false).size()
 			== NpcDefinition.SLOTS.size(), "re-rigging left duplicate or missing part meshes")
+	_drop(visual)
+
+## However many times a visual is asked to build, it builds once.
+##
+## Entering the tree builds it -- in the editor too, because tool code that
+## says NpcVisual.new() gets a live instance whose notifications fire like any
+## other node's. The builder preview and NpcCharacter used to call build()
+## again on top of that, which parented a second model, a second skeleton and a
+## second set of part meshes in exactly the same place. Every voxel surface was
+## drawn twice and the two copies z-fought over every pixel, which is what "the
+## meshes overlap" looked like on screen.
+func _check_build_is_once() -> void:
+	var visual := _spawn(_definition_for("Base"))
+	visual.build()
+	visual.build(false)
+	var skeletons := visual.find_children("*", "Skeleton3D", true, false).size()
+	var meshes := visual.find_children("*", "MeshInstance3D", true, false).size()
+	var players := visual.find_children("*", "AnimationPlayer", true, false).size()
+	_expect(skeletons == 1, "building twice left %d skeletons, expected 1" % skeletons)
+	_expect(meshes == NpcDefinition.SLOTS.size(),
+			"building twice left %d part meshes, expected %d -- coincident copies z-fight"
+					% [meshes, NpcDefinition.SLOTS.size()])
+	_expect(players == 1, "building twice left %d animation players, expected 1" % players)
 	_drop(visual)
 
 ## Palette overrides and the tint both have to reach the baked vertex colours.

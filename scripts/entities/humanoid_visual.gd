@@ -77,17 +77,25 @@ var _react_lean := 0.0     # transient recoil from a hit, decays back to 0
 var _hitstop_time := 0.0   # >0: animation nearly frozen (impact emphasis)
 var _stagger_time := 0.0   # >0: helpless recoil pose overrides the clip
 
+## Whether entering the tree builds the Mixamo clip library as well as the
+## model. Set it before add_child; a static editor preview does not need
+## fifteen FBX loads.
+var build_clips := true
+
 var _built := false
 
 func _ready() -> void:
-	if not _built:
-		build()
+	build(build_clips)
 
-## Assembles the character. _ready does this by itself in game; editor tooling
-## has to call it, because this is not a @tool script and so none of its
-## notifications fire in the editor. `with_animations` off skips the clip
-## library, which is fifteen FBX loads nobody needs for a static preview.
+## Assembles the character. Entering the tree does this by itself -- including
+## under the editor, where tool code that says `SomeVisual.new()` gets a live
+## instance whose notifications fire like any other. Building is therefore
+## strictly once per node: a second call would parent a second model, a second
+## skeleton and a second set of meshes in exactly the same place, and the two
+## copies would z-fight over every pixel.
 func build(with_animations := true) -> void:
+	if _built:
+		return
 	_built = true
 	_build_model()
 	if skeleton == null:

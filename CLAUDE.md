@@ -208,13 +208,21 @@ mixed pile.
 - `NpcVisual._adapt_hips` rebases the clips' Hips position track per NPC — it
   was authored around a human pelvis and would otherwise yank a short-legged
   voxel NPC up to Rouge's hip height.
-- `HumanoidVisual` is not a `@tool` script, so editor code (the builder
-  preview, `NpcCharacter` in the world view) must call `build()` by hand.
+- A visual builds itself when it enters the tree, and never twice. `_ready`
+  fires in the editor too: `HumanoidVisual` has no `@tool`, but that only
+  governs scripts the editor loads with a scene — tool code that says
+  `NpcVisual.new()` gets a live instance whose notifications run normally. So
+  editor callers (the builder preview, `NpcCharacter` in the world view) just
+  `add_child` and are done; calling `build()` as well used to parent a second
+  model, skeleton and mesh set over the first, which is what made an NPC look
+  like its meshes overlapped. To skip the clip library for a static preview,
+  set `build_clips = false` BEFORE adding the node.
 - Test: `--headless res://tests/test_npc_builder.tscn` (prints
   `NPCTEST RESULT=PASS/FAIL`). It rigs every part model in the library, checks
   the bind sets, that animation still moves the reshaped bones, that re-rigging
-  is idempotent, that colours reach the mesh, and that a saved NPC reloads as a
-  talkable scene — plus that Rouge still builds his own rig and full clip set.
+  is idempotent, that building twice still leaves one of everything, that
+  colours reach the mesh, and that a saved NPC reloads as a talkable scene —
+  plus that Rouge still builds his own rig and full clip set.
 
 ## Multiplayer
 

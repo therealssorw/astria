@@ -35,12 +35,11 @@ func _rebuild() -> void:
 	visual = NpcVisual.new()
 	visual.name = "Visual"
 	visual.definition = definition
+	# An NPC standing in the world view only has to look right, not walk, so
+	# the editor skips the clip library. Adding it is what builds it -- asking
+	# again afterwards would parent a second copy over the first.
+	visual.build_clips = not Engine.is_editor_hint()
 	add_child(visual)
-	if Engine.is_editor_hint():
-		# NpcVisual is not a @tool script, so nothing built itself just now.
-		# Do it by hand, minus the clip library -- an NPC standing in the world
-		# view only has to look right, not walk.
-		visual.build(false)
 
 	interactable = NpcInteractable.new()
 	interactable.name = "Interactable"
