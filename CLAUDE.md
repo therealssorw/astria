@@ -199,9 +199,9 @@ mixed pile.
 - `NpcRig` (`scripts/entities/npc/npc_rig.gd`) then does two things:
   - Reshapes the skeleton onto the voxel proportions instead of stretching the
     art onto human ones. That is only safe because the retargeted clips are
-    rotation-only — every bone but Hips has just a rotation track, so rest
-    positions are free to move. If the animations are ever reimported with
-    per-bone position tracks this silently breaks; the test catches it.
+	rotation-only — every bone but Hips has just a rotation track, so rest
+	positions are free to move. If the animations are ever reimported with
+	per-bone position tracks this silently breaks; the test catches it.
   - Rigidly skins each part: one bone per voxel, weight 1, picked by nearest
 	bone segment within that slot's allowed bone set (`BIND_SETS`). Whole
 	voxels are bound as units, so they rotate about joints instead of tearing.
