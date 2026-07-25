@@ -224,6 +224,28 @@ mixed pile.
   `HOTBARTEST RESULT=PASS/FAIL`) — auto-placement, wrap/refusal of bad slots,
   swap-not-duplicate, cleared slots staying cleared, and use replies.
 
+## Held items (what you can see in a hand)
+
+- An item is drawn in the hand when its `ItemDb` entry has a `"hold"` block:
+  `{"model", "scale", "pos", "rot" (degrees), "tint"}`, everything but the
+  model falling back to `ItemDb.HOLD_DEFAULTS`. The defaults are where the
+  grip meets the hand bone — fix a bad fit there once rather than per item.
+  The three swords share one model and differ only by scale and tint until
+  each has art of its own.
+- `HumanoidVisual.set_held_item(id)` parents the model to a `BoneAttachment3D`
+  on `RightHand`, so it follows every clip and both Rouge and voxel NPCs get
+  it for free. Calling it with the same id twice does nothing.
+- Which item that is comes from the SERVER: `held` is the one part of a bag in
+  `_public_players`, because it is in your hand where everyone can see it. Any
+  bar change goes through `Net._hotbar_changed`, which re-syncs the owner's
+  purse AND rebroadcasts the registry; `player.gd` redraws on
+  `player_list_changed`. Read it with `Net.held_of(peer_id)` — that works on
+  the server (which has the real bar) and on a client (which has `held`).
+- Fitting a new weapon: put its `"hold"` block in, set `ITEM` in
+  `tests/preview_held_item.gd`, and run
+  `godot --path . res://tests/preview_held_item.tscn` (NO `--headless` — it
+  renders). It writes `user://hold_preview.png` for eyeballing the grip.
+
 ## Development cheats
 
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —

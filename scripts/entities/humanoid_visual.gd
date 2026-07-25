@@ -65,8 +65,14 @@ const HITSTOP_SCALE := 0.06
 ## lets the player punch faster than enemies sharing this visual.
 @export var attack_speed_mult := 1.0
 
+## Bone a carried item hangs off. Every rig here is retargeted onto
+## SkeletonProfileHumanoid, so the name is the same for Rouge and for NPCs.
+const HOLD_BONE := "RightHand"
+
 var model: Node3D
 var skeleton: Skeleton3D
+var held_id := ""          # item currently drawn in the hand ("" = empty)
+var _held_node: Node3D     # the BoneAttachment3D carrying it
 var anim_player: AnimationPlayer
 var clip_lengths := {}
 var _mats: Array[StandardMaterial3D] = []
@@ -360,6 +366,63 @@ func on_attack_started(heavy: bool, combo_index: int, duration := -1.0) -> void:
 	if duration > 0.0:
 		speed = clip_lengths[key] / duration
 	_restart(key, 0.18, speed)
+
+# ---------------- held item ----------------
+#
+# What a character carries is a model parented to the hand BONE, so it follows
+# every clip without any of them knowing about it. The id comes from the server
+# (see Net's public registry) — this only draws it.
+
+## Put `id` in this character's hand, or "" for empty hands. Items with no
+## "hold" entry in ItemDb are carried invisibly, which is what the icons in the
+## bag are for. Safe to call every frame: the same id twice does nothing.
+func set_held_item(id: String) -> void:
+	if id == held_id:
+		return
+	held_id = id
+	if is_instance_valid(_held_node):
+		_held_node.queue_free()
+	_held_node = null
+	if id == "" or skeleton == null:
+		return
+	var cfg := ItemDb.hold_config(id)
+	if cfg.is_empty():
+		return
+	var bone := skeleton.find_bone(HOLD_BONE)
+	if bone < 0:
+		push_warning("HumanoidVisual: no '%s' bone to hold %s with" % [HOLD_BONE, id])
+		return
+	var scene := load(str(cfg["model"])) as PackedScene
+	if scene == null:
+		push_warning("HumanoidVisual: %s has no model at %s" % [id, cfg["model"]])
+		return
+
+	var attach := BoneAttachment3D.new()
+	attach.name = "HeldItem"
+	attach.bone_name = HOLD_BONE
+	skeleton.add_child(attach)
+	var inst: Node3D = scene.instantiate()
+	attach.add_child(inst)
+	inst.transform = Transform3D(
+			Basis.from_euler(Vector3(
+				deg_to_rad(cfg["rot"].x), deg_to_rad(cfg["rot"].y), deg_to_rad(cfg["rot"].z))),
+			cfg["pos"])
+	inst.scale = Vector3.ONE * float(cfg["scale"])
+	_tint_held(inst, cfg["tint"])
+	_held_node = attach
+
+## One model serves several items, so a tint stands in for different metals
+## until each has art of its own. White leaves the material alone.
+func _tint_held(root: Node, tint: Color) -> void:
+	if tint == Color(1, 1, 1):
+		return
+	for mi in root.find_children("*", "MeshInstance3D", true, false):
+		var mesh_inst := mi as MeshInstance3D
+		for i in mesh_inst.get_surface_override_material_count():
+			var mat := mesh_inst.mesh.surface_get_material(i)
+			var over := (mat.duplicate() if mat else StandardMaterial3D.new()) as BaseMaterial3D
+			over.albedo_color = over.albedo_color * tint
+			mesh_inst.set_surface_override_material(i, over)
 
 func flash(color: Color, duration := 0.15) -> void:
 	_flash_time = duration

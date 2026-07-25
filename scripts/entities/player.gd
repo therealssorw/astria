@@ -294,6 +294,18 @@ func _ready() -> void:
 		_woosh_player.stream = swing_wooshes
 		_woosh_player.position.y = 1.2
 		add_child(_woosh_player)
+	# what this pawn is holding rides along with the public registry, so every
+	# peer draws the same thing in its hand
+	Net.player_list_changed.connect(_refresh_held_item)
+	_refresh_held_item()
+
+## Put the hotbar item the SERVER says this player holds into its hand. Purely
+## visual: the pawn asks nobody's permission to draw it, and the id is not
+## something the local client chose.
+func _refresh_held_item() -> void:
+	if body_visual == null or not body_visual.has_method("set_held_item"):
+		return
+	body_visual.set_held_item(Net.held_of(peer_id))
 
 func _make_nametag() -> void:
 	var tag := Label3D.new()

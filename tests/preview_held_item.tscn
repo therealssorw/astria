@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dn1pd72eqc0ay"]
+
+[ext_resource type="Script" path="res://tests/preview_held_item.gd" id="1_prev"]
+
+[node name="HeldItemPreview" type="Node3D"]
+script = ExtResource("1_prev")

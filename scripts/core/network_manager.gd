@@ -284,8 +284,27 @@ func _public_players() -> Dictionary:
 	var out := {}
 	for id in players:
 		var e: Dictionary = players[id]
-		out[id] = {"name": e["name"], "kills": e["kills"], "deaths": e["deaths"]}
+		# "held" is the one part of a bag everyone can see: it is in your hand,
+		# so every other pawn has to draw it. The rest of the bag stays private.
+		out[id] = {"name": e["name"], "kills": e["kills"], "deaths": e["deaths"],
+				"held": held_item(e)}
 	return out
+
+## What peer `id` has in hand, whichever side of the wire this is: the server
+## reads its own bar, a client reads the "held" field of the public registry.
+func held_of(id: int) -> String:
+	var entry: Dictionary = players.get(id, {})
+	if entry.has("hotbar"):
+		return held_item(entry)
+	return str(entry.get("held", ""))
+
+## The item in an entry's selected hotbar slot, or "".
+func held_item(entry: Dictionary) -> String:
+	var bar: Array = entry.get("hotbar", [])
+	var slot := int(entry.get("hot_slot", 0))
+	if slot < 0 or slot >= bar.size():
+		return ""
+	return str(bar[slot])
 
 func _make_entry(username: String) -> Dictionary:
 	var entry := {"name": username, "kills": 0, "deaths": 0, "gold": 0,
@@ -486,7 +505,14 @@ func _refill_hotbar(entry: Dictionary) -> void:
 func _bag_changed(id: int) -> void:
 	if players.has(id):
 		_refill_hotbar(players[id])
+	_hotbar_changed(id)
+
+## The bar moved: the owner gets the new bar privately, and everyone gets the
+## public registry again — it carries "held", which is what other players draw
+## in this one's hand.
+func _hotbar_changed(id: int) -> void:
 	_send_purse(id)
+	_sync_players()
 
 ## Client -> server: I'm holding this slot now (R1/L1, or a click in the panel).
 func request_hotbar_select(slot: int) -> void:
@@ -505,7 +531,7 @@ func _server_hotbar_select(id: int, slot: int) -> void:
 	if not players.has(id) or slot < 0 or slot >= HOTBAR_SLOTS:
 		return
 	players[id]["hot_slot"] = slot
-	_send_purse(id)
+	_hotbar_changed(id)
 
 ## Client -> server: put this carried item in this slot (empty id clears it).
 func request_hotbar_assign(slot: int, item_id: String) -> void:
@@ -527,7 +553,7 @@ func _server_hotbar_assign(id: int, slot: int, item_id: String) -> void:
 	var bar: Array = entry["hotbar"]
 	if item_id == "":
 		bar[slot] = ""
-		_send_purse(id)
+		_hotbar_changed(id)
 		return
 	# you can only put something on the bar that you are actually carrying
 	if int(entry["items"].get(item_id, 0)) <= 0:
@@ -539,7 +565,7 @@ func _server_hotbar_assign(id: int, slot: int, item_id: String) -> void:
 		bar[already] = bar[slot] # swap, so a drag never duplicates an entry
 	bar[slot] = item_id
 	entry["hot_slot"] = slot
-	_send_purse(id)
+	_hotbar_changed(id)
 
 ## Client -> server: use whatever is in the slot I'm holding.
 func request_use_item() -> void:

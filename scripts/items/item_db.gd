@@ -12,6 +12,12 @@ extends RefCounted
 ## Optional per-item keys:
 ##   "sell"  — override the sell price instead of using SELL_RATIO
 ##   "desc"  — one-line flavour, shown as a tooltip
+##   "hold"  — the model a character carries while this item is in hand:
+##             {"model": <scene path>, "scale": float, "pos": Vector3,
+##              "rot": Vector3 (degrees), "tint": Color}. Everything but
+##             "model" is optional and defaults to HOLD_DEFAULTS, which is
+##             where the grip is lined up with the hand bone — tune the fit
+##             there once and every weapon follows.
 ##
 ## Selling pays SELL_RATIO of the buy price, rounded down.
 ##
@@ -23,29 +29,59 @@ extends RefCounted
 
 const SELL_RATIO := 0.5
 
+const SWORD_MODEL := "res://Assets/Models/Items/Weapons/Swords/tony_sword.fbx"
+
 const ITEMS := {
 	"wooden_sword": {
 		"name": "Wooden Sword",
 		"price": 20,
 		"desc": "A splintered practice blade.",
 		"icon": "res://Assets/Textures/Items/Weapons/wooden_sword.png",
+		"hold": {"model": SWORD_MODEL, "scale": 0.62, "tint": Color(0.52, 0.36, 0.19)},
 	},
 	"copper_sword": {
 		"name": "Copper Sword",
 		"price": 50,
 		"desc": "Soft metal, but it holds an edge.",
 		"icon": "res://Assets/Textures/Items/Weapons/copper_sword.png",
+		"hold": {"model": SWORD_MODEL, "scale": 0.68, "tint": Color(0.85, 0.52, 0.28)},
 	},
 	"iron_sword": {
 		"name": "Iron Sword",
 		"price": 100,
 		"desc": "Forge-work worth carrying.",
 		"icon": "res://Assets/Textures/Items/Weapons/iron_sword.png",
+		"hold": {"model": SWORD_MODEL, "scale": 0.75},
 	},
+}
+
+## How a held model sits in the hand bone before per-item tweaks. The sword
+## art runs up its own +Y with the grip at the origin, and a humanoid-profile
+## hand bone has the fingers along +Y too, so the blade needs turning to run
+## along the palm rather than out of the wrist.
+const HOLD_DEFAULTS := {
+	"scale": 1.0,
+	"pos": Vector3(0.0, 0.06, 0.0),
+	"rot": Vector3(35.0, 0.0, 0.0),
+	"tint": Color(1, 1, 1),
 }
 
 ## Loaded icons, kept so the grid doesn't hit the disk every redraw.
 static var _icons := {}
+
+## What this item looks like in a character's hand, with the defaults filled
+## in. Empty when the item isn't something you can be seen holding.
+static func hold_config(id: String) -> Dictionary:
+	var raw: Dictionary = ITEMS.get(id, {}).get("hold", {})
+	if raw.is_empty() or not raw.has("model"):
+		return {}
+	var cfg := HOLD_DEFAULTS.duplicate()
+	cfg.merge(raw, true)
+	return cfg
+
+## Is this item drawn in the hand at all?
+static func is_holdable(id: String) -> bool:
+	return not hold_config(id).is_empty()
 
 static func has(id: String) -> bool:
 	return ITEMS.has(id)
