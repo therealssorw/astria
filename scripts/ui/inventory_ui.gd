@@ -1,5 +1,5 @@
 extends CanvasLayer
-## Inventory screen (toggled with Tab, or D-pad left on a gamepad) +
+## Inventory screen (toggled with Tab, or D-pad up on a gamepad) +
 ## always-on hotbar.
 ## Tabs: Inventory (the hotbar row + equipment slots + a 32-slot item grid) and
 ## Stats (deaths / kills from the server registry). Gold is always visible at
@@ -355,23 +355,6 @@ func _build_inventory_tab() -> Control:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 
-	# the hotbar, labelled, at the top of the window
-	var bar_title := Label.new()
-	bar_title.text = "Hotbar"
-	bar_title.add_theme_font_size_override("font_size", 16)
-	bar_title.add_theme_color_override("font_color", GOLD)
-	col.add_child(bar_title)
-
-	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 4)
-	panel_bar_slots.clear()
-	for i in HOTBAR_SLOTS:
-		var b := _slot_button()
-		b.pressed.connect(_on_bar_pressed.bind(i))
-		panel_bar_slots.append(b)
-		bar.add_child(b)
-	col.add_child(bar)
-
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 28)
 
@@ -385,7 +368,53 @@ func _build_inventory_tab() -> Control:
 	eq.add_child(_spacer());          eq.add_child(_slot("Pants"));   eq.add_child(_spacer())
 	row.add_child(eq)
 
-	# 32 general item slots
+	# The bag: the hotbar IS its top row (labelled and framed so it reads as
+	# special), with the general slots filling the rows underneath. Two columns
+	# — the labels and the rows they name — so the grid lines up under the bar
+	# on its own instead of being nudged by however wide "Hotbar" renders.
+	var bag := HBoxContainer.new()
+	bag.add_theme_constant_override("separation", 8)
+	var titles := VBoxContainer.new()
+	titles.add_theme_constant_override("separation", 6)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 6)
+
+	var bar_title := Label.new()
+	bar_title.text = "Hotbar"
+	bar_title.add_theme_font_size_override("font_size", 16)
+	bar_title.add_theme_color_override("font_color", GOLD)
+	bar_title.custom_minimum_size.y = SLOT_SIZE + HOTBAR_FRAME_PAD * 2
+	bar_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	titles.add_child(bar_title)
+
+	# the frame is the highlight — a gold wash behind the row, so the top row
+	# never reads as just more bag
+	var bar_frame := PanelContainer.new()
+	var fstyle := StyleBoxFlat.new()
+	fstyle.bg_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.13)
+	fstyle.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.65)
+	fstyle.set_border_width_all(2)
+	fstyle.set_corner_radius_all(5)
+	fstyle.set_content_margin_all(HOTBAR_FRAME_PAD)
+	bar_frame.add_theme_stylebox_override("panel", fstyle)
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 4)
+	panel_bar_slots.clear()
+	for i in HOTBAR_SLOTS:
+		var b := _slot_button()
+		b.pressed.connect(_on_bar_pressed.bind(i))
+		panel_bar_slots.append(b)
+		bar.add_child(b)
+	bar_frame.add_child(bar)
+	bar_row.add_child(bar_frame)
+	bag.add_child(bar_row)
+
+	# the general slots, inset by the frame's padding so their columns line up
+	# with the hotbar slots directly above them
+	var grid_margin := MarginContainer.new()
+	grid_margin.add_theme_constant_override("margin_left",
+			int(bar_title.get_theme_font("font").get_string_size(bar_title.text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 8 + HOTBAR_FRAME_PAD)
 	var grid := GridContainer.new()
 	grid.columns = ITEM_COLS
 	grid.add_theme_constant_override("h_separation", 4)

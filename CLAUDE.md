@@ -71,7 +71,7 @@ mixed pile.
 - Bindings today: `attack` = LMB / RT, `block` = RMB / LT, `jump` = Space /
   A (cross), `slide` = Space or Ctrl / A (cross) — the SAME button as jump,
   `lock_on` = MMB / R3, `interact` = E / Y (triangle), `inventory` = Tab /
-  D-pad left, `sprint` = Shift, with no pad button by request.
+  D-pad up, `sprint` = Shift, with no pad button by request.
 
 ## Movement: sliding
 
@@ -158,9 +158,9 @@ mixed pile.
   on PlayStation pads. Everything is vector-drawn, so there are no glyph
   textures. Hint text in the dialog box uses `InputDevice.interact_label()` /
   `accept_label()` for the same reason.
-- Keys: `interact` = E / pad Y (triangle); `inventory` = Tab / pad D-pad left.
+- Keys: `interact` = E / pad Y (triangle); `inventory` = Tab / pad D-pad up.
   Tab used to be a `lock_on` binding — it was removed there, so lock-on is
-  middle-mouse / pad R3 only. D-pad left is also Godot's built-in `ui_left`;
+  middle-mouse / pad R3 only. D-pad up is also Godot's built-in `ui_up`;
   that only ever moves focus inside an open panel, so the two coexist.
 
 ## Items and shops
