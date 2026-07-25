@@ -125,10 +125,13 @@ func _build_answers(line: Dictionary) -> void:
 		(_answers.get_child(0) as Button).grab_focus()
 
 func _on_answer(answer: Dictionary) -> void:
+	# emit AFTER the line change: an answer that both ends the conversation and
+	# fires an action (a shop, say) must not have close() undo what it opened
 	var action := str(answer.get("action", ""))
-	if action != "":
-		action_triggered.emit(dialog_id, action)
+	var id := dialog_id
 	_show_line(str(answer.get("goto", DialogData.END)))
+	if action != "":
+		action_triggered.emit(id, action)
 
 func _clear_answers() -> void:
 	for c in _answers.get_children():

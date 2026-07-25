@@ -26,6 +26,8 @@ extends RefCounted
 ##
 ## `action` is optional: when the player picks that answer the dialog emits
 ## DialogSystem.action_triggered(dialog_id, action) so gameplay code can react.
+## The one action wired up today is "open_shop", which opens the shop
+## registered under this NPC's id in ShopData.
 
 ## Use as a `goto` target to end the conversation.
 const END := ""
@@ -38,6 +40,7 @@ const DIALOGS := {
 			"greeting": {
 				"text": "Careful, the coals are hot. You've the look of someone who breaks more steel than they buy. What do you need?",
 				"answers": [
+					{"text": "Show me what's for sale.", "goto": END, "action": "open_shop"},
 					{"text": "What do you make here?", "goto": "wares"},
 					{"text": "Can you repair my gear?", "goto": "repair"},
 					{"text": "Nothing. Just looking around.", "goto": "farewell"},
@@ -46,6 +49,7 @@ const DIALOGS := {
 			"wares": {
 				"text": "Blades, mostly. Axes when the woodcutters come down the hill. Give me a day and good iron and I'll make you something that outlives you.",
 				"answers": [
+					{"text": "Let's trade, then.", "goto": END, "action": "open_shop"},
 					{"text": "I'll keep that in mind.", "goto": "greeting"},
 					{"text": "Where do you get your iron?", "goto": "iron"},
 				],

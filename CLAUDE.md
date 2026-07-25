@@ -79,6 +79,28 @@ mixed pile.
   middle-mouse / pad R3 only. D-pad left is also Godot's built-in `ui_left`;
   that only ever moves focus inside an open panel, so the two coexist.
 
+## Items and shops
+
+- Item catalogue: `scripts/items/item_db.gd` — id -> name / buy price / desc.
+  Selling pays `ItemDb.SELL_RATIO` (half, rounded down) unless an item carries
+  its own `"sell"`. Never hardcode a price anywhere else; two shops must not
+  disagree about what a sword is worth.
+- Who stocks what: `scripts/ui/shop/shop_data.gd`, keyed by the NPC's
+  `dialog_id`. Optional `"buys"` list restricts what that shop will take back;
+  omit it and the shop buys anything.
+- Giving an NPC a shop is two steps: add a `ShopData.SHOPS` entry under its
+  `dialog_id`, and give one dialog answer `"action": "open_shop"`. `ShopSystem`
+  listens to `DialogSystem.action_triggered` and opens itself — no per-NPC code.
+- `DialogSystem._on_answer` emits the action AFTER changing line, so an answer
+  can both end the conversation and open something without `close()` undoing it.
+- Coins and the carried bag live in `GameStats` (local, like dialog — not
+  replicated, so nothing about trading is server-checked). `GameStats.changed`
+  drives both the shop list and the inventory grid.
+- `GameStats.STARTING_COINS` is a placeholder purse (150) so the shop is
+  usable; drop it to 0 once coins can actually be earned in play.
+- There is no item art yet, so an inventory slot renders the item's name plus
+  an `xN` stack badge.
+
 ## Multiplayer
 
 - Boot flow: main scene is `scenes/ui/main_menu.tscn` (username + host/join).

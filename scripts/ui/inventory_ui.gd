@@ -17,11 +17,14 @@ var deaths_label: Label
 var kills_label: Label
 var open := false
 var player: Node
+var item_slots: Array[Panel] = []
 
 func _ready() -> void:
 	layer = 5
 	_build_hotbar()
 	_build_panel()
+	GameStats.changed.connect(_refresh_items)
+	_refresh_items()
 
 func _input(_event: InputEvent) -> void:
 	pass # toggling is polled in _process so it can't be swallowed by focus
@@ -37,7 +40,8 @@ func _toggle() -> void:
 		player.set("ui_open", open)
 
 func _process(_delta: float) -> void:
-	if Input.is_action_just_pressed("inventory") and not DialogSystem.is_open():
+	if Input.is_action_just_pressed("inventory") \
+			and not DialogSystem.is_open() and not ShopSystem.is_open():
 		_toggle()
 	if open and stats_content.visible:
 		# kills/deaths come from the server's registry, not local counters
@@ -67,6 +71,51 @@ func _slot(label_text := "") -> Panel:
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		p.add_child(l)
 	return p
+
+## A bag slot: item name across the middle, stack count in the corner. There
+## is no item art yet, so the name is the icon.
+func _item_slot() -> Panel:
+	var p := _slot()
+	var name_label := Label.new()
+	name_label.name = "ItemName"
+	name_label.add_theme_font_size_override("font_size", 9)
+	name_label.add_theme_color_override("font_color", Color(0.88, 0.88, 0.92))
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	name_label.offset_left = 3
+	name_label.offset_right = -3
+	name_label.offset_bottom = -7 # leave the bottom strip for the stack count
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	p.add_child(name_label)
+
+	# full-rect and aligned into the corner, so the badge can never spill out
+	var count := Label.new()
+	count.name = "ItemCount"
+	count.add_theme_font_size_override("font_size", 10)
+	count.add_theme_color_override("font_color", Color(0.95, 0.79, 0.42))
+	count.set_anchors_preset(Control.PRESET_FULL_RECT)
+	count.offset_right = -4
+	count.offset_bottom = -2
+	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	count.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	p.add_child(count)
+	return p
+
+func _refresh_items() -> void:
+	var ids := GameStats.owned_ids()
+	for i in item_slots.size():
+		var slot := item_slots[i]
+		var name_label := slot.get_node("ItemName") as Label
+		var count := slot.get_node("ItemCount") as Label
+		if i >= ids.size():
+			name_label.text = ""
+			count.text = ""
+			continue
+		var id: String = ids[i]
+		var n := GameStats.item_count(id)
+		name_label.text = ItemDb.item_name(id)
+		count.text = "x%d" % n if n > 1 else ""
 
 func _spacer() -> Control:
 	var c := Control.new()
@@ -159,8 +208,11 @@ func _build_inventory_tab() -> Control:
 	grid.columns = ITEM_COLS
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
+	item_slots.clear()
 	for i in ITEM_COLS * ITEM_ROWS:
-		grid.add_child(_slot())
+		var slot := _item_slot()
+		item_slots.append(slot)
+		grid.add_child(slot)
 	row.add_child(grid)
 	return row
 

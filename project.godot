@@ -21,6 +21,7 @@ GameStats="*res://scripts/core/game_stats.gd"
 Net="*res://scripts/core/network_manager.gd"
 InputDevice="*res://scripts/core/input_device.gd"
 DialogSystem="*res://scripts/ui/dialog/dialog_system.gd"
+ShopSystem="*res://scripts/ui/shop/shop_ui.gd"
 
 [display]
 
