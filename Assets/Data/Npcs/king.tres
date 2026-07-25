@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="NpcDefinition" format=3]
+
+[ext_resource type="Script" path="res://scripts/entities/npc/npc_part.gd" id="1_bqvxm"]
+[ext_resource type="Script" path="res://scripts/entities/npc/npc_definition.gd" id="2_irubn"]
+
+[sub_resource type="Resource" id="Resource_6wb25"]
+script = ExtResource("1_bqvxm")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Arms/king_arms.gltf"
+colors = PackedColorArray()
+
+[sub_resource type="Resource" id="Resource_drfhe"]
+script = ExtResource("1_bqvxm")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Body/king_body.gltf"
+colors = PackedColorArray()
+
+[sub_resource type="Resource" id="Resource_p4r5r"]
+script = ExtResource("1_bqvxm")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Feet/king_feet.gltf"
+colors = PackedColorArray()
+
+[sub_resource type="Resource" id="Resource_lsthr"]
+script = ExtResource("1_bqvxm")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Head/king_head.gltf"
+colors = PackedColorArray()
+
+[resource]
+script = ExtResource("2_irubn")
+display_name = "King"
+feet = SubResource("Resource_p4r5r")
+body = SubResource("Resource_drfhe")
+arms = SubResource("Resource_6wb25")
+head = SubResource("Resource_lsthr")

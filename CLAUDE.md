@@ -340,10 +340,14 @@ mixed pile.
   into the world like any other prop — everything under it is rebuilt from the
   definition at load, so recolouring an NPC updates every copy already placed.
 - Part models live in `Assets/Models/Entity/Humanoid/VoxelNpc/Parts/<Set>/
-  <Slot>/`. `<Set>` is a character family (`Base`, `Undead`) and becomes its
-  own section in the builder's menus; `<Slot>` is Head/Body/Arms/Feet. Drop a
+  <Slot>/`. `<Set>` is a character family (`Base`, `Undead`, `King`) and becomes
+  its own section in the builder's menus; `<Slot>` is Head/Body/Arms/Feet. Drop a
   Goxel glTF export in the right folder and press "Rescan parts" — there is no
-  metadata to register.
+  metadata to register. A set needs all four slots: `test_npc_builder` builds
+  one NPC per set out of that set alone and fails if a slot is empty.
+- Keep the `.gox` next to the `.gltf` it was exported from (as
+  `king_head.gox` / `king_head.gltf`), so the source of a part is never a
+  question of which Downloads folder it came from.
 - The builder only ever reads the **glTF**. Editing a `.gox` and saving it
   changes nothing on its own — Goxel's "Export as glTF" has to be run again, or
   `python tools/voxel/gox_to_gltf.py <in.gox> <out.gltf>` used instead. If a

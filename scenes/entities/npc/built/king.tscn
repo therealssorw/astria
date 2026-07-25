@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/entities/npc/npc_character.gd" id="1_6lp5k"]
+[ext_resource type="Resource" path="res://Assets/Data/Npcs/king.tres" id="2_gykt7"]
+
+[node name="King" type="Node3D" unique_id=143673203]
+script = ExtResource("1_6lp5k")
+definition = ExtResource("2_gykt7")
