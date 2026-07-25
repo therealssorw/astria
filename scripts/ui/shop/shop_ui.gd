@@ -11,7 +11,7 @@ signal closed(shop_id: String)
 
 const OPEN_ACTION := "open_shop"
 const FLASH_TIME := 2.0
-const ROW_H := 34
+const ROW_H := 44 # tall enough that the item icon reads at a glance
 const PANEL_W := 620
 
 const GOLD := Color(0.95, 0.79, 0.42)
@@ -159,7 +159,7 @@ func _fill_buy_rows() -> void:
 		var label := ItemDb.item_name(id)
 		if owned > 0:
 			label += "   (carrying %d)" % owned
-		_add_row(label, ItemDb.description(id), "%d gold" % price,
+		_add_row(id, label, "%d gold" % price,
 				GOLD if price <= GameStats.coins else BAD, _buy.bind(id))
 
 func _fill_sell_rows() -> void:
@@ -172,8 +172,7 @@ func _fill_sell_rows() -> void:
 		var label := ItemDb.item_name(id)
 		if count > 1:
 			label += "   x%d" % count
-		_add_row(label, ItemDb.description(id), "%d gold" % ItemDb.sell_price(id),
-				GOLD, _sell.bind(id))
+		_add_row(id, label, "%d gold" % ItemDb.sell_price(id), GOLD, _sell.bind(id))
 	if not any:
 		var empty := Label.new()
 		empty.text = "Nothing here he'll take off your hands."
@@ -184,14 +183,17 @@ func _fill_sell_rows() -> void:
 		empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_rows.add_child(empty)
 
-## One row = a focusable button (name + flavour) with the price pinned right.
-func _add_row(name_text: String, desc: String, price_text: String,
+## One row = a focusable button (icon + name) with the price pinned right.
+func _add_row(id: String, name_text: String, price_text: String,
 		price_color: Color, on_press: Callable) -> void:
 	var b := Button.new()
 	b.text = name_text
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.custom_minimum_size.y = ROW_H
-	b.tooltip_text = desc
+	b.tooltip_text = ItemDb.description(id)
+	b.icon = ItemDb.icon(id)
+	b.expand_icon = true
+	b.add_theme_constant_override("h_separation", 10)
 	b.add_theme_font_size_override("font_size", 17)
 	b.add_theme_color_override("font_color", DIM)
 	for state in ["font_hover_color", "font_focus_color", "font_pressed_color"]:
@@ -362,6 +364,6 @@ func _row_style(bg: Color, accent: Color) -> StyleBoxFlat:
 	s.set_corner_radius_all(3)
 	s.content_margin_left = 12
 	s.content_margin_right = 12
-	s.content_margin_top = 6
-	s.content_margin_bottom = 6
+	s.content_margin_top = 4
+	s.content_margin_bottom = 4
 	return s

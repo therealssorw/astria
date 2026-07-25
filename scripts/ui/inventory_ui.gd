@@ -72,10 +72,22 @@ func _slot(label_text := "") -> Panel:
 		p.add_child(l)
 	return p
 
-## A bag slot: item name across the middle, stack count in the corner. There
-## is no item art yet, so the name is the icon.
+## A bag slot: the item's icon, its stack count in the corner, and its name as
+## a fallback for items that have no art yet.
 func _item_slot() -> Panel:
 	var p := _slot()
+	var icon := TextureRect.new()
+	icon.name = "ItemIcon"
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.offset_left = 4
+	icon.offset_top = 4
+	icon.offset_right = -4
+	icon.offset_bottom = -4
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(icon)
+
 	var name_label := Label.new()
 	name_label.name = "ItemName"
 	name_label.add_theme_font_size_override("font_size", 9)
@@ -106,16 +118,22 @@ func _refresh_items() -> void:
 	var ids := GameStats.owned_ids()
 	for i in item_slots.size():
 		var slot := item_slots[i]
+		var icon := slot.get_node("ItemIcon") as TextureRect
 		var name_label := slot.get_node("ItemName") as Label
 		var count := slot.get_node("ItemCount") as Label
 		if i >= ids.size():
+			icon.texture = null
 			name_label.text = ""
 			count.text = ""
+			slot.tooltip_text = ""
 			continue
 		var id: String = ids[i]
 		var n := GameStats.item_count(id)
-		name_label.text = ItemDb.item_name(id)
+		icon.texture = ItemDb.icon(id)
+		# the name only stands in for missing art; the tooltip always names it
+		name_label.text = "" if icon.texture else ItemDb.item_name(id)
 		count.text = "x%d" % n if n > 1 else ""
+		slot.tooltip_text = "%s\n%s" % [ItemDb.item_name(id), ItemDb.description(id)]
 
 func _spacer() -> Control:
 	var c := Control.new()
