@@ -24,6 +24,22 @@ DialogSystem="*res://scripts/ui/dialog/dialog_system.gd"
 
 [display]
 
+; 1152x648 stays the DESIGN resolution the HUD is laid out against; the
+; override opens the actual window at 1600x900 instead. Because the stretch
+; mode is canvas_items, the UI scales up with the window (1.389x) rather than
+; staying at native pixel size and shrinking relative to the bigger view.
+; Both are 16:9, so nothing is letterboxed or cropped.
+;
+; 1600x900 is deliberately conservative: these are PHYSICAL pixels, and the
+; window has to fit the smallest display it might open on, not just the
+; roomiest. It clears the 1920x1032 usable area of a 1080p monitor with margin
+; while still being ~1.9x the pixels of the old 1152x648 default. For a view
+; that instead fills whatever screen it lands on, set window/size/mode=2
+; (maximized) or 3 (fullscreen) rather than hardcoding a larger override.
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/size/window_width_override=1600
+window/size/window_height_override=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
