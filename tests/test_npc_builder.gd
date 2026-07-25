@@ -228,7 +228,7 @@ func _check_rebuild_is_stable() -> void:
 			== NpcDefinition.SLOTS.size(), "re-rigging left duplicate or missing part meshes")
 	_drop(visual)
 
-## Every part lines up front-to-back, whichever models are mixed.
+## Every part lines up front-to-back with the rest of ITS OWN set.
 ##
 ## Parts are modelled wherever was convenient in the Goxel grid, so the rig
 ## centres each one before stacking. Left-to-right it does that by fitting the
@@ -237,11 +237,18 @@ func _check_rebuild_is_stable() -> void:
 ## bounding box sideways. Front-to-back nothing is symmetric -- a foot has toes
 ## at one end -- so the same scoring just picked whichever alignment happened to
 ## overlap most, and it stood the feet a whole voxel ahead of the torso.
+##
+## Same-set on purpose. Every arms model carries a copy of the torso it was
+## drawn against (you cannot place a sleeve without seeing the shoulder it
+## meets), and the rig drops the voxels the body already fills -- so pairing
+## arms with a DIFFERENT set's body leaves whatever that other torso does not
+## cover behind, sticking out of the chest. That is the reference copy showing,
+## not a rig fault, and the sets are authored to be worn whole.
 func _check_parts_line_up_in_depth() -> void:
 	for category in NpcRig.list_categories():
 		for slot: String in NpcDefinition.SLOTS:
 			for model in NpcRig.list_parts(slot, category):
-				var def := _definition_for("Base")
+				var def := _definition_for(category)
 				def.get_part(slot).model_path = model
 				var visual := _spawn(def)
 				if not _expect(visual.skeleton != null,

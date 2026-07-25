@@ -370,6 +370,14 @@ mixed pile.
   with them still there — the base arms carry a complete copy of the torso.
   Two parts painting one cell means two coincident surfaces z-fighting, which
   looks like the NPC flickering inside out. The test asserts it never happens.
+- That reference copy is also why a SET IS WORN WHOLE. An arms model carries the
+  torso it was drawn against, and only the cells its own body covers get dropped
+  — put it over another set's body and the leftover reference torso sticks out
+  of the chest (the King's robe against the Base arms is the case that showed
+  it). The Base arms are a modelling backdrop, not a universal part. So
+  `test_npc_builder` checks each model against the rest of ITS OWN set, and the
+  builder's freedom to mix sets is for authoring, not a promise that any two
+  families fit.
 - Colour: a model's Goxel palette becomes one swatch per entry. Past 8 entries
   the model is hand-shaded (the zombie parts run to dozens of noise shades) and
   only the per-part tint is offered — the tint multiplies over everything and
