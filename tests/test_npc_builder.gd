@@ -358,7 +358,18 @@ func _check_rouge_still_builds() -> void:
 ## error — check they all carry real time, and that empty hands are unaffected.
 func _check_sword_clips(vis: HumanoidVisual) -> void:
 	_expect(vis._clip_for("idle") == "idle", "empty hands already swap clips")
+	var bare := [vis.get_attack_info(false, 0), vis.get_attack_info(false, 2),
+			vis.get_attack_info(true, 0)]
 	vis.set_held_item("iron_sword")
+	# a weapon must not change how fast you fight: same window, armed or not
+	var armed := [vis.get_attack_info(false, 0), vis.get_attack_info(false, 2),
+			vis.get_attack_info(true, 0)]
+	for i in bare.size():
+		_expect(is_equal_approx(float(bare[i]["duration"]), float(armed[i]["duration"])),
+				"holding a sword changed swing %d: %.3fs vs %.3fs"
+						% [i, float(bare[i]["duration"]), float(armed[i]["duration"])])
+	_expect(float(armed[2]["duration"]) > float(armed[0]["duration"]),
+			"the heavy is not slower than a light swing")
 	_expect(vis.held_id == "iron_sword", "the sword never reached the hand")
 	_expect(vis.skeleton.find_children("HeldItem", "BoneAttachment3D", true, false).size() == 1,
 			"the sword is not attached to a bone")

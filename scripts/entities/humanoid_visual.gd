@@ -43,23 +43,25 @@ const CLIPS := {
 	# character reads as squatting. So only the FIRST cut is used — it starts
 	# from the standing ready pose (~0.6), the blade goes through at ~0.8, and
 	# it is out before the crouch settles. Every light swing plays it, and the
-	# heavy is the same slash at a slower rate.
+	# heavy is that same slash stretched over the longer heavy swing.
 	"sword_idle": {"path": ANIM_DIR + "Sword/Idle/Sword Idle.fbx", "speed": 1.0, "loop": true},
 	"sword_walk": {"path": ANIM_DIR + "Sword/Walking/Sword Walk.fbx", "speed": 1.0, "loop": true},
 	"sword_run": {"path": ANIM_DIR + "Sword/Running/Sword Run.fbx", "speed": 1.0, "loop": true},
+	# "speed" here only matters if something plays this clip outside an attack:
+	# on_attack_started always stretches it to the punch it stands in for.
 	"sword_slash": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
-			"loop": false, "slice": [0.58, 0.98]},
-	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 0.75,
 			"loop": false, "slice": [0.58, 0.98]},
 }
 ## Clip swaps applied while a sword is in hand. Anything not listed keeps its
-## bare-handed clip, so blocking, sliding and jumping are unchanged. All three
-## light swings are the same slash — the take only has one that stays standing,
-## and repeats still cross-blend through the "__alt" copy.
+## bare-handed clip, so blocking, sliding and jumping are unchanged. Every
+## swing is the same slash — the take only has one that stays standing — and
+## the heavy differs only in being stretched over the heavy's longer window,
+## which is what makes it read as the slow, committed version. Repeats still
+## cross-blend through the "__alt" copy.
 const SWORD_CLIPS := {
 	"idle": "sword_idle", "walk": "sword_walk", "run": "sword_run",
 	"light_0": "sword_slash", "light_1": "sword_slash",
-	"light_2": "sword_slash", "heavy": "sword_heavy",
+	"light_2": "sword_slash", "heavy": "sword_slash",
 }
 ## Guard-up movement clips built at load: legs from the locomotion clip on the
 ## right, upper body grafted from the block stance — so circling an opponent
@@ -400,24 +402,33 @@ func _clip_speed(key: String) -> float:
 ## Gameplay timing for a swing, derived from the actual clip at montage rate:
 ## "hit" is when contact lands, "combo" the earliest the NEXT punch may start
 ## (well before the clip's recovery tail, which is what makes a chain flow).
+## Deliberately measured off the BARE-HANDED clip even with a weapon out: a
+## sword swings on exactly the same clock as a punch, so what you are carrying
+## never changes how fast you fight. The weapon's own clip is stretched to fit
+## in on_attack_started.
 func get_attack_info(heavy: bool, combo_index: int) -> Dictionary:
 	if heavy:
-		var hkey := _clip_for("heavy")
-		var dur: float = minf(clip_lengths[hkey] / CLIPS[hkey].speed, HEAVY_MAX_DUR) / attack_speed_mult
+		var dur: float = minf(clip_lengths["heavy"] / CLIPS["heavy"].speed, HEAVY_MAX_DUR) / attack_speed_mult
 		return {"duration": dur, "hit": dur * 0.45, "combo": dur * 0.85}
 	var i := clampi(combo_index, 0, 2)
-	var key := _clip_for("light_%d" % i)
+	var key := "light_%d" % i
 	var d: float = minf(clip_lengths[key] / CLIPS[key].speed, LIGHT_MAX_DUR[i]) / attack_speed_mult
 	return {"duration": d, "hit": d * 0.34, "combo": d * 0.62}
 
 ## duration > 0 stretches the clip playback to exactly that many seconds
-## (used by enemies whose swing timing is set in the inspector).
+## (used by enemies whose swing timing is set in the inspector). A weapon clip
+## is stretched too, to whatever the punch it replaces takes — the swing is the
+## same length armed or not, so the animation has to be as well.
 func on_attack_started(heavy: bool, combo_index: int, duration := -1.0) -> void:
-	var key := "heavy" if heavy else "light_%d" % clampi(combo_index, 0, 2)
+	var base_key := "heavy" if heavy else "light_%d" % clampi(combo_index, 0, 2)
+	var key := _clip_for(base_key)
+	var target := duration
+	if target <= 0.0 and key != base_key:
+		target = float(get_attack_info(heavy, combo_index)["duration"])
 	var speed := -1.0
-	if duration > 0.0:
-		speed = clip_lengths[key] / duration
-	_restart(key, 0.18, speed)
+	if target > 0.0:
+		speed = clip_lengths[key] / target
+	_restart(base_key, 0.18, speed)
 
 # ---------------- held item ----------------
 #
