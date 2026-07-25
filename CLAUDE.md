@@ -16,9 +16,11 @@ Current structure to follow and extend:
   - `Models/` — `Entity/Humanoid/Human/` for characters, `World/Islands/...`
     for level geometry; skeleton bone maps live in `Models/Entity/Humanoid/`
   - `Textures/` — mirrors the model grouping (e.g. `Humanoid/Human/Rouge/`)
-- `scenes/` — .tscn scene files
+- `scenes/` — .tscn scene files; reusable building blocks go in subfolders
+  (`scenes/entities/npc/`, `scenes/effects/`, `scenes/ui/`)
 - `scripts/` — GDScript, grouped by domain: `entities/` (player, enemy,
-  character visuals), `ui/` (HUD), `world/` (level/world logic)
+  character visuals, `npc/` interaction), `ui/` (HUD, `dialog/`),
+  `world/` (level/world logic), `core/` (autoloads)
 
 When adding new assets or code, place them in the most specific folder that
 makes sense; create new subfolders rather than letting a folder grow into a
@@ -45,6 +47,29 @@ mixed pile.
   swing end).
 - Headless validation: run the Steam Godot binary with `--headless --import`
   then `--headless --quit-after 120` to catch script/scene errors.
+
+## NPC dialog
+
+- To make an NPC talkable: instance `scenes/entities/npc/npc_interactable.tscn`
+  next to it in the world (NOT as a child of a scaled model — the badge would
+  inherit the scale) and set `dialog_id`. Tunables: `interact_range`,
+  `prompt_offset`, `action_text`.
+- All conversation text lives in `scripts/ui/dialog/dialog_data.gd` — the file
+  header documents the format (speaker / start / lines, each line with `text`
+  plus either `answers` or a plain `goto`; `goto: END` closes the box). An
+  answer may carry `"action"`, which the `DialogSystem.action_triggered` signal
+  reports so gameplay code (shops, quests) can hook in.
+- `DialogSystem` (autoload) owns the box: semi-transparent black panel,
+  typewriter reveal with the looping keyboard clatter in
+  `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
+  WASD/arrows + E/Enter, or gamepad stick + A. It sets the player's `ui_open`
+  while it is showing. Purely local — nothing about dialog is networked.
+- The interact button glyph follows the last-used device via the `InputDevice`
+  autoload (keyboard `E` / Xbox `Y` / PlayStation triangle). The badge art is
+  drawn procedurally in `interact_prompt.gd`, so there are no glyph textures.
+- E is shared between `interact` and `inventory`: the inventory refuses to
+  toggle while a dialog is open or an NPC prompt is showing (group
+  `npc_focused`).
 
 ## Multiplayer
 
