@@ -1,38 +1,42 @@
 extends Node3D
 class_name NpcInteractable
-## Drop this next to (or on) any NPC to make it talkable: it shows a floating
-## button badge when the local player is close and opens the conversation named
-## by `dialog_id` when they press interact.
+## Drop this next to (or on) any NPC to make it talkable: a speech-bubble
+## marker appears over its head while the local player is close, and pressing
+## interact opens the conversation named by `dialog_id`.
+##
+## This node only decides *whether* the marker should show and how faded it is
+## — the HUD draws it (scripts/ui/dialog/npc_prompt_overlay.gd), the same way
+## the enemy wind-up star is drawn.
 ##
 ## Reuse = instance scenes/entities/npc/npc_interactable.tscn, place it at the
 ## NPC, and set `dialog_id` to a key of DialogData.DIALOGS.
 
+const FADE_SPEED := 6.0
+
 ## Key of DialogData.DIALOGS to play.
 @export var dialog_id := ""
-## How close the local player must be for the prompt to appear (metres).
+## How close the local player must be for the marker to appear (metres).
 @export var interact_range := 3.5
-## Where the badge floats, relative to this node.
+## Where the bubble's tail points, relative to this node.
 @export var prompt_offset := Vector3(0, 2.1, 0)
-## Small caption under the badge; leave empty for just the button.
-@export var action_text := "Talk"
 
-var _prompt: InteractPrompt
+## 0..1, ramped so the marker fades instead of popping. Read by the HUD.
+var prompt_alpha := 0.0
+
 var _player: Node3D
 var _focused := false
 
 func _ready() -> void:
 	add_to_group("npc_interactable")
-	_prompt = InteractPrompt.new(action_text)
-	_prompt.position = prompt_offset
-	add_child(_prompt)
 
-func _process(_delta: float) -> void:
-	_set_focused(_can_interact())
+func _process(delta: float) -> void:
+	_focused = _can_interact()
+	prompt_alpha = move_toward(prompt_alpha, 1.0 if _focused else 0.0, FADE_SPEED * delta)
 	if _focused and Input.is_action_just_pressed("interact"):
 		DialogSystem.start(dialog_id)
 
-func _exit_tree() -> void:
-	_set_focused(false)
+func prompt_anchor() -> Vector3:
+	return global_position + prompt_offset
 
 ## Closest in-range NPC wins, so two NPCs standing together never both prompt.
 func _can_interact() -> bool:
@@ -53,17 +57,6 @@ func _can_interact() -> bool:
 		if other.global_position.distance_to(_player.global_position) < d:
 			return false
 	return true
-
-func _set_focused(on: bool) -> void:
-	if _focused == on:
-		return
-	_focused = on
-	_prompt.show_prompt(on)
-	# the inventory shares the E key, so it checks this group before toggling
-	if on:
-		add_to_group("npc_focused")
-	else:
-		remove_from_group("npc_focused")
 
 func _find_player() -> Node3D:
 	var found := get_tree().get_nodes_in_group("local_player")

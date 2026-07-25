@@ -51,9 +51,8 @@ mixed pile.
 ## NPC dialog
 
 - To make an NPC talkable: instance `scenes/entities/npc/npc_interactable.tscn`
-  next to it in the world (NOT as a child of a scaled model — the badge would
-  inherit the scale) and set `dialog_id`. Tunables: `interact_range`,
-  `prompt_offset`, `action_text`.
+  next to it in the world and set `dialog_id`. Tunables: `interact_range`,
+  `prompt_offset` (where the bubble's tail points).
 - All conversation text lives in `scripts/ui/dialog/dialog_data.gd` — the file
   header documents the format (speaker / start / lines, each line with `text`
   plus either `answers` or a plain `goto`; `goto: END` closes the box). An
@@ -64,12 +63,19 @@ mixed pile.
   `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
   WASD/arrows + E/Enter, or gamepad stick + A. It sets the player's `ui_open`
   while it is showing. Purely local — nothing about dialog is networked.
-- The interact button glyph follows the last-used device via the `InputDevice`
-  autoload (keyboard `E` / Xbox `Y` / PlayStation triangle). The badge art is
-  drawn procedurally in `interact_prompt.gd`, so there are no glyph textures.
-- E is shared between `interact` and `inventory`: the inventory refuses to
-  toggle while a dialog is open or an NPC prompt is showing (group
-  `npc_focused`).
+- The in-world marker is a HUD overlay, not a 3D node: `NpcInteractable` only
+  keeps a `prompt_alpha` and a `prompt_anchor()`, and
+  `scripts/ui/dialog/npc_prompt_overlay.gd` (added by `hud.gd`) projects that
+  anchor with the camera and draws a speech bubble there. It is deliberately
+  the same technique as the enemy wind-up star in `hud.gd`'s
+  `TelegraphControl`, down to the gold accent — keep the two consistent.
+- The button inside the bubble follows the last-used device via the
+  `InputDevice` autoload: `E` on keyboard, `Y` on Xbox pads, a drawn triangle
+  on PlayStation pads. Everything is vector-drawn, so there are no glyph
+  textures. Hint text in the dialog box uses `InputDevice.interact_label()` /
+  `accept_label()` for the same reason.
+- Keys: `interact` = E / pad Y (triangle); `inventory` moved to I so the two
+  don't collide.
 
 ## Multiplayer
 

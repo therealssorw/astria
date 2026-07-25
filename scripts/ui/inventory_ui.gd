@@ -1,5 +1,5 @@
 extends CanvasLayer
-## Inventory screen (toggled with E) + always-on hotbar.
+## Inventory screen (toggled with I) + always-on hotbar.
 ## Tabs: Inventory (equipment slots + 32-slot item grid) and Stats
 ## (coins / deaths / kills, from the GameStats autoload).
 
@@ -25,11 +25,6 @@ func _ready() -> void:
 func _input(_event: InputEvent) -> void:
 	pass # toggling is polled in _process so it can't be swallowed by focus
 
-## E is shared with NPC interaction: while a dialog is open, or while an NPC
-## prompt is showing, the key talks instead of opening the bag.
-func _interact_has_e() -> bool:
-	return DialogSystem.is_open() or not get_tree().get_nodes_in_group("npc_focused").is_empty()
-
 func _toggle() -> void:
 	open = not open
 	panel_root.visible = open
@@ -41,7 +36,7 @@ func _toggle() -> void:
 		player.set("ui_open", open)
 
 func _process(_delta: float) -> void:
-	if Input.is_action_just_pressed("inventory") and not _interact_has_e():
+	if Input.is_action_just_pressed("inventory") and not DialogSystem.is_open():
 		_toggle()
 	if open and stats_content.visible:
 		# kills/deaths come from the server's registry, not local counters

@@ -45,3 +45,17 @@ func interact_letter() -> String:
 		Kind.XBOX: return "Y"
 		Kind.PLAYSTATION: return ""
 		_: return "E"
+
+## Spelled-out button name, for hint text where a drawn glyph isn't available.
+func interact_label() -> String:
+	match kind:
+		Kind.XBOX: return "Y"
+		Kind.PLAYSTATION: return "Triangle"
+		_: return "E"
+
+## Name of the button that confirms a menu choice on the current device.
+func accept_label() -> String:
+	match kind:
+		Kind.XBOX: return "A"
+		Kind.PLAYSTATION: return "Cross"
+		_: return "Enter"

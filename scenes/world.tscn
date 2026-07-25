@@ -117,4 +117,3 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 235.88385, 93.00493, -152.040
 dialog_id = "blacksmith"
 interact_range = 3.5
 prompt_offset = Vector3(0, 2.75, 0)
-action_text = "Talk"

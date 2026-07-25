@@ -95,7 +95,7 @@ func _show_line(line_id: String) -> void:
 	_body.visible_characters = 0
 	_type_accum = 0.0
 	_typing = true
-	_hint.text = "E / A — skip"
+	_hint.text = "%s — skip" % InputDevice.interact_label()
 	_hint.visible = true
 	_start_typing_sfx()
 
@@ -118,7 +118,9 @@ func _build_answers(line: Dictionary) -> void:
 		btn.pressed.connect(_on_answer.bind(answer))
 		_answers.add_child(btn)
 	_answers.visible = true
-	_hint.text = "E / A — choose      W S / ↑ ↓ — move"
+	_hint.text = "%s / %s — choose      %s — move" % [InputDevice.interact_label(),
+			InputDevice.accept_label(),
+			"stick" if InputDevice.kind != InputDeviceTracker.Kind.KEYBOARD else "W S"]
 	if _answers.get_child_count() > 0:
 		(_answers.get_child(0) as Button).grab_focus()
 
