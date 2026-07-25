@@ -23,12 +23,15 @@ extends CharacterBody3D
 ## backpedals are slower than driving forward, so ring position is a choice.
 @export var strafe_speed_mult := 0.85
 @export var back_speed_mult := 0.68
-## Sprint: a flat multiplier on the walk, paid for out of the stamina meter, so
-## crossing the island and having a fight draw on the same resource.
+## Sprint: a flat multiplier on the walk. Free by design — getting somewhere is
+## not what the stamina meter is for, and arriving at a fight already spent made
+## every approach a decision about walking slowly.
 @export var sprint_speed_mult := 1.5
-@export var sprint_stamina_drain := 12.0 # per second held
-## Stamina needed to break into a run (once running it lasts until empty).
-@export var sprint_min_stamina := 10.0
+## Per second held. 0 = free, which also means the meter keeps regenerating and
+## an empty bar is no bar to running; raise it to put the run back on the meter.
+@export var sprint_stamina_drain := 0.0
+## Stamina needed to break into a run. Only meaningful alongside a drain.
+@export var sprint_min_stamina := 0.0
 ## Gamepad only: push the stick near full forward for this long and the sprint
 ## starts on its own, so a long walk doesn't need a button held down.
 @export var auto_sprint_time := 0.9
@@ -433,7 +436,8 @@ func _server_sim_tick(delta: float) -> void:
 			and stamina >= block_min_stamina
 	# a run costs the same on the server's copy of the meter as on the owner's,
 	# so a sprint across the island reaches the fight with the stamina it should
-	if net_sprinting and not blocking:
+	# (nothing at all while sprint_stamina_drain is 0 — the run is free)
+	if net_sprinting and not blocking and sprint_stamina_drain > 0.0:
 		stamina = maxf(0.0, stamina - sprint_stamina_drain * delta)
 		_stam_hold = stamina_regen_delay
 		if stamina <= 0.0:
@@ -513,7 +517,7 @@ func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	# a sprint claim is only believed if the pawn actually covered more ground
 	# than a walk would — the drain below is charged off the server's own
 	# measurement, never off the client saying "I'm running"
-	net_sprinting = sprint_flag and stamina > 0.0 \
+	net_sprinting = sprint_flag \
 			and Vector2(dv.x, dv.z).length() > walk_speed * dt * 0.9
 	_net_has_state = true
 	return true
@@ -600,8 +604,9 @@ func _move(delta: float) -> void:
 			_start_ground_slide()
 
 ## Sprint is a straight-line commitment: forward input, on the ground, guard
-## down, no swing, and stamina in the meter. It ends the moment any of those
-## goes — the drain itself is what eventually stops it.
+## down, no swing. It ends the moment any of those goes. It is free at the
+## current tuning; with a `sprint_stamina_drain` set it also ends on an empty
+## meter.
 func _handle_sprint(delta: float) -> void:
 	if not _can_sprint():
 		sprinting = false
@@ -616,8 +621,8 @@ func _handle_sprint(delta: float) -> void:
 	var want := Input.is_action_pressed("sprint") or _auto_sprint_hold >= auto_sprint_time
 	# breaking into a run needs a bit in the bank; keeping one only needs a drop
 	sprinting = want and (sprinting or stamina >= sprint_min_stamina)
-	if not sprinting:
-		return
+	if not sprinting or sprint_stamina_drain <= 0.0:
+		return # a free run must not pause regen either, or it still costs
 	stamina = maxf(0.0, stamina - sprint_stamina_drain * delta)
 	_stam_hold = stamina_regen_delay
 	if stamina <= 0.0:

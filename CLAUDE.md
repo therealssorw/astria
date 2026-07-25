@@ -89,17 +89,19 @@ mixed pile.
 
 ## Movement: sprinting
 
-- Sprint is `sprint_speed_mult` over the walk, drains `sprint_stamina_drain`
-  per second out of the SAME stamina meter combat spends, and needs forward
-  input, both feet on the ground, guard down and no swing (`_can_sprint`).
+- Sprint is `sprint_speed_mult` over the walk and needs forward input, both feet
+  on the ground, guard down and no swing (`_can_sprint`). It is FREE:
+  `sprint_stamina_drain` is 0, which the code reads as "don't touch the meter
+  at all" — no drain, no regen pause, no minimum to start, and the server skips
+  its copy of the drain too. Set the export above 0 to put running back on the
+  same meter combat spends; every branch is already written for that.
 - On a gamepad there is no sprint button: holding the stick near full forward
   for `auto_sprint_time` starts the run by itself (`_stick_full_forward` reads
   the raw joy axes, so a keyboard — which reports 0 there — never auto-sprints).
 - Server-authoritative like everything else: the owner reports a `sprinting`
   flag with its state, the server only believes it if its OWN two accepted
-  positions show more ground covered than a walk, and then drains its copy of
-  the meter at the same rate. Running to a fight arrives with the stamina the
-  server says, not the client.
+  positions show more ground covered than a walk. That check is what a drain
+  would be charged off if one is ever turned back on — never the client's word.
 - No new animation: `_animate` already replicates `ratio = speed / walk_speed`,
   and `HumanoidVisual.tick` picks the run clip and scales stride rate from it.
 
