@@ -14,6 +14,11 @@ extends Node3D
 @export var initial_delay := 5.0
 ## Bandits appear scattered up to this far from the spawner.
 @export var spawn_radius := 3.5
+## A spot is only used if nothing living is within this of it (metres).
+@export var spawn_clearance := 1.6
+
+## How many ring positions to try before settling for the roomiest of them.
+const PLACEMENT_TRIES := 8
 
 var _spawned: Array[Node] = []
 var _spawn_index := 0
@@ -42,19 +47,52 @@ func _try_spawn() -> void:
 	if container == null:
 		container = get_parent()
 	container.add_child(bandit)
-	# scatter around the spawner (golden-angle ring so spawns don't stack)
-	_spawn_index += 1
-	var ang := _spawn_index * 2.3999632
-	var offset := Vector3(cos(ang), 0, sin(ang)) * (1.0 + fposmod(_spawn_index * 0.618, 1.0) * (spawn_radius - 1.0))
-	bandit.global_position = _ground_at(global_position + offset)
+	bandit.global_position = _ground_at(_free_spot())
 	_spawned.append(bandit)
 	Net.server_broadcast_enemy_spawn(bandit)
 
-## Drops a ray to put the bandit on the terrain surface.
+## Walks the golden-angle ring until it finds a spot with nobody standing in it,
+## because the ring alone is not enough: a bandit that has wandered (or a player
+## camping the spawner) can be sitting exactly where the sequence says next, and
+## a body dropped into another body has no way to push itself back out.
+func _free_spot() -> Vector3:
+	var roomiest := global_position
+	var best_gap := -1.0
+	for i in PLACEMENT_TRIES:
+		_spawn_index += 1
+		var ang := _spawn_index * 2.3999632
+		var reach := 1.0 + fposmod(_spawn_index * 0.618, 1.0) * (spawn_radius - 1.0)
+		var spot := global_position + Vector3(cos(ang), 0, sin(ang)) * reach
+		var gap := _nearest_body_distance(spot)
+		if gap >= spawn_clearance:
+			return spot
+		if gap > best_gap:
+			best_gap = gap
+			roomiest = spot
+	return roomiest
+
+## Flat distance from `spot` to the closest living bandit or player.
+func _nearest_body_distance(spot: Vector3) -> float:
+	var nearest := INF
+	for node in get_tree().get_nodes_in_group("enemies") + get_tree().get_nodes_in_group("player"):
+		if not is_instance_valid(node) or node.get("dead"):
+			continue
+		var away: Vector3 = (node as Node3D).global_position - spot
+		away.y = 0
+		nearest = minf(nearest, away.length())
+	return nearest
+
+## Drops a ray to put the bandit on the terrain surface. Characters are excluded
+## from the ray, or a spot with someone under it lands the bandit on their head.
 func _ground_at(pos: Vector3) -> Vector3:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(
 		pos + Vector3.UP * 25.0, pos + Vector3.DOWN * 50.0)
+	var skip: Array[RID] = []
+	for node in get_tree().get_nodes_in_group("enemies") + get_tree().get_nodes_in_group("player"):
+		if node is CollisionObject3D:
+			skip.append((node as CollisionObject3D).get_rid())
+	query.exclude = skip
 	var hit := space.intersect_ray(query)
 	if hit.is_empty():
 		return pos

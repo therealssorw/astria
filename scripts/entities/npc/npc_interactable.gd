@@ -32,7 +32,14 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_focused = _can_interact()
 	prompt_alpha = move_toward(prompt_alpha, 1.0 if _focused else 0.0, FADE_SPEED * delta)
-	if _focused and Input.is_action_just_pressed("interact"):
+
+## Deliberately an *unhandled* input rather than polling the action: the dialog
+## box marks its own interact presses handled, so the press that walks off the
+## last line can no longer be seen here in the same frame and instantly reopen
+## the conversation you were leaving.
+func _unhandled_input(event: InputEvent) -> void:
+	if _focused and event.is_action_pressed("interact"):
+		get_viewport().set_input_as_handled()
 		DialogSystem.start(dialog_id)
 
 func prompt_anchor() -> Vector3:

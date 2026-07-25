@@ -20,6 +20,10 @@ extends CharacterBody3D
 @export var move_speed := 4.0
 @export var turn_speed_deg := 360.0
 @export var repath_interval := 0.5
+## Personal space: bandits inside this of each other drift apart (metres).
+@export var separation_radius := 1.1
+## How hard that drift pushes, at its strongest (m/s).
+@export var separation_push := 2.5
 @export_group("Attack")
 @export var attack_damage := 20.0
 @export var attack_range := 1.6          # stops and swings inside this
@@ -269,8 +273,36 @@ func _physics_process(delta: float) -> void:
 
 	if not is_on_floor():
 		velocity.y -= _gravity() * delta
+	_separate()
 	move_and_slide()
 	_animate(delta)
+
+## Bandits are solid, but being solid is not enough to keep them apart: a crowd
+## all walking at the same player converges on one spot, and two that come to
+## rest overlapping stay overlapping — a kinematic body only depenetrates while
+## it is moving. So the living ones always drift out of each other's personal
+## space, strongest when they are closest.
+func _separate() -> void:
+	var push := Vector3.ZERO
+	for other in get_tree().get_nodes_in_group("enemies"):
+		if other == self or not is_instance_valid(other) or other.get("dead"):
+			continue
+		var away: Vector3 = global_position - (other as Node3D).global_position
+		away.y = 0
+		var d := away.length()
+		if d >= separation_radius:
+			continue
+		if d < 0.01:
+			# exactly coincident: shove along a per-enemy fixed heading, so the
+			# two of them pick different directions instead of staying welded
+			away = Vector3(sin(_pattern * TAU), 0, cos(_pattern * TAU))
+			d = separation_radius * 0.5
+		push += away.normalized() * (1.0 - d / separation_radius)
+	if push == Vector3.ZERO:
+		return
+	push = push.normalized() * separation_push * minf(push.length(), 1.0)
+	velocity.x = clampf(velocity.x + push.x, -move_speed, move_speed)
+	velocity.z = clampf(velocity.z + push.z, -move_speed, move_speed)
 
 func _acquire_player() -> void:
 	var best: Node3D = null
@@ -475,6 +507,7 @@ func _idle(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, 0.0, 10.0 * delta)
 	if not is_on_floor():
 		velocity.y -= _gravity() * delta
+	_separate() # a camp standing around is exactly where they pile up
 	move_and_slide()
 	_animate(delta)
 

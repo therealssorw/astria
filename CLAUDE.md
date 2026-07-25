@@ -339,6 +339,15 @@ mixed pile.
   clients get puppets spawned/driven through Net. World containers:
   `World/Players` and `World/Enemies`; spawn point = `scripts/world/
   spawn_point.gd` on the island Marker3D (group "spawn_point").
+- Bandits must never end up standing inside each other, and being solid is not
+  enough to guarantee it: a kinematic body only pushes out of an overlap while
+  it is moving, so a pair that comes to rest overlapping stays that way. Two
+  things keep the camp apart — `bandit_spawner.gd` walks its ring until it
+  finds a spot with `spawn_clearance` free (and keeps characters out of the
+  ground ray, or a bandit lands on someone's head), and `enemy.gd::_separate()`
+  drifts living bandits out of each other's `separation_radius` every tick,
+  idle or fighting. Anything that spawns or parks an NPC-shaped body should do
+  the same rather than trusting collision alone.
 - Dedicated server: separate export preset "Windows Server" (custom feature
   `server`) -> `build/AstriaServer.exe`; it auto-hosts headlessly (see
   `build/run_server.bat`). Any build also accepts `--server [--port=N]`,
