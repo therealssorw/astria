@@ -391,6 +391,30 @@ mixed pile.
   colours reach the mesh, and that a saved NPC reloads as a talkable scene —
   plus that Rouge still builds his own rig and full clip set.
 
+## Dungeons
+
+- `scenes/starterDungeon.tscn` is a floor slab plus Area3D markers; the stone
+  shell around it is GENERATED at load by `scripts/world/dungeon/
+  dungeon_walls.gd` on the `Walls` node. Nothing is hand-placed, so do not add
+  wall transforms to the .tscn — change `RUNS` or move a marker instead.
+- The ring comes from the floor mesh's own bounds and each doorway comes from
+  the `*Enterence` marker it belongs to, so moving a marker moves its doors and
+  resizing the slab moves the ring. A run's `from`/`to` is either a fraction of
+  the floor or another marker's NAME, which is how two walls meet exactly.
+- `prefab_scale` (0.2) converts the raw voxel prefabs to player scale: wall
+  3.8m tall, doorway 2.8m x 2.6m against a 1.92m capsule. Tune it there, not by
+  scaling nodes in the scene.
+- Solid stretches are tiled to FIT (count rounded, length stretched), never at
+  a fixed size with the last block hanging over — the overhang both widens
+  doorways past the doors filling them and pushes blocks through each other at
+  junctions, giving coplanar faces that z-fight exactly like overlapping NPC
+  parts. Door leaves are mirrored with a 180-degree turn, not a negative scale,
+  which would flip the winding and light them inside out.
+- Test: `--headless res://tests/test_dungeon_walls.tscn` (prints
+  `DUNGEONTEST RESULT=PASS/FAIL`). It checks every threshold has its pair, that
+  no doorway is bricked up, that nothing floats off the slab, that no two
+  blocks share space, that every piece has collision, and that a player fits.
+
 ## Multiplayer
 
 - Boot flow: main scene is `scenes/ui/main_menu.tscn`. Players do not run
