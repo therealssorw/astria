@@ -46,7 +46,7 @@ window/stretch/aspect="expand"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/grass_brush/plugin.cfg", "res://addons/sky_cloud_remover/plugin.cfg")
+enabled=PackedStringArray("res://addons/grass_brush/plugin.cfg", "res://addons/npc_builder/plugin.cfg", "res://addons/sky_cloud_remover/plugin.cfg")
 
 [input]
 
