@@ -640,9 +640,20 @@ func _handle_slide_input() -> void:
 	if not Input.is_action_just_pressed("slide"):
 		return
 	pending_slide_time = _time
-	if is_on_floor() or sliding or slide_cooldown_left > 0.0:
-		return # jump-first: grounded presses do nothing
-	# air dive
+	if sliding or slide_cooldown_left > 0.0:
+		return
+	if is_on_floor():
+		# grounded press: slide right now in the direction of travel
+		var ground_dir := _input_dir()
+		if ground_dir == Vector3.ZERO:
+			var h := Vector3(velocity.x, 0, velocity.z)
+			if h.length() < 0.5:
+				return # standing still — nothing to slide into
+			ground_dir = h.normalized()
+		slide_dir = ground_dir
+		_start_ground_slide()
+		return
+	# air press: dive, then slide on landing
 	var dir := _input_dir()
 	if dir == Vector3.ZERO:
 		dir = _body_forward()
