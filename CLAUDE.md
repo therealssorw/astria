@@ -323,3 +323,7 @@ mixed pile.
   as far as they are concerned, and a side branch silently rots while `master`
   moves on. Commit straight to `master`; if that feels risky, say so and ask
   rather than quietly branching.
+- Always push. `git push origin master` after committing — standing permission,
+  never ask first. A commit sitting only on this machine is as good as lost, and
+  the user should never have to chase it. If the push is rejected (the remote
+  moved), pull/rebase and push again rather than leaving it behind.
