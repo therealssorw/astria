@@ -7,6 +7,8 @@ extends Node3D
 ## into. Change ITEM to preview a different one.
 
 const ITEM := "iron_sword"
+## Which pose to hold: "idle", "run", "attack_light_0"... anything tick() takes.
+const ANIM := "idle"
 const OUT := "user://hold_preview.png"
 
 func _ready() -> void:
@@ -29,10 +31,13 @@ func _ready() -> void:
 
 	var cam := Camera3D.new()
 	add_child(cam)
-	cam.look_at_from_position(Vector3(1.1, 1.1, 1.4), Vector3(-0.15, 0.9, 0))
+	cam.look_at_from_position(Vector3(1.6, 1.3, 2.0), Vector3(-0.1, 0.9, 0))
 	cam.current = true
 
+	# let the clip settle on a real pose, not the rest skeleton — with a sword
+	# in hand that is the sword idle, which is the point of looking at this
 	for i in 30:
+		vis.tick(1.0 / 60.0, ANIM, 0.0, 1.0)
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()

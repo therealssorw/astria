@@ -13,11 +13,15 @@ extends RefCounted
 ##   "sell"  — override the sell price instead of using SELL_RATIO
 ##   "desc"  — one-line flavour, shown as a tooltip
 ##   "hold"  — the model a character carries while this item is in hand:
-##             {"model": <scene path>, "scale": float, "pos": Vector3,
-##              "rot": Vector3 (degrees), "tint": Color}. Everything but
-##             "model" is optional and defaults to HOLD_DEFAULTS, which is
-##             where the grip is lined up with the hand bone — tune the fit
-##             there once and every weapon follows.
+##             {"model": <scene path>, "scale": float OR Vector3, "pos":
+##              Vector3, "rot": Vector3 (degrees), "tint": Color,
+##              "anim_set": String}. Everything but "model" is optional and
+##             defaults to HOLD_DEFAULTS, which is where the grip is lined up
+##             with the hand bone — tune the fit there once and every weapon
+##             follows. A Vector3 scale fattens a blade's cross-section
+##             without lengthening it; "anim_set" names a clip set in
+##             HumanoidVisual.SWORD_CLIPS, so carrying it changes how the
+##             character stands, walks and swings.
 ##
 ## Selling pays SELL_RATIO of the buy price, rounded down.
 ##
@@ -37,21 +41,24 @@ const ITEMS := {
 		"price": 20,
 		"desc": "A splintered practice blade.",
 		"icon": "res://Assets/Textures/Items/Weapons/wooden_sword.png",
-		"hold": {"model": SWORD_MODEL, "scale": 0.62, "tint": Color(0.52, 0.36, 0.19)},
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.0, 1.0, 2.0),
+				"tint": Color(0.52, 0.36, 0.19), "anim_set": "sword"},
 	},
 	"copper_sword": {
 		"name": "Copper Sword",
 		"price": 50,
 		"desc": "Soft metal, but it holds an edge.",
 		"icon": "res://Assets/Textures/Items/Weapons/copper_sword.png",
-		"hold": {"model": SWORD_MODEL, "scale": 0.68, "tint": Color(0.85, 0.52, 0.28)},
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.2, 1.08, 2.2),
+				"tint": Color(0.85, 0.52, 0.28), "anim_set": "sword"},
 	},
 	"iron_sword": {
 		"name": "Iron Sword",
 		"price": 100,
 		"desc": "Forge-work worth carrying.",
 		"icon": "res://Assets/Textures/Items/Weapons/iron_sword.png",
-		"hold": {"model": SWORD_MODEL, "scale": 0.75},
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.4, 1.15, 2.4),
+				"anim_set": "sword"},
 	},
 }
 

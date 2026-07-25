@@ -349,5 +349,28 @@ func _check_rouge_still_builds() -> void:
 					% [rouge.clip_lengths.size(), expected])
 	var info := rouge.get_attack_info(false, 0)
 	_expect(float(info["duration"]) > 0.0, "RougeVisual reports no attack duration")
+	_check_sword_clips(rouge)
 	remove_child(rouge)
 	rouge.free()
+
+## A sword in hand swaps the clip set. The sliced swings come out of one long
+## combo take, so a bad slice shows up as a zero-length clip rather than an
+## error — check they all carry real time, and that empty hands are unaffected.
+func _check_sword_clips(vis: HumanoidVisual) -> void:
+	_expect(vis._clip_for("idle") == "idle", "empty hands already swap clips")
+	vis.set_held_item("iron_sword")
+	_expect(vis.held_id == "iron_sword", "the sword never reached the hand")
+	_expect(vis.skeleton.find_children("HeldItem", "BoneAttachment3D", true, false).size() == 1,
+			"the sword is not attached to a bone")
+	for key: String in HumanoidVisual.SWORD_CLIPS:
+		var swapped: String = HumanoidVisual.SWORD_CLIPS[key]
+		_expect(vis._clip_for(key) == swapped,
+				"holding a sword did not swap '%s' for '%s'" % [key, swapped])
+		_expect(float(vis.clip_lengths.get(swapped, 0.0)) > 0.05,
+				"sword clip '%s' is empty — check its slice" % swapped)
+	_expect(float(vis.get_attack_info(false, 0)["duration"]) > 0.0,
+			"no swing timing with a sword out")
+	vis.set_held_item("")
+	_expect(vis._clip_for("idle") == "idle", "dropping the sword kept its clips")
+	_expect(vis.skeleton.find_children("HeldItem", "BoneAttachment3D", true, false).is_empty(),
+			"the sword stayed in the hand after dropping it")

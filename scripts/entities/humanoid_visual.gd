@@ -36,6 +36,29 @@ const CLIPS := {
 	"light_1": {"path": ANIM_DIR + "Combat/LightM1/Illegal Elbow Punch.fbx", "speed": 1.55, "loop": false},
 	"light_2": {"path": ANIM_DIR + "Combat/LightM1/Elbow Uppercut Combo.fbx", "speed": 1.55, "loop": false},
 	"heavy": {"path": ANIM_DIR + "Combat/HeavyM1/Cross Punch.fbx", "speed": 1.35, "loop": false},
+	# --- with a sword in hand (Mocap Online TC pack, MotusMan rig) ---
+	# The pack ships ONE 5.5s combo take, so the swings are sliced out of it by
+	# where the sword arm actually accelerates: three cuts at ~0.8 / ~1.6 /
+	# ~2.5, then a last one at ~4.2 that serves as the heavy. Slice bounds sit
+	# in the quiet frames on either side so each starts and ends near rest.
+	"sword_idle": {"path": ANIM_DIR + "Sword/Idle/Sword Idle.fbx", "speed": 1.0, "loop": true},
+	"sword_walk": {"path": ANIM_DIR + "Sword/Walking/Sword Walk.fbx", "speed": 1.0, "loop": true},
+	"sword_run": {"path": ANIM_DIR + "Sword/Running/Sword Run.fbx", "speed": 1.0, "loop": true},
+	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
+			"loop": false, "slice": [0.45, 1.30]},
+	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
+			"loop": false, "slice": [1.25, 2.05]},
+	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
+			"loop": false, "slice": [2.20, 3.10]},
+	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.35,
+			"loop": false, "slice": [3.90, 4.90]},
+}
+## Clip swaps applied while a sword is in hand. Anything not listed keeps its
+## bare-handed clip, so blocking, sliding and jumping are unchanged.
+const SWORD_CLIPS := {
+	"idle": "sword_idle", "walk": "sword_walk", "run": "sword_run",
+	"light_0": "sword_light_0", "light_1": "sword_light_1",
+	"light_2": "sword_light_2", "heavy": "sword_heavy",
 }
 ## Guard-up movement clips built at load: legs from the locomotion clip on the
 ## right, upper body grafted from the block stance — so circling an opponent
@@ -130,9 +153,7 @@ func build_animations() -> void:
 	var keys := _clip_keys()
 	for key in keys:
 		var cfg: Dictionary = CLIPS[key]
-		var src: Node = (load(cfg.path) as PackedScene).instantiate()
-		var src_ap: AnimationPlayer = src.find_children("*", "AnimationPlayer", true, false)[0]
-		var anim: Animation = src_ap.get_animation("mixamo_com").duplicate(true)
+		var anim := _load_clip(cfg.path)
 		# Read the neutral standing hips off the FULL clip before any slicing:
 		# a slice starting mid-motion has no neutral frame of its own.
 		var neutral_hips := Vector3.ZERO
@@ -151,7 +172,6 @@ func build_animations() -> void:
 			# second name for the same clip so a restart can cross-blend
 			# (see _restart) instead of snapping to the first frame
 			lib.add_animation(key + "__alt", anim)
-		src.free()
 	# Guard-up movement: the block stance's upper body over walking/strafing
 	# legs, so a guarding fighter can circle without dropping their hands.
 	if "block" in keys:
@@ -168,16 +188,29 @@ func build_animations() -> void:
 	# upper body from Bouncing Fight Idle on top, so strafing keeps a combat
 	# guard up. The fight idle is used ONLY as this upper-body source.
 	if "strafe_l" in keys or "strafe_r" in keys:
-		var stance_src: Node = (load(ANIM_DIR + "Combat/Stances/Bouncing Fight Idle.fbx") as PackedScene).instantiate()
-		var stance_ap: AnimationPlayer = stance_src.find_children("*", "AnimationPlayer", true, false)[0]
-		var stance_anim: Animation = stance_ap.get_animation("mixamo_com").duplicate(true)
+		var stance_anim := _load_clip(ANIM_DIR + "Combat/Stances/Bouncing Fight Idle.fbx")
 		_repath_tracks(stance_anim, skel_path)
-		stance_src.free()
 		for strafe_key in ["strafe_l", "strafe_r"]:
 			if strafe_key in keys:
 				_graft_upper_body(lib.get_animation(strafe_key), stance_anim)
 
 	anim_player.add_animation_library("lib", lib)
+
+## The one animation out of an imported clip FBX, as a copy we can chew on.
+## Mixamo exports call theirs "mixamo_com"; the sword pack names its take after
+## the file, so take whatever single animation is in there rather than a name.
+func _load_clip(path: String) -> Animation:
+	var src: Node = (load(path) as PackedScene).instantiate()
+	var src_ap: AnimationPlayer = src.find_children("*", "AnimationPlayer", true, false)[0]
+	var name := "mixamo_com"
+	if not src_ap.has_animation(name):
+		for candidate in src_ap.get_animation_list():
+			if candidate != "RESET":
+				name = candidate
+				break
+	var anim: Animation = src_ap.get_animation(name).duplicate(true)
+	src.free()
+	return anim
 
 ## Override to create `model` (added as a child, holding `skeleton`) and fill
 ## `_mats` with the materials `flash` should tint.
@@ -321,13 +354,30 @@ func _pin_hips(anim: Animation, neutral: Vector3) -> void:
 			for k in anim.track_get_key_count(i):
 				anim.track_set_key_value(i, k, neutral)
 
-func _play(key: String, blend := 0.2) -> void:
+## The clip actually played for a logical key: with a sword in hand the sword
+## set stands in wherever it has an entry, and falls back to the bare-handed
+## clip if that one wasn't built (an enemy with a trimmed clip list).
+func _clip_for(key: String) -> String:
+	if not _sword_style() or not SWORD_CLIPS.has(key):
+		return key
+	var swapped: String = SWORD_CLIPS[key]
+	if anim_player and anim_player.has_animation("lib/" + swapped):
+		return swapped
+	return key
+
+## Is what's in this character's hand something with its own animation set?
+func _sword_style() -> bool:
+	return str(ItemDb.hold_config(held_id).get("anim_set", "")) == "sword"
+
+func _play(base_key: String, blend := 0.2) -> void:
+	var key := _clip_for(base_key)
 	if anim_player == null or _current_key == key:
 		return
 	_current_key = key
 	anim_player.play("lib/" + key, blend, _clip_speed(key))
 
-func _restart(key: String, blend := 0.18, speed_override := -1.0) -> void:
+func _restart(base_key: String, blend := 0.18, speed_override := -1.0) -> void:
+	var key := _clip_for(base_key)
 	# No stop() here -- stopping kills the cross-blend and makes the new clip
 	# pop in at its first pose. Restarting the SAME clip can't blend into
 	# itself either, so each attack clip is registered twice ("key" and
@@ -351,10 +401,11 @@ func _clip_speed(key: String) -> float:
 ## (well before the clip's recovery tail, which is what makes a chain flow).
 func get_attack_info(heavy: bool, combo_index: int) -> Dictionary:
 	if heavy:
-		var dur: float = minf(clip_lengths["heavy"] / CLIPS["heavy"].speed, HEAVY_MAX_DUR) / attack_speed_mult
+		var hkey := _clip_for("heavy")
+		var dur: float = minf(clip_lengths[hkey] / CLIPS[hkey].speed, HEAVY_MAX_DUR) / attack_speed_mult
 		return {"duration": dur, "hit": dur * 0.45, "combo": dur * 0.85}
 	var i := clampi(combo_index, 0, 2)
-	var key := "light_%d" % i
+	var key := _clip_for("light_%d" % i)
 	var d: float = minf(clip_lengths[key] / CLIPS[key].speed, LIGHT_MAX_DUR[i]) / attack_speed_mult
 	return {"duration": d, "hit": d * 0.34, "combo": d * 0.62}
 
@@ -381,6 +432,12 @@ func set_held_item(id: String) -> void:
 		return
 	held_id = id
 	if is_instance_valid(_held_node):
+		# unparent before freeing: queue_free leaves it hanging off the bone
+		# until the frame ends, and swapping items twice in one frame would
+		# then briefly draw both
+		var parent := _held_node.get_parent()
+		if parent:
+			parent.remove_child(_held_node)
 		_held_node.queue_free()
 	_held_node = null
 	if id == "" or skeleton == null:
@@ -407,7 +464,10 @@ func set_held_item(id: String) -> void:
 			Basis.from_euler(Vector3(
 				deg_to_rad(cfg["rot"].x), deg_to_rad(cfg["rot"].y), deg_to_rad(cfg["rot"].z))),
 			cfg["pos"])
-	inst.scale = Vector3.ONE * float(cfg["scale"])
+	# "scale" is a plain number for a uniform blow-up, or a Vector3 when a model
+	# needs its cross-section fattened without growing longer as well
+	var s: Variant = cfg["scale"]
+	inst.scale = s if s is Vector3 else Vector3.ONE * float(s)
 	_tint_held(inst, cfg["tint"])
 	_held_node = attach
 

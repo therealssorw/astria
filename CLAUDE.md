@@ -233,11 +233,24 @@ mixed pile.
 ## Held items (what you can see in a hand)
 
 - An item is drawn in the hand when its `ItemDb` entry has a `"hold"` block:
-  `{"model", "scale", "pos", "rot" (degrees), "tint"}`, everything but the
-  model falling back to `ItemDb.HOLD_DEFAULTS`. The defaults are where the
-  grip meets the hand bone — fix a bad fit there once rather than per item.
-  The three swords share one model and differ only by scale and tint until
-  each has art of its own.
+  `{"model", "scale", "pos", "rot" (degrees), "tint", "anim_set"}`, everything
+  but the model falling back to `ItemDb.HOLD_DEFAULTS`. The defaults are where
+  the grip meets the hand bone — fix a bad fit there once rather than per
+  item. `"scale"` takes a Vector3 as well as a number, which is how the swords
+  are broad enough to read at this art scale without growing to two metres.
+  The three swords share one model and differ only by size and tint until each
+  has art of its own.
+- `"anim_set": "sword"` swaps in the clips in `HumanoidVisual.SWORD_CLIPS`
+  while that item is held — idle, walk, run, the three light swings and the
+  heavy. `_clip_for()` does the swap inside `_play`/`_restart`, so anything
+  with no sword version (block, slide, jump) keeps the bare-handed clip, and a
+  character built without the sword clips falls back instead of erroring.
+- Those clips are the Mocap Online TC Sword pack on the MotusMan rig, whose
+  bones are Mixamo's names minus the `mixamorig_` prefix — hence
+  `bonemap_motusman.tres`, the Mixamo map with the prefix stripped, wired into
+  each clip's `.import` exactly like the Mixamo ones. The pack ships ONE long
+  combo take, so the four swings are `"slice"` ranges cut out of it, chosen
+  from where the sword arm actually accelerates.
 - `HumanoidVisual.set_held_item(id)` parents the model to a `BoneAttachment3D`
   on `RightHand`, so it follows every clip and both Rouge and voxel NPCs get
   it for free. Calling it with the same id twice does nothing.
@@ -255,14 +268,30 @@ mixed pile.
 ## Development cheats
 
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —
-  `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It currently offers
-  "Give item", which lists everything in `ItemDb.ITEMS`; picking one asks the
-  server for a copy. Adding a cheat is one row in `_build_root`.
+  `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
+  (everything in `ItemDb.ITEMS`; picking one asks the server for a copy) and
+  "Teleport" (everything in `TeleportData.DESTINATIONS`). Adding a cheat is one
+  row in `_build_root`.
 - It is editor-only at BOTH ends: the menu doesn't build unless
-  `OS.has_feature("editor")`, and `Net._server_cheat_give` refuses unless the
+  `OS.has_feature("editor")`, and every `Net._server_cheat_*` refuses unless the
   SERVER is an editor run (`Net.cheats_allowed`). So an exported dedicated
   server ignores cheats however the client is patched — cheats still go
   through the server like any other bag change, never applied locally.
+- Teleport destinations are NAMES, never coordinates: `TeleportData` (in
+  `scripts/world/teleport/`) lists the places, and each one's position comes
+  from a `TeleportAnchor` (`scenes/world/teleport_anchor.tscn`) dropped in the
+  level, found through the group `teleport_<id>` — the same "a marker in a
+  group IS the place" trick as `spawn_point.gd`. Move the anchor in the editor
+  and the teleport moves with it; a destination with no anchor yet answers
+  "has no anchor in this level yet" and is listed as such, which is what you
+  want while the place is still being built.
+- The teleport itself is server-authoritative like everything else: the server
+  moves ITS copy (`Player.net_teleport`, which also moves `net_pos`) and then
+  tells the owner where it is with `cl_force_position`. Doing it the other way
+  round is exactly what the position validator exists to reject.
+- Test: `--headless res://tests/test_teleport.tscn` (prints
+  `TPTEST RESULT=PASS/FAIL`) — refusals when unanchored or unknown, and the
+  pawn plus `net_pos` landing on the anchor.
 - A dedicated server launched with `--dev-items` instead hands every player
   one of each catalogue item at registration (`Net._starting_items`).
 
