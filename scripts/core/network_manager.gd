@@ -18,7 +18,16 @@ const ENEMY_STATE_INTERVAL := 1.0 / 15.0   # server -> clients enemy states
 const VITALS_INTERVAL := 0.5               # server -> owner stamina/health sync
 const KILL_Y := 30.0                       # below the waves -> counts as a death
 
-var players := {}  # peer_id -> {"name": String, "kills": int, "deaths": int}
+## Placeholder purse so shops are usable — drop to 0 once coins can be earned.
+const STARTING_COINS := 150
+## How far past an NPC's interact_range the server still honours a trade, to
+## cover the lag between the client's view of its position and the server's.
+const SHOP_RANGE_SLACK := 2.5
+
+## peer_id -> {"name", "kills", "deaths", "coins", "items"}. Server-owned.
+## "coins"/"items" are private to their owner and are stripped before the
+## registry is broadcast — each owner gets theirs through cl_purse.
+var players := {}
 var is_dedicated := false
 var active := false            # hosting or connected right now
 var upnp_status := "inactive"  # inactive / searching / ok / failed
@@ -28,12 +37,19 @@ var last_error := ""           # shown by the menu after a kick/disconnect
 
 signal player_list_changed
 signal join_failed(reason: String)
+## The local player's coins/items were re-synced from the server.
+signal purse_changed
+## Server's verdict on a trade the local player asked for.
+signal trade_result(message: String, ok: bool)
 
 var _upnp_thread: Thread
 var _upnp_cleanup_thread: Thread
 var _upnp_mapper = null      # UPNP instance that owns the active mapping
 var _mapped_port := 0        # 0 = nothing mapped on the router right now
 var _enemy_counter := 0
+# read-only mirror of THIS peer's slice of the registry, written only by cl_purse
+var _my_coins := 0
+var _my_items := {}
 var _player_bcast_accum := 0.0
 var _enemy_bcast_accum := 0.0
 var _vitals_accum := 0.0
@@ -204,6 +220,7 @@ func _server_spawn_player(id: int) -> void:
 	var pos := spawn_position(pn.get_child_count())
 	rpc("cl_spawn_player", id, players[id]["name"], pos)
 	_do_spawn_player(id, players[id]["name"], pos)
+	_send_purse(id) # first sync of their coins/bag, now that they have a pawn
 
 @rpc("authority", "call_remote", "reliable")
 func cl_spawn_player(id: int, username: String, pos: Vector3) -> void:
@@ -234,11 +251,21 @@ func cl_sync_players(server_players: Dictionary) -> void:
 	player_list_changed.emit()
 
 func _sync_players() -> void:
-	rpc("cl_sync_players", players)
+	rpc("cl_sync_players", _public_players())
 	player_list_changed.emit()
 
+## What everyone is allowed to see: no one needs another player's purse or bag,
+## so those never leave the server except to the peer they belong to.
+func _public_players() -> Dictionary:
+	var out := {}
+	for id in players:
+		var e: Dictionary = players[id]
+		out[id] = {"name": e["name"], "kills": e["kills"], "deaths": e["deaths"]}
+	return out
+
 func _make_entry(username: String) -> Dictionary:
-	return {"name": username, "kills": 0, "deaths": 0}
+	return {"name": username, "kills": 0, "deaths": 0,
+			"coins": STARTING_COINS, "items": {}}
 
 func _sanitize_name(raw: String) -> String:
 	var cleaned := ""
@@ -260,6 +287,126 @@ func _sanitize_name(raw: String) -> String:
 
 func my_stats() -> Dictionary:
 	return players.get(multiplayer.get_unique_id(), _make_entry(""))
+
+# ---------------- purse and bag (server-owned) ----------------
+#
+# Coins and carried items live in the registry above, which only the server
+# writes. Clients hold a read-only mirror and ASK to trade; the server checks
+# the shop stocks the item, that the price is its own price, that the player
+# can afford it or actually holds it, and that they are standing at the
+# counter. A client that lies gets a refusal and its mirror re-synced.
+
+func my_coins() -> int:
+	return _my_coins
+
+func my_items() -> Dictionary:
+	return _my_items
+
+func my_item_count(item_id: String) -> int:
+	return int(_my_items.get(item_id, 0))
+
+## Client -> server: I'd like to buy this. Never applied locally first.
+func request_buy(shop_id: String, item_id: String) -> void:
+	if multiplayer.is_server():
+		_server_trade(multiplayer.get_unique_id(), shop_id, item_id, true)
+	else:
+		rpc_id(1, "sv_shop_trade", shop_id, item_id, true)
+
+func request_sell(shop_id: String, item_id: String) -> void:
+	if multiplayer.is_server():
+		_server_trade(multiplayer.get_unique_id(), shop_id, item_id, false)
+	else:
+		rpc_id(1, "sv_shop_trade", shop_id, item_id, false)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_shop_trade(shop_id: String, item_id: String, buying: bool) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_trade(multiplayer.get_remote_sender_id(), shop_id, item_id, buying)
+
+func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> void:
+	if not players.has(id):
+		return
+	if not ShopData.has(shop_id) or not ItemDb.has(item_id):
+		_trade_reply(id, "There's nothing like that for sale here.", false)
+		return
+	if not _at_counter(id, shop_id):
+		_trade_reply(id, "You're too far from the counter.", false)
+		return
+
+	var entry: Dictionary = players[id]
+	var items: Dictionary = entry["items"]
+	var coins := int(entry["coins"])
+	var label := ItemDb.item_name(item_id)
+
+	if buying:
+		if not ShopData.stock(shop_id).has(item_id):
+			_trade_reply(id, "He doesn't stock that.", false)
+			return
+		var price := ItemDb.buy_price(item_id)
+		if coins < price:
+			_trade_reply(id, "Not enough gold — %s costs %d." % [label, price], false)
+			return
+		entry["coins"] = coins - price
+		items[item_id] = int(items.get(item_id, 0)) + 1
+		_trade_reply(id, "Bought %s for %d gold." % [label, price], true)
+	else:
+		if not ShopData.buys(shop_id, item_id):
+			_trade_reply(id, "He won't take that.", false)
+			return
+		var held := int(items.get(item_id, 0))
+		if held < 1:
+			_trade_reply(id, "You have no %s to sell." % label, false)
+			return
+		var price := ItemDb.sell_price(item_id)
+		if held > 1:
+			items[item_id] = held - 1
+		else:
+			items.erase(item_id)
+		entry["coins"] = coins + price
+		_trade_reply(id, "Sold %s for %d gold." % [label, price], true)
+
+	_send_purse(id)
+
+## Is this player actually standing at that NPC? The server owns every pawn's
+## position (speed-validated in sv_player_state), so this can't be spoofed.
+func _at_counter(id: int, shop_id: String) -> bool:
+	var pawn := _pawn(id)
+	if pawn == null:
+		return false
+	for npc in get_tree().get_nodes_in_group("npc_interactable"):
+		if not is_instance_valid(npc) or npc.dialog_id != shop_id:
+			continue
+		var reach: float = float(npc.interact_range) + SHOP_RANGE_SLACK
+		if pawn.global_position.distance_to(npc.global_position) <= reach:
+			return true
+	return false
+
+func _trade_reply(id: int, message: String, ok: bool) -> void:
+	if id == multiplayer.get_unique_id():
+		cl_trade_result(message, ok)
+	else:
+		rpc_id(id, "cl_trade_result", message, ok)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_trade_result(message: String, ok: bool) -> void:
+	trade_result.emit(message, ok)
+
+## Server -> one owner: here is your authoritative purse and bag.
+func _send_purse(id: int) -> void:
+	var entry: Dictionary = players.get(id, {})
+	var coins := int(entry.get("coins", 0))
+	var items: Dictionary = entry.get("items", {})
+	if id == multiplayer.get_unique_id():
+		cl_purse(coins, items)
+	else:
+		rpc_id(id, "cl_purse", coins, items)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_purse(coins: int, items: Dictionary) -> void:
+	_my_coins = coins
+	_my_items = items.duplicate(true) # never alias the server's own dictionary
+	purse_changed.emit()
 
 # ---------------- state replication ----------------
 

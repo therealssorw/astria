@@ -39,7 +39,8 @@ func _ready() -> void:
 	_root.visible = false
 	set_process(false)
 	DialogSystem.action_triggered.connect(_on_dialog_action)
-	GameStats.changed.connect(_on_stats_changed)
+	Net.purse_changed.connect(_on_purse_changed)
+	Net.trade_result.connect(_on_trade_result)
 
 func is_open() -> bool:
 	return shop_id != ""
@@ -82,29 +83,27 @@ func _on_dialog_action(dialog_id: String, action: String) -> void:
 	if action == OPEN_ACTION:
 		open(dialog_id)
 
-func _on_stats_changed() -> void:
-	# deferred: this fires from inside a row button's own `pressed` signal, and
-	# the refresh frees that button
+func _on_purse_changed() -> void:
+	# deferred: this can land inside a row button's own `pressed` signal (the
+	# host trades synchronously), and the refresh frees that button
 	if is_open():
 		_refresh.call_deferred()
 
+func _on_trade_result(message: String, ok: bool) -> void:
+	if is_open():
+		_flash(message, GOLD if ok else BAD)
+
 # ---------------- transactions ----------------
+#
+# The UI never moves coins or items itself — it asks, and redraws when the
+# server sends the new purse back. So a client that patches this file can only
+# make its own screen lie to it.
 
 func _buy(id: String) -> void:
-	var price := ItemDb.buy_price(id)
-	if not GameStats.spend_coins(price):
-		_flash("Not enough gold — %s costs %d." % [ItemDb.item_name(id), price], BAD)
-		return
-	GameStats.add_item(id)
-	_flash("Bought %s for %d gold." % [ItemDb.item_name(id), price], GOLD)
+	Net.request_buy(shop_id, id)
 
 func _sell(id: String) -> void:
-	var price := ItemDb.sell_price(id)
-	if not GameStats.remove_item(id):
-		_flash("You have no %s to sell." % ItemDb.item_name(id), BAD)
-		return
-	GameStats.add_coins(price)
-	_flash("Sold %s for %d gold." % [ItemDb.item_name(id), price], GOLD)
+	Net.request_sell(shop_id, id)
 
 func _flash(text: String, color: Color) -> void:
 	_hint.text = text
@@ -137,7 +136,7 @@ func _input(event: InputEvent) -> void:
 # ---------------- list ----------------
 
 func _refresh() -> void:
-	_purse.text = "%d gold" % GameStats.coins
+	_purse.text = "%d gold" % Net.my_coins()
 	_buy_tab.button_pressed = not _selling
 	_sell_tab.button_pressed = _selling
 	for c in _rows.get_children():
@@ -155,20 +154,20 @@ func _fill_buy_rows() -> void:
 			push_warning("ShopSystem: '%s' stocks unknown item '%s'" % [shop_id, id])
 			continue
 		var price := ItemDb.buy_price(id)
-		var owned := GameStats.item_count(id)
+		var owned := Net.my_item_count(id)
 		var label := ItemDb.item_name(id)
 		if owned > 0:
 			label += "   (carrying %d)" % owned
 		_add_row(id, label, "%d gold" % price,
-				GOLD if price <= GameStats.coins else BAD, _buy.bind(id))
+				GOLD if price <= Net.my_coins() else BAD, _buy.bind(id))
 
 func _fill_sell_rows() -> void:
 	var any := false
-	for id: String in GameStats.owned_ids():
+	for id: String in Net.my_items().keys():
 		if not ShopData.buys(shop_id, id):
 			continue
 		any = true
-		var count := GameStats.item_count(id)
+		var count := Net.my_item_count(id)
 		var label := ItemDb.item_name(id)
 		if count > 1:
 			label += "   x%d" % count

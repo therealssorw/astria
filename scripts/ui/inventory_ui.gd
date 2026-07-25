@@ -2,7 +2,7 @@ extends CanvasLayer
 ## Inventory screen (toggled with Tab, or D-pad left on a gamepad) +
 ## always-on hotbar.
 ## Tabs: Inventory (equipment slots + 32-slot item grid) and Stats
-## (coins / deaths / kills, from the GameStats autoload).
+## (coins / deaths / kills, all read from the server registry in Net).
 
 const SLOT_SIZE := 52
 const HOTBAR_SLOTS := 9
@@ -23,7 +23,7 @@ func _ready() -> void:
 	layer = 5
 	_build_hotbar()
 	_build_panel()
-	GameStats.changed.connect(_refresh_items)
+	Net.purse_changed.connect(_refresh_items)
 	_refresh_items()
 
 func _input(_event: InputEvent) -> void:
@@ -46,7 +46,7 @@ func _process(_delta: float) -> void:
 	if open and stats_content.visible:
 		# kills/deaths come from the server's registry, not local counters
 		var st: Dictionary = Net.my_stats()
-		coins_label.text = "Coins: %d" % GameStats.coins
+		coins_label.text = "Coins: %d" % Net.my_coins()
 		deaths_label.text = "Deaths: %d" % int(st["deaths"])
 		kills_label.text = "Kills: %d" % int(st["kills"])
 
@@ -115,7 +115,7 @@ func _item_slot() -> Panel:
 	return p
 
 func _refresh_items() -> void:
-	var ids := GameStats.owned_ids()
+	var ids := Net.my_items().keys()
 	for i in item_slots.size():
 		var slot := item_slots[i]
 		var icon := slot.get_node("ItemIcon") as TextureRect
@@ -128,7 +128,7 @@ func _refresh_items() -> void:
 			slot.tooltip_text = ""
 			continue
 		var id: String = ids[i]
-		var n := GameStats.item_count(id)
+		var n := Net.my_item_count(id)
 		icon.texture = ItemDb.icon(id)
 		# the name only stands in for missing art; the tooltip always names it
 		name_label.text = "" if icon.texture else ItemDb.item_name(id)

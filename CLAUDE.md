@@ -1,5 +1,34 @@
 # Astria — Godot 4.7 third-person action game
 
+## Server authority (IMPORTANT)
+
+Everything that can be server-side must be server-side. The client is never
+trusted. Treat every message from a client as a *request* to be validated, not
+a fact to be applied.
+
+Rules for any new feature:
+
+- If it changes game state — health, stamina, currency, items, quests, kills,
+  progression, anything a player could gain by cheating — the server owns the
+  variable, the server mutates it, and clients get a replicated read-only copy.
+  Never write it locally "and tell the server after".
+- A client asks (`sv_*` RPC); the server checks *everything* it could lie
+  about: does the thing exist, is the price the server's price, can it afford
+  it, does it hold it, is its pawn actually close enough, is it alive, is it
+  allowed. Then the server applies it and pushes the new state back (`cl_*`).
+- Private state (a purse, a bag) goes only to its owner — strip it from
+  anything broadcast to every peer.
+- Never derive a check from a value the client supplied. Positions come from
+  the server's own copy of the pawn (which is already speed-validated), not
+  from whatever the client claims in the request.
+- The UI never applies a change optimistically. It asks, then redraws when the
+  server answers. That way a patched client can only lie to its own screen.
+
+"Within reason" means purely cosmetic, per-player things stay local, because
+faking them gains nothing: which dialog line is on screen, whether the NPC
+prompt is drawn, the inventory panel being open, camera and animation state.
+If in doubt about whether something is cosmetic, put it on the server.
+
 ## File organization (IMPORTANT)
 
 Being organized is very important in this project. Within reason, the more
@@ -93,13 +122,22 @@ mixed pile.
   listens to `DialogSystem.action_triggered` and opens itself — no per-NPC code.
 - `DialogSystem._on_answer` emits the action AFTER changing line, so an answer
   can both end the conversation and open something without `close()` undoing it.
-- Coins and the carried bag live in `GameStats` (local, like dialog — not
-  replicated, so nothing about trading is server-checked). `GameStats.changed`
-  drives both the shop list and the inventory grid.
-- `GameStats.STARTING_COINS` is a placeholder purse (150) so the shop is
-  usable; drop it to 0 once coins can actually be earned in play.
-- There is no item art yet, so an inventory slot renders the item's name plus
-  an `xN` stack badge.
+- Trading is server-authoritative (see "Server authority"). Coins and the bag
+  live in `Net.players[peer_id]["coins"/"items"]`, which only the server
+  writes. The shop UI calls `Net.request_buy/request_sell`; the server checks
+  the shop stocks it, that the price is ItemDb's price, affordability/holdings,
+  and that the pawn is actually at the counter (`Net._at_counter`), then pushes
+  the new purse back with `cl_purse`. Clients read `Net.my_coins()` /
+  `my_items()` / `my_item_count()` and redraw on `Net.purse_changed`; refusals
+  arrive on `Net.trade_result` and show in the shop's hint line.
+- Purses and bags are stripped from the broadcast registry (`_public_players`)
+  — only the owner ever sees theirs.
+- `Net.STARTING_COINS` is a placeholder purse (150) so the shop is usable; drop
+  it to 0 once coins can actually be earned in play.
+- An item's `"icon"` in `ItemDb` is what the bag grid and the shop rows draw;
+  art lives in `Assets/Textures/Items/`, grouped like the models. Items with no
+  usable icon fall back to drawing their name, so a bad path never crashes a
+  screen. The shipped sword icons are 64x64 placeholders — overwrite the files.
 
 ## Multiplayer
 
@@ -108,12 +146,13 @@ mixed pile.
   ENet host/join, UPnP port mapping (so hosts don't need manual port
   forwarding; falls back to LAN with a message), the server-authoritative
   player registry (usernames, kills, deaths) and the entire RPC protocol.
-- Never trust the client: the server simulates ALL combat (stamina, swing
-  timing, hit traces, health, deaths, kill credit) on its copy of each pawn.
-  Clients only send attack *requests* and cosmetic state reports; position
-  reports are speed-validated (`Player.net_report_state`) and teleports are
-  snapped back. Stats exist only in the server registry (`Net.players`),
-  replicated read-only — the scoreboard (hold P) and inventory read those.
+- Never trust the client (see "Server authority" at the top): the server
+  simulates ALL combat (stamina, swing timing, hit traces, health, deaths, kill
+  credit) on its copy of each pawn. Clients only send attack *requests* and
+  cosmetic state reports; position reports are speed-validated
+  (`Player.net_report_state`) and teleports are snapped back. Stats, coins and
+  carried items exist only in the server registry (`Net.players`), replicated
+  read-only — the scoreboard (hold P), the inventory and the shop read those.
 - Pawn roles in `player.gd`: owner (is_local) simulates + reports, server
   validates + runs authoritative combat for every pawn, everyone else gets
   an interpolated puppet. Enemies (`enemy.gd`): AI runs only on the server;
