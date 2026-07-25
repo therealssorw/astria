@@ -39,7 +39,7 @@ func _ready() -> void:
 	_root.visible = false
 	set_process(false)
 	DialogSystem.action_triggered.connect(_on_dialog_action)
-	Net.purse_changed.connect(_on_purse_changed)
+	GameStats.changed.connect(_on_purse_changed)
 	Net.trade_result.connect(_on_trade_result)
 
 func is_open() -> bool:
@@ -136,7 +136,7 @@ func _input(event: InputEvent) -> void:
 # ---------------- list ----------------
 
 func _refresh() -> void:
-	_purse.text = "%d gold" % Net.my_coins()
+	_purse.text = "%d gold" % GameStats.coins
 	_buy_tab.button_pressed = not _selling
 	_sell_tab.button_pressed = _selling
 	for c in _rows.get_children():
@@ -154,20 +154,20 @@ func _fill_buy_rows() -> void:
 			push_warning("ShopSystem: '%s' stocks unknown item '%s'" % [shop_id, id])
 			continue
 		var price := ItemDb.buy_price(id)
-		var owned := Net.my_item_count(id)
+		var owned := GameStats.item_count(id)
 		var label := ItemDb.item_name(id)
 		if owned > 0:
 			label += "   (carrying %d)" % owned
 		_add_row(id, label, "%d gold" % price,
-				GOLD if price <= Net.my_coins() else BAD, _buy.bind(id))
+				GOLD if price <= GameStats.coins else BAD, _buy.bind(id))
 
 func _fill_sell_rows() -> void:
 	var any := false
-	for id: String in Net.my_items().keys():
+	for id: String in GameStats.owned_ids():
 		if not ShopData.buys(shop_id, id):
 			continue
 		any = true
-		var count := Net.my_item_count(id)
+		var count := GameStats.item_count(id)
 		var label := ItemDb.item_name(id)
 		if count > 1:
 			label += "   x%d" % count

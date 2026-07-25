@@ -187,7 +187,7 @@ func _build_ui() -> void:
 	box.add_child(status_label)
 
 	box.add_child(_spacer(8))
-	var controls := _small_label("WASD move  •  LMB punch (hold = heavy)  •  RMB block\nSPACE jump  •  SHIFT in air = dive  •  TAB lock-on  •  hold P scoreboard")
+	var controls := _small_label("WASD move  •  LMB punch (hold = heavy)  •  RMB block  •  MMB lock-on\nSPACE jump  •  CTRL slide (in air: dive)  •  TAB inventory  •  hold P scoreboard")
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(controls)
 

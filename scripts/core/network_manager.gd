@@ -18,15 +18,17 @@ const ENEMY_STATE_INTERVAL := 1.0 / 15.0   # server -> clients enemy states
 const VITALS_INTERVAL := 0.5               # server -> owner stamina/health sync
 const KILL_Y := 30.0                       # below the waves -> counts as a death
 
-## Placeholder purse so shops are usable — drop to 0 once coins can be earned.
-const STARTING_COINS := 150
+const GOLD_DROP_SCRIPT := preload("res://scripts/world/gold_drop.gd")
+const GOLD_PICKUP_RANGE := 1.4             # walk this close to collect a pile
+const GOLD_PICKUP_INTERVAL := 0.1          # server proximity check cadence
+const GOLD_DESPAWN_SECONDS := 120.0        # unclaimed piles vanish after this
 ## How far past an NPC's interact_range the server still honours a trade, to
 ## cover the lag between the client's view of its position and the server's.
 const SHOP_RANGE_SLACK := 2.5
 
-## peer_id -> {"name", "kills", "deaths", "coins", "items"}. Server-owned.
-## "coins"/"items" are private to their owner and are stripped before the
-## registry is broadcast — each owner gets theirs through cl_purse.
+## peer_id -> {"name", "kills", "deaths", "gold", "items"}. Server-owned.
+## "gold"/"items" are private to their owner: they are stripped before the
+## registry is broadcast, and each owner gets theirs alone through cl_purse.
 var players := {}
 var is_dedicated := false
 var active := false            # hosting or connected right now
@@ -37,7 +39,7 @@ var last_error := ""           # shown by the menu after a kick/disconnect
 
 signal player_list_changed
 signal join_failed(reason: String)
-## The local player's coins/items were re-synced from the server.
+## The local player's gold/items mirror was re-synced from the server.
 signal purse_changed
 ## Server's verdict on a trade the local player asked for.
 signal trade_result(message: String, ok: bool)
@@ -47,12 +49,11 @@ var _upnp_cleanup_thread: Thread
 var _upnp_mapper = null      # UPNP instance that owns the active mapping
 var _mapped_port := 0        # 0 = nothing mapped on the router right now
 var _enemy_counter := 0
-# read-only mirror of THIS peer's slice of the registry, written only by cl_purse
-var _my_coins := 0
-var _my_items := {}
+var _gold_counter := 0
 var _player_bcast_accum := 0.0
 var _enemy_bcast_accum := 0.0
 var _vitals_accum := 0.0
+var _gold_accum := 0.0
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -209,6 +210,10 @@ func _handle_world_ready(id: int) -> void:
 		for e in en.get_children():
 			if not e.dead:
 				rpc_id(id, "cl_spawn_enemy", String(e.name), e.global_position)
+	var dn := _drops_node()
+	if dn:
+		for d in dn.get_children():
+			rpc_id(id, "cl_spawn_gold", String(d.name), d.global_position, d.amount)
 	rpc_id(id, "cl_sync_players", players)
 	# then their own pawn, broadcast to everyone (including them)
 	_server_spawn_player(id)
@@ -220,7 +225,7 @@ func _server_spawn_player(id: int) -> void:
 	var pos := spawn_position(pn.get_child_count())
 	rpc("cl_spawn_player", id, players[id]["name"], pos)
 	_do_spawn_player(id, players[id]["name"], pos)
-	_send_purse(id) # first sync of their coins/bag, now that they have a pawn
+	_send_purse(id) # first sync of their gold/bag, now that they have a pawn
 
 @rpc("authority", "call_remote", "reliable")
 func cl_spawn_player(id: int, username: String, pos: Vector3) -> void:
@@ -245,6 +250,8 @@ func cl_remove_player(id: int) -> void:
 		pawn.queue_free()
 
 ## Registry broadcast — the ONLY source of usernames/kills/deaths anywhere.
+## Gold and items are stripped out (see _public_players); your own reach you
+## privately through cl_purse, which fills the GameStats mirror.
 @rpc("authority", "call_remote", "reliable")
 func cl_sync_players(server_players: Dictionary) -> void:
 	players = server_players
@@ -264,8 +271,7 @@ func _public_players() -> Dictionary:
 	return out
 
 func _make_entry(username: String) -> Dictionary:
-	return {"name": username, "kills": 0, "deaths": 0,
-			"coins": STARTING_COINS, "items": {}}
+	return {"name": username, "kills": 0, "deaths": 0, "gold": 0, "items": {}}
 
 func _sanitize_name(raw: String) -> String:
 	var cleaned := ""
@@ -290,20 +296,11 @@ func my_stats() -> Dictionary:
 
 # ---------------- purse and bag (server-owned) ----------------
 #
-# Coins and carried items live in the registry above, which only the server
-# writes. Clients hold a read-only mirror and ASK to trade; the server checks
-# the shop stocks the item, that the price is its own price, that the player
-# can afford it or actually holds it, and that they are standing at the
-# counter. A client that lies gets a refusal and its mirror re-synced.
-
-func my_coins() -> int:
-	return _my_coins
-
-func my_items() -> Dictionary:
-	return _my_items
-
-func my_item_count(item_id: String) -> int:
-	return int(_my_items.get(item_id, 0))
+# Gold and carried items live in the registry above, which only the server
+# writes. Clients hold a read-only mirror in GameStats and ASK to trade; the
+# server checks the shop stocks the item, that the price is its own price,
+# that the player can afford it or actually holds it, and that they are
+# standing at the counter. A client that lies gets a refusal and a re-sync.
 
 ## Client -> server: I'd like to buy this. Never applied locally first.
 func request_buy(shop_id: String, item_id: String) -> void:
@@ -336,7 +333,7 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 
 	var entry: Dictionary = players[id]
 	var items: Dictionary = entry["items"]
-	var coins := int(entry["coins"])
+	var gold := int(entry.get("gold", 0))
 	var label := ItemDb.item_name(item_id)
 
 	if buying:
@@ -344,10 +341,10 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 			_trade_reply(id, "He doesn't stock that.", false)
 			return
 		var price := ItemDb.buy_price(item_id)
-		if coins < price:
+		if gold < price:
 			_trade_reply(id, "Not enough gold — %s costs %d." % [label, price], false)
 			return
-		entry["coins"] = coins - price
+		entry["gold"] = gold - price
 		items[item_id] = int(items.get(item_id, 0)) + 1
 		_trade_reply(id, "Bought %s for %d gold." % [label, price], true)
 	else:
@@ -363,7 +360,7 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 			items[item_id] = held - 1
 		else:
 			items.erase(item_id)
-		entry["coins"] = coins + price
+		entry["gold"] = gold + price
 		_trade_reply(id, "Sold %s for %d gold." % [label, price], true)
 
 	_send_purse(id)
@@ -392,21 +389,22 @@ func _trade_reply(id: int, message: String, ok: bool) -> void:
 func cl_trade_result(message: String, ok: bool) -> void:
 	trade_result.emit(message, ok)
 
-## Server -> one owner: here is your authoritative purse and bag.
+## Server -> one owner: here is your authoritative gold and bag. This is the
+## ONLY thing that writes the GameStats mirror.
 func _send_purse(id: int) -> void:
 	var entry: Dictionary = players.get(id, {})
-	var coins := int(entry.get("coins", 0))
+	var gold := int(entry.get("gold", 0))
 	var items: Dictionary = entry.get("items", {})
 	if id == multiplayer.get_unique_id():
-		cl_purse(coins, items)
+		cl_purse(gold, items)
 	else:
-		rpc_id(id, "cl_purse", coins, items)
+		rpc_id(id, "cl_purse", gold, items)
 
 @rpc("authority", "call_remote", "reliable")
-func cl_purse(coins: int, items: Dictionary) -> void:
-	_my_coins = coins
-	_my_items = items.duplicate(true) # never alias the server's own dictionary
-	purse_changed.emit()
+func cl_purse(gold: int, items: Dictionary) -> void:
+	GameStats.coins = gold
+	GameStats.items = items.duplicate(true) # never alias the server's dictionary
+	GameStats.changed.emit()
 
 # ---------------- state replication ----------------
 
@@ -428,6 +426,10 @@ func _physics_process(delta: float) -> void:
 	if _vitals_accum >= VITALS_INTERVAL:
 		_vitals_accum = 0.0
 		_send_vitals(pn)
+	_gold_accum += delta
+	if _gold_accum >= GOLD_PICKUP_INTERVAL:
+		_gold_accum = 0.0
+		_check_gold_pickups(pn)
 	_check_fell_off_world(pn)
 
 func _broadcast_player_states(pn: Node) -> void:
@@ -641,6 +643,86 @@ func cl_enemy_died(enemy_name: String) -> void:
 func server_remove_enemy(enemy_name: String) -> void:
 	rpc("cl_remove_enemy", enemy_name)
 
+# ---------------- gold drops ----------------
+# The pile itself is cosmetic on every peer; the server owns who gets paid.
+
+## SERVER: drop a pile of gold into the world (called by dying enemies).
+func server_spawn_gold(pos: Vector3, amount: int) -> void:
+	if not multiplayer.is_server() or amount <= 0:
+		return
+	_gold_counter += 1
+	var drop_name := "Gold_%d" % _gold_counter
+	rpc("cl_spawn_gold", drop_name, pos, amount)
+	_do_spawn_gold(drop_name, pos, amount)
+	get_tree().create_timer(GOLD_DESPAWN_SECONDS).timeout.connect(func() -> void:
+		var dn := _drops_node()
+		var d: Node = dn.get_node_or_null(drop_name) if dn else null
+		if d: # never claimed — quietly rot away
+			rpc("cl_remove_gold", drop_name)
+			d.queue_free())
+
+@rpc("authority", "call_remote", "reliable")
+func cl_spawn_gold(drop_name: String, pos: Vector3, amount: int) -> void:
+	_do_spawn_gold(drop_name, pos, amount)
+
+func _do_spawn_gold(drop_name: String, pos: Vector3, amount: int) -> void:
+	var dn := _drops_node(true)
+	if dn == null or dn.has_node(drop_name):
+		return
+	var drop: Node3D = GOLD_DROP_SCRIPT.new()
+	drop.name = drop_name
+	drop.amount = amount
+	dn.add_child(drop)
+	drop.global_position = pos
+
+@rpc("authority", "call_remote", "reliable")
+func cl_remove_gold(drop_name: String) -> void:
+	var dn := _drops_node()
+	if dn == null:
+		return
+	var d := dn.get_node_or_null(drop_name)
+	if d:
+		d.queue_free()
+
+## SERVER: award piles to the first living player standing on them.
+func _check_gold_pickups(pn: Node) -> void:
+	var dn := _drops_node()
+	if dn == null:
+		return
+	for d in dn.get_children():
+		var dpos: Vector3 = d.global_position
+		for pawn in pn.get_children():
+			if pawn.dead or not players.has(pawn.peer_id):
+				continue
+			var ppos: Vector3 = pawn.server_body_pos()
+			if Vector2(ppos.x - dpos.x, ppos.z - dpos.z).length() <= GOLD_PICKUP_RANGE \
+					and absf(ppos.y - dpos.y) < 2.0:
+				_server_award_gold(pawn.peer_id, d)
+				break
+
+func _server_award_gold(id: int, drop: Node) -> void:
+	players[id]["gold"] = int(players[id].get("gold", 0)) + drop.amount
+	print("[Net] %s picked up %d gold" % [players[id]["name"], drop.amount])
+	_sync_players()
+	_send_purse(id) # gold is private now, so the broadcast no longer carries it
+	rpc("cl_gold_picked", String(drop.name), drop.amount, drop.global_position)
+	_do_gold_picked(String(drop.name), drop.amount, drop.global_position)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_gold_picked(drop_name: String, amount: int, pos: Vector3) -> void:
+	_do_gold_picked(drop_name, amount, pos)
+
+func _do_gold_picked(drop_name: String, amount: int, pos: Vector3) -> void:
+	var w := _world()
+	if w == null:
+		return
+	GOLD_DROP_SCRIPT.spawn_pickup_text(w, pos, amount)
+	var dn := _drops_node()
+	if dn:
+		var d := dn.get_node_or_null(drop_name)
+		if d:
+			d.queue_free()
+
 @rpc("authority", "call_remote", "reliable")
 func cl_remove_enemy(enemy_name: String) -> void:
 	var en := _enemies_node()
@@ -742,6 +824,18 @@ func _players_node() -> Node:
 func _enemies_node() -> Node:
 	var w := _world()
 	return w.get_node_or_null("Enemies") if w else null
+
+## Runtime-only container for gold piles (created on demand on each peer).
+func _drops_node(create := false) -> Node:
+	var w := _world()
+	if w == null:
+		return null
+	var dn := w.get_node_or_null("Drops")
+	if dn == null and create:
+		dn = Node3D.new()
+		dn.name = "Drops"
+		w.add_child(dn)
+	return dn
 
 func _pawn(id: int) -> Node:
 	var pn := _players_node()

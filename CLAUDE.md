@@ -110,10 +110,14 @@ mixed pile.
 
 ## Items and shops
 
-- Item catalogue: `scripts/items/item_db.gd` — id -> name / buy price / desc.
-  Selling pays `ItemDb.SELL_RATIO` (half, rounded down) unless an item carries
-  its own `"sell"`. Never hardcode a price anywhere else; two shops must not
-  disagree about what a sword is worth.
+- Item catalogue: `scripts/items/item_db.gd` — id -> name / buy price / desc /
+  icon. Selling pays `ItemDb.SELL_RATIO` (half, rounded down) unless an item
+  carries its own `"sell"`. Never hardcode a price anywhere else; two shops
+  must not disagree about what a sword is worth.
+- An item's `"icon"` is what the bag grid and the shop rows draw; art lives in
+  `Assets/Textures/Items/`, grouped like the models. Items with no usable icon
+  fall back to drawing their name, so a bad path never crashes a screen. The
+  shipped sword icons are 64x64 placeholders — overwrite the files to replace.
 - Who stocks what: `scripts/ui/shop/shop_data.gd`, keyed by the NPC's
   `dialog_id`. Optional `"buys"` list restricts what that shop will take back;
   omit it and the shop buys anything.
@@ -122,22 +126,21 @@ mixed pile.
   listens to `DialogSystem.action_triggered` and opens itself — no per-NPC code.
 - `DialogSystem._on_answer` emits the action AFTER changing line, so an answer
   can both end the conversation and open something without `close()` undoing it.
-- Trading is server-authoritative (see "Server authority"). Coins and the bag
-  live in `Net.players[peer_id]["coins"/"items"]`, which only the server
-  writes. The shop UI calls `Net.request_buy/request_sell`; the server checks
-  the shop stocks it, that the price is ItemDb's price, affordability/holdings,
-  and that the pawn is actually at the counter (`Net._at_counter`), then pushes
-  the new purse back with `cl_purse`. Clients read `Net.my_coins()` /
-  `my_items()` / `my_item_count()` and redraw on `Net.purse_changed`; refusals
-  arrive on `Net.trade_result` and show in the shop's hint line.
-- Purses and bags are stripped from the broadcast registry (`_public_players`)
-  — only the owner ever sees theirs.
-- `Net.STARTING_COINS` is a placeholder purse (150) so the shop is usable; drop
-  it to 0 once coins can actually be earned in play.
-- An item's `"icon"` in `ItemDb` is what the bag grid and the shop rows draw;
-  art lives in `Assets/Textures/Items/`, grouped like the models. Items with no
-  usable icon fall back to drawing their name, so a bad path never crashes a
-  screen. The shipped sword icons are 64x64 placeholders — overwrite the files.
+- Trading is server-authoritative (see "Server authority"). Gold and the bag
+  live in `Net.players[peer_id]["gold"/"items"]`, which only the server writes
+  — the same registry gold that enemy drops pay into. The shop UI calls
+  `Net.request_buy/request_sell`; the server checks the shop stocks it, that
+  the price is ItemDb's price, affordability/holdings, and that the pawn is
+  actually at the counter (`Net._at_counter`), then pushes the owner's slice
+  back with `cl_purse`. Refusals arrive on `Net.trade_result` and show in the
+  shop's hint line.
+- Gold and items are stripped from the broadcast registry (`_public_players`)
+  — only the owner ever sees theirs, and only through `cl_purse`. Anything on
+  the server that changes them (a trade, a gold pickup) must call
+  `_send_purse(id)` or the owner's screen goes stale.
+- `GameStats.coins` / `.items` are read-only MIRRORS that `cl_purse` fills, so
+  UI code reads them instead of the network layer. Writing to them changes
+  nothing real.
 
 ## Multiplayer
 
@@ -163,6 +166,15 @@ mixed pile.
   `server`) -> `build/AstriaServer.exe`; it auto-hosts headlessly (see
   `build/run_server.bat`). Any build also accepts `--server [--port=N]`,
   and clients accept `--username=NAME --host / --join=IP[:PORT]`.
+- Enemies drop server-rolled gold (`gold_min`/`gold_max` exports on
+  `enemy.gd`): `Net.server_spawn_gold` replicates a `GoldDrop`
+  (`scripts/world/gold_drop.gd`) into a runtime `World/Drops` container;
+  the server pays the first living player within pickup range into the
+  registry's `gold`, and every registry sync mirrors your own gold into
+  `GameStats.coins` for local UI/shops. Unclaimed piles despawn after 2 min.
+- Integration tests live in `tests/` — plain scenes run headless, e.g.
+  `--headless res://tests/test_gold_drops.tscn` (prints RESULT=PASS/FAIL
+  and sets the exit code).
 - Exports: presets in `export_presets.cfg`; templates installed under
   `%APPDATA%\Godot\export_templates\4.7.1.stable.steam`. Export with
   `--headless --export-release "Windows Client|Windows Server" <path>`.
@@ -171,3 +183,9 @@ mixed pile.
 
 - Always commit after a prompt. Every completed prompt should end with a git
   commit capturing the changes made during that prompt.
+- Never put updates on another branch. All work lands on `master`, in the main
+  checkout — no feature branches, no worktrees, no "I'll merge it later". The
+  game the user plays is `master`, so anything not on `master` does not exist
+  as far as they are concerned, and a side branch silently rots while `master`
+  moves on. Commit straight to `master`; if that feels risky, say so and ask
+  rather than quietly branching.
