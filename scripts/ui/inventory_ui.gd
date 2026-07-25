@@ -1,5 +1,5 @@
 extends CanvasLayer
-## Inventory screen (toggled with I) + always-on hotbar.
+## Inventory screen (toggled with Tab) + always-on hotbar.
 ## Tabs: Inventory (equipment slots + 32-slot item grid) and Stats
 ## (coins / deaths / kills, from the GameStats autoload).
 

@@ -74,8 +74,9 @@ mixed pile.
   on PlayStation pads. Everything is vector-drawn, so there are no glyph
   textures. Hint text in the dialog box uses `InputDevice.interact_label()` /
   `accept_label()` for the same reason.
-- Keys: `interact` = E / pad Y (triangle); `inventory` moved to I so the two
-  don't collide.
+- Keys: `interact` = E / pad Y (triangle); `inventory` = Tab. Tab used to be a
+  `lock_on` binding — it was removed there, so lock-on is middle-mouse / pad L3
+  only.
 
 ## Multiplayer
 
