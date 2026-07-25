@@ -121,7 +121,7 @@ debug_color = Color(0, 0.4862745, 0.5686275, 1)
 
 [node name="newBlacksmith_1" parent="MeshInstance3D" unique_id=13707196 instance=ExtResource("15_xo05s")]
 
-[node name="BlacksmithNPC" parent="." instance=ExtResource("16_npc")]
+[node name="BlacksmithNPC" parent="." groups=["npc"] instance=ExtResource("16_npc")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 235.88385, 93.00493, -152.04044)
 dialog_id = "blacksmith"
 interact_range = 3.5

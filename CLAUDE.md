@@ -146,6 +146,13 @@ mixed pile.
 - To make an NPC talkable: instance `scenes/entities/npc/npc_interactable.tscn`
   next to it in the world and set `dialog_id`. Tunables: `interact_range`,
   `prompt_offset` (where the bubble's tail points).
+- Every NPC in the world also belongs to the node group `"npc"` — set it on the
+  node itself (Node dock -> Groups), the way `BlacksmithNPC` in `world.tscn`
+  does, so `get_tree().get_nodes_in_group("npc")` is the way to ask for all of
+  them. It is a scene-level group on purpose: it says "this node is an NPC",
+  which is a level-editing fact, not something a script should decide. Put new
+  NPCs in it when you place them, alongside the code-set groups
+  (`enemies`, `player`, `npc_interactable`, `spawn_point`, `teleport_<id>`).
 - All conversation text lives in `scripts/ui/dialog/dialog_data.gd` — the file
   header documents the format (speaker / start / lines, each line with `text`
   plus either `answers` or a plain `goto`; `goto: END` closes the box). An
