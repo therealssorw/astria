@@ -302,3 +302,15 @@ mixed pile.
   as far as they are concerned, and a side branch silently rots while `master`
   moves on. Commit straight to `master`; if that feels risky, say so and ask
   rather than quietly branching.
+- Never put updates in another REPOSITORY either. There is exactly one:
+  `origin` = `https://github.com/therealssorw/astria.git`. Do not create a new
+  repo, do not add a second remote, do not push to a fork or a scratch repo,
+  and do not initialise a fresh git repo in a subfolder. A commit in a repo
+  the user does not open is worse than no commit, because it looks like the
+  work was done. If pushing to `origin/master` fails, report the failure —
+  never "solve" it by pushing somewhere else.
+- If a session nonetheless BEGINS in a worktree or on a side branch (the
+  harness sometimes starts one), that is not permission to leave the work
+  there. Say so early, and before the task is finished get the commits onto
+  `master` in the main checkout — cherry-pick or merge, then confirm with
+  `git -C <main checkout> log --oneline -1` that they actually landed.
