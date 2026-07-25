@@ -278,7 +278,23 @@ func _public_players() -> Dictionary:
 	return out
 
 func _make_entry(username: String) -> Dictionary:
-	return {"name": username, "kills": 0, "deaths": 0, "gold": 0, "items": {}}
+	return {"name": username, "kills": 0, "deaths": 0, "gold": 0,
+			"items": _starting_items()}
+
+## Testing aid: launch the SERVER with --dev-items and everyone who joins it
+## starts with one of every item in the catalogue. It is deliberately a server
+## flag — a client passing it gains nothing, because only the server ever
+## writes a bag.
+func _starting_items() -> Dictionary:
+	if not multiplayer.is_server():
+		return {}
+	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	if not args.has("--dev-items"):
+		return {}
+	var bag := {}
+	for id in ItemDb.ITEMS:
+		bag[id] = 1
+	return bag
 
 func _sanitize_name(raw: String) -> String:
 	var cleaned := ""
@@ -370,6 +386,44 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 		entry["gold"] = gold + price
 		_trade_reply(id, "Sold %s for %d gold." % [label, price], true)
 
+	_send_purse(id)
+
+# ---------------- cheats (development only) ----------------
+#
+# The cheat menu is a testing tool, so it goes through the server like anything
+# else that touches a bag — a client still cannot write its own items. The
+# server refuses every request unless IT is running from the editor, so an
+# exported dedicated server ignores cheats no matter what a client sends.
+
+## Would this build honour a cheat request? False in any exported build.
+func cheats_allowed() -> bool:
+	return OS.has_feature("editor")
+
+## Client -> server: put one of this item in my bag. Editor builds only.
+func request_cheat_give(item_id: String) -> void:
+	if multiplayer.is_server():
+		_server_cheat_give(multiplayer.get_unique_id(), item_id)
+	else:
+		rpc_id(1, "sv_cheat_give", item_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_cheat_give(item_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_cheat_give(multiplayer.get_remote_sender_id(), item_id)
+
+func _server_cheat_give(id: int, item_id: String) -> void:
+	if not players.has(id):
+		return
+	if not cheats_allowed():
+		_trade_reply(id, "Cheats are off on this server.", false)
+		return
+	if not ItemDb.has(item_id):
+		_trade_reply(id, "No such item.", false)
+		return
+	var items: Dictionary = players[id]["items"]
+	items[item_id] = int(items.get(item_id, 0)) + 1
+	_trade_reply(id, "Gave %s." % ItemDb.item_name(item_id), true)
 	_send_purse(id)
 
 ## Is this player actually standing at that NPC? The server owns every pawn's

@@ -153,6 +153,20 @@ mixed pile.
   UI code reads them instead of the network layer. Writing to them changes
   nothing real.
 
+## Development cheats
+
+- Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —
+  `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It currently offers
+  "Give item", which lists everything in `ItemDb.ITEMS`; picking one asks the
+  server for a copy. Adding a cheat is one row in `_build_root`.
+- It is editor-only at BOTH ends: the menu doesn't build unless
+  `OS.has_feature("editor")`, and `Net._server_cheat_give` refuses unless the
+  SERVER is an editor run (`Net.cheats_allowed`). So an exported dedicated
+  server ignores cheats however the client is patched — cheats still go
+  through the server like any other bag change, never applied locally.
+- A dedicated server launched with `--dev-items` instead hands every player
+  one of each catalogue item at registration (`Net._starting_items`).
+
 ## Building NPCs
 
 - The "NPC Builder" tab (editor plugin in `addons/npc_builder/`) assembles a
@@ -201,7 +215,7 @@ mixed pile.
   is instanced, its meshes are thrown away, and the bones are kept.
 - `NpcRig` (`scripts/entities/npc/npc_rig.gd`) then does two things:
   - Reshapes the skeleton onto the voxel proportions instead of stretching the
-    art onto human ones. That is only safe because the retargeted clips are
+	art onto human ones. That is only safe because the retargeted clips are
 	rotation-only — every bone but Hips has just a rotation track, so rest
 	positions are free to move. If the animations are ever reimported with
 	per-bone position tracks this silently breaks; the test catches it.
