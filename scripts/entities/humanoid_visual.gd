@@ -78,6 +78,11 @@ const LOCO_NOMINAL := {
 	"strafe_l": 0.5, "strafe_r": 0.5,
 	"block_fwd": 0.4, "block_back": 0.45, "block_l": 0.5, "block_r": 0.5,
 }
+## How much quicker than the swing window a weapon's clip plays. Stretching the
+## slash over the whole window exactly makes it drag — this runs the blade
+## through a bit early and holds the finish for the rest of the window, so the
+## cut snaps without touching a single gameplay timing.
+const ARMED_SWING_RATE := 1.3
 # gameplay caps so long Mixamo tails don't make swings sluggish
 const LIGHT_MAX_DUR := [0.52, 0.6, 0.74]
 const HEAVY_MAX_DUR := 1.0
@@ -424,7 +429,7 @@ func on_attack_started(heavy: bool, combo_index: int, duration := -1.0) -> void:
 	var key := _clip_for(base_key)
 	var target := duration
 	if target <= 0.0 and key != base_key:
-		target = float(get_attack_info(heavy, combo_index)["duration"])
+		target = float(get_attack_info(heavy, combo_index)["duration"]) / ARMED_SWING_RATE
 	var speed := -1.0
 	if target > 0.0:
 		speed = clip_lengths[key] / target

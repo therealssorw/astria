@@ -276,11 +276,17 @@ mixed pile.
   crouch: the hips stand at 1.00, sink to ~0.75 through the middle cuts and to
   0.67 in the lunge near 4.1s, which on this character reads as squatting. So
   only the FIRST cut is used — `"slice": [0.58, 0.98]`, which starts from the
-  standing ready pose and is out before the crouch settles. Every light swing
-  plays that one slash (`sword_slash`) and the heavy is the same slice at a
-  slower `"speed"`, which is also what makes it the slower, heavier-looking
-  swing. If more sword moves are ever wanted they need a take that stays on
-  its feet, not another slice of this one.
+  standing ready pose and is out before the crouch settles. EVERY swing plays
+  that one slash (`sword_slash`); the heavy differs only in the longer window
+  it is stretched over. If more sword moves are ever wanted they need a take
+  that stays on its feet, not another slice of this one.
+- A weapon never changes how fast you fight: `get_attack_info` measures the
+  bare-handed clip even when one is held, and `on_attack_started` stretches
+  the weapon's clip onto that window — so damage, hit time and the combo gate
+  are the punch's, armed or not. `ARMED_SWING_RATE` runs the blade through a
+  little quicker than the window and holds the finish, purely so the cut snaps
+  instead of dragging; it is the dial to turn if a weapon feels sluggish, and
+  it touches no gameplay timing.
 - `HumanoidVisual.set_held_item(id)` parents the model to a `BoneAttachment3D`
   on `RightHand`, so it follows every clip and both Rouge and voxel NPCs get
   it for free. Calling it with the same id twice does nothing.
