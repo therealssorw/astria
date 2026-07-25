@@ -81,6 +81,12 @@ mixed pile.
   swing end).
 - Headless validation: run the Steam Godot binary with `--headless --import`
   then `--headless --quit-after 120` to catch script/scene errors.
+- Every in-world HUD marker is vector-drawn and camera-projected in `hud.gd` /
+  `npc_prompt_overlay.gd` — no glyph textures. Colour carries meaning: gold =
+  "pay attention" (enemy wind-up star, talkable-NPC bubble), red = lock-on
+  ring, steel blue = "defended" (the shield in the ring when the locked target
+  has its guard up). Keep new markers on that split rather than inventing a
+  colour per feature.
 
 ## NPC dialog
 
@@ -187,8 +193,8 @@ mixed pile.
     positions are free to move. If the animations are ever reimported with
     per-bone position tracks this silently breaks; the test catches it.
   - Rigidly skins each part: one bone per voxel, weight 1, picked by nearest
-    bone segment within that slot's allowed bone set (`BIND_SETS`). Whole
-    voxels are bound as units, so they rotate about joints instead of tearing.
+	bone segment within that slot's allowed bone set (`BIND_SETS`). Whole
+	voxels are bound as units, so they rotate about joints instead of tearing.
 - `NpcVisual._adapt_hips` rebases the clips' Hips position track per NPC — it
   was authored around a human pelvis and would otherwise yank a short-legged
   voxel NPC up to Rouge's hip height.

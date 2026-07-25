@@ -626,7 +626,8 @@ func cl_enemy_states(batch: Array) -> void:
 	for row in batch:
 		var e := en.get_node_or_null(String(row[0]))
 		if e:
-			e.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
+			e.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6], row[7],
+					row[8], row[9], row[10])
 
 ## The host already ran its own fx inside take_damage — clients only.
 func server_broadcast_enemy_damage(enemy_name: String, health: float,

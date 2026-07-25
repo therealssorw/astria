@@ -157,13 +157,31 @@ class TelegraphControl:
 
 class ReticleControl:
 	extends Control
-	var player: Player
+	## Lock-on ring. The ring itself reports whether the target can be hurt
+	## right now — amber and wide once they're staggered — and the centre
+	## reports their guard: a shield while it's up, so you can see a swing
+	## will be soaked before you throw it. The two never collide, because a
+	## staggered fighter has no guard. Steel blue rather than the gold used by
+	## the wind-up star and the NPC prompt — this reads "defended", not
+	## "danger".
 
-	const LOCK_COLOR := Color(1, 0.35, 0.25, 0.9)
+	const SHIELD_HALF_W := 8.0
+	const SHIELD_H := 21.0
+	const SHIELD_TAPER := 8          # samples down each curved edge
+	const SHIELD_PULSE_SPEED := 4.0
+	const SHIELD_PULSE := 0.06
+
+	const RETICLE := Color(1, 0.35, 0.25, 0.9)
 	## Amber ring = the target is staggered: punish it now.
 	const OPEN_COLOR := Color(1.0, 0.8, 0.25, 0.95)
+	const SHIELD_FILL := Color(0.55, 0.72, 0.95, 0.85)
+	const SHIELD_EDGE := Color(0.90, 0.96, 1.0, 0.95)
 
-	func _process(_delta: float) -> void:
+	var player: Player
+	var _t := 0.0
+
+	func _process(delta: float) -> void:
+		_t += delta
 		queue_redraw()
 
 	func _draw() -> void:
@@ -172,23 +190,53 @@ class ReticleControl:
 		var cam := get_viewport().get_camera_3d()
 		if cam == null:
 			return
-		var world_pos: Vector3 = player.lock_target.global_position + Vector3.UP * 1.4
+		var target: Node3D = player.lock_target
+		var world_pos: Vector3 = target.global_position + Vector3.UP * 1.4
 		if cam.is_position_behind(world_pos):
 			return
 		var p := cam.unproject_position(world_pos)
-		var open := _target_is_open()
-		var color := OPEN_COLOR if open else LOCK_COLOR
-		draw_arc(p, 22.0 if open else 18.0, 0, TAU, 32, color, 3.0)
-		draw_circle(p, 3.0, color)
+		var open := _target_is_open(target)
+		var ring := OPEN_COLOR if open else RETICLE
+		draw_arc(p, 22.0 if open else 18.0, 0, TAU, 32, ring, 3.0)
+		if target.has_method("is_blocking") and target.is_blocking():
+			_draw_shield(p)
+		else:
+			draw_circle(p, 3.0, ring)
 
 	## Enemies count down `stagger_left`, players `stagger_time` — either way
 	## the target is helpless right now.
-	func _target_is_open() -> bool:
-		var t: Node = player.lock_target
-		var left: Variant = t.get("stagger_left")
+	func _target_is_open(target: Node) -> bool:
+		var left: Variant = target.get("stagger_left")
 		if left == null:
-			left = t.get("stagger_time")
+			left = target.get("stagger_time")
 		return left != null and float(left) > 0.0
+
+	func _draw_shield(c: Vector2) -> void:
+		var s: float = 1.0 + SHIELD_PULSE * sin(_t * SHIELD_PULSE_SPEED)
+		var pts := _shield_points(c, SHIELD_HALF_W * s, SHIELD_H * s)
+		draw_colored_polygon(pts, SHIELD_FILL)
+		var outline := pts.duplicate()
+		outline.append(pts[0])
+		draw_polyline(outline, SHIELD_EDGE, 2.0, true)
+
+	## Heater shield: square shoulders, straight sides, then an elliptical
+	## taper down to the point.
+	func _shield_points(c: Vector2, w: float, h: float) -> PackedVector2Array:
+		var pts := PackedVector2Array()
+		var top := c.y - h * 0.5
+		var shoulder := top + h * 0.34
+		var tip := c.y + h * 0.5
+		pts.append(Vector2(c.x - w, top))
+		pts.append(Vector2(c.x + w, top))
+		pts.append(Vector2(c.x + w, shoulder))
+		for i in range(1, SHIELD_TAPER + 1):
+			var t := float(i) / SHIELD_TAPER
+			pts.append(Vector2(c.x + w * sqrt(maxf(1.0 - t * t, 0.0)), lerpf(shoulder, tip, t)))
+		for i in range(SHIELD_TAPER - 1, 0, -1):
+			var t := float(i) / SHIELD_TAPER
+			pts.append(Vector2(c.x - w * sqrt(maxf(1.0 - t * t, 0.0)), lerpf(shoulder, tip, t)))
+		pts.append(Vector2(c.x - w, shoulder))
+		return pts
 
 
 class CombatFxControl:
