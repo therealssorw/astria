@@ -505,19 +505,20 @@ func cl_player_states(batch: Array) -> void:
 	for row in batch:
 		var pawn := _pawn(int(row[0]))
 		if pawn and not pawn.is_local:
-			pawn.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6])
+			pawn.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6],
+					bool(row[7]) if row.size() > 7 else false)
 
 ## Client owner -> server: position + cosmetic state claim, ~20 Hz.
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func sv_player_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
-		ratio: float, blocking: bool) -> void:
+		ratio: float, blocking: bool, sprinting := false) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var pawn := _pawn(id)
 	if pawn == null or pawn.is_local:
 		return
-	if not pawn.net_report_state(pos, yaw, anim, anim_t, ratio, blocking):
+	if not pawn.net_report_state(pos, yaw, anim, anim_t, ratio, blocking, sprinting):
 		# rejected (teleport / speedhack): snap the client back
 		rpc_id(id, "cl_force_position", pawn.net_pos)
 
@@ -529,9 +530,9 @@ func cl_force_position(pos: Vector3) -> void:
 		pawn.velocity = Vector3.ZERO
 
 func send_player_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
-		ratio: float, blocking: bool) -> void:
+		ratio: float, blocking: bool, sprinting := false) -> void:
 	if active and not multiplayer.is_server():
-		rpc_id(1, "sv_player_state", pos, yaw, anim, anim_t, ratio, blocking)
+		rpc_id(1, "sv_player_state", pos, yaw, anim, anim_t, ratio, blocking, sprinting)
 
 func _send_vitals(pn: Node) -> void:
 	var connected := multiplayer.get_peers()

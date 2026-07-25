@@ -23,6 +23,16 @@ extends CharacterBody3D
 ## backpedals are slower than driving forward, so ring position is a choice.
 @export var strafe_speed_mult := 0.85
 @export var back_speed_mult := 0.68
+## Sprint: a flat multiplier on the walk, paid for out of the stamina meter, so
+## crossing the island and having a fight draw on the same resource.
+@export var sprint_speed_mult := 1.5
+@export var sprint_stamina_drain := 12.0 # per second held
+## Stamina needed to break into a run (once running it lasts until empty).
+@export var sprint_min_stamina := 10.0
+## Gamepad only: push the stick near full forward for this long and the sprint
+## starts on its own, so a long walk doesn't need a button held down.
+@export var auto_sprint_time := 0.9
+@export var auto_sprint_stick_min := 0.85
 ## Speed kept while a swing is out — punches commit you.
 @export var attack_move_mult := 0.4
 ## Speed kept while staggered (parried / guard broken).
@@ -193,6 +203,10 @@ var fx_break_time := 0.0
 var _shake := 0.0
 var _stam_hold := 0.0 # regen pause after spending stamina
 
+# sprint state
+var sprinting := false
+var _auto_sprint_hold := 0.0 # how long the pad stick has been at full forward
+
 # slide state
 var sliding := false
 var slide_timer := 0.0
@@ -218,6 +232,7 @@ var net_anim := "idle"
 var net_anim_t := 0.0
 var net_ratio := 0.0
 var net_blocking := false
+var net_sprinting := false
 var _net_has_state := false
 var _last_report_time := -1.0
 var _net_send_accum := 0.0
@@ -335,6 +350,7 @@ func _local_tick(delta: float) -> void:
 			blocking = false
 	_tick_attack(delta)
 	_tick_slide(delta)
+	_handle_sprint(delta)
 	_move(delta)
 	_orient_body(delta)
 	_regen_stamina(delta)
@@ -363,7 +379,7 @@ func _net_send(delta: float) -> void:
 	if _net_send_accum >= NET_SEND_INTERVAL:
 		_net_send_accum = 0.0
 		Net.send_player_state(global_position, body_visual.rotation.y,
-				last_anim, last_anim_t, last_ratio, blocking)
+				last_anim, last_anim_t, last_ratio, blocking, sprinting)
 
 func _gravity() -> float:
 	return ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -387,6 +403,13 @@ func _server_sim_tick(delta: float) -> void:
 		return
 	blocking = net_blocking and not attacking and stagger_time <= 0.0 \
 			and stamina >= block_min_stamina
+	# a run costs the same on the server's copy of the meter as on the owner's,
+	# so a sprint across the island reaches the fight with the stamina it should
+	if net_sprinting and not blocking:
+		stamina = maxf(0.0, stamina - sprint_stamina_drain * delta)
+		_stam_hold = stamina_regen_delay
+		if stamina <= 0.0:
+			net_sprinting = false
 	_regen_stamina(delta) # same rule as the owner: none while guarding/swinging
 	if not attacking:
 		return
@@ -436,7 +459,7 @@ func server_facing() -> Vector3:
 
 ## SERVER: apply + validate an owner's state report. False = rejected.
 func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
-		ratio: float, blocking_flag: bool) -> bool:
+		ratio: float, blocking_flag: bool, sprint_flag := false) -> bool:
 	if not pos.is_finite() or not is_finite(yaw):
 		return false
 	var prev := net_pos if _net_has_state else global_position
@@ -459,14 +482,20 @@ func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	if blocking_flag and not net_blocking:
 		block_start_time = _time
 	net_blocking = blocking_flag
+	# a sprint claim is only believed if the pawn actually covered more ground
+	# than a walk would — the drain below is charged off the server's own
+	# measurement, never off the client saying "I'm running"
+	net_sprinting = sprint_flag and stamina > 0.0 \
+			and Vector2(dv.x, dv.z).length() > walk_speed * dt * 0.9
 	_net_has_state = true
 	return true
 
 ## CLIENT: relayed state of someone else's pawn.
 func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
-		ratio: float, blocking_flag: bool) -> void:
+		ratio: float, blocking_flag: bool, sprint_flag := false) -> void:
 	net_pos = pos
 	net_yaw = yaw
+	net_sprinting = sprint_flag
 	net_anim = anim if ANIM_WHITELIST.has(anim) else "idle"
 	net_anim_t = anim_t
 	net_ratio = ratio
@@ -479,8 +508,9 @@ func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 func net_collect_state() -> Array:
 	if is_local:
 		return [peer_id, global_position, body_visual.rotation.y,
-				last_anim, last_anim_t, last_ratio, blocking]
-	return [peer_id, net_pos, net_yaw, net_anim, net_anim_t, net_ratio, net_blocking]
+				last_anim, last_anim_t, last_ratio, blocking, sprinting]
+	return [peer_id, net_pos, net_yaw, net_anim, net_anim_t, net_ratio,
+			net_blocking, net_sprinting]
 
 # ---------------- movement ----------------
 
@@ -513,6 +543,8 @@ func _move(delta: float) -> void:
 
 	var dir := _input_dir()
 	var speed := block_walk_speed if blocking else walk_speed
+	if sprinting:
+		speed *= sprint_speed_mult
 	if attacking:
 		speed *= attack_move_mult
 	if stagger_time > 0.0:
@@ -538,6 +570,52 @@ func _move(delta: float) -> void:
 		if pending_landing_slide or (_time - pending_slide_time) <= slide_input_buffer:
 			pending_landing_slide = false
 			_start_ground_slide()
+
+## Sprint is a straight-line commitment: forward input, on the ground, guard
+## down, no swing, and stamina in the meter. It ends the moment any of those
+## goes — the drain itself is what eventually stops it.
+func _handle_sprint(delta: float) -> void:
+	if not _can_sprint():
+		sprinting = false
+		_auto_sprint_hold = 0.0
+		return
+	# a pad that has been pushed flat forward for a while starts running by
+	# itself; keyboards read zero on the stick axes, so this never fires there
+	if _stick_full_forward():
+		_auto_sprint_hold += delta
+	else:
+		_auto_sprint_hold = 0.0
+	var want := Input.is_action_pressed("sprint") or _auto_sprint_hold >= auto_sprint_time
+	# breaking into a run needs a bit in the bank; keeping one only needs a drop
+	sprinting = want and (sprinting or stamina >= sprint_min_stamina)
+	if not sprinting:
+		return
+	stamina = maxf(0.0, stamina - sprint_stamina_drain * delta)
+	_stam_hold = stamina_regen_delay
+	if stamina <= 0.0:
+		sprinting = false
+		_auto_sprint_hold = 0.0
+
+func _can_sprint() -> bool:
+	if ui_open or dead or sliding or diving or blocking or attacking:
+		return false
+	if stagger_time > 0.0 or not is_on_floor():
+		return false
+	return _forward_input() >= 0.4
+
+## How hard the movement input pushes away from the camera (0 = sideways or
+## back). Sprinting is forward only — a backpedal at run speed is not a thing.
+func _forward_input() -> float:
+	if ui_open:
+		return 0.0
+	var v := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	return maxf(0.0, -v.y)
+
+func _stick_full_forward() -> bool:
+	var x := Input.get_joy_axis(0, JOY_AXIS_LEFT_X)
+	var y := Input.get_joy_axis(0, JOY_AXIS_LEFT_Y)
+	return Vector2(x, y).length() >= auto_sprint_stick_min \
+			and -y >= auto_sprint_stick_min * 0.6
 
 ## Squared-up fighting stance: the body holds its guard toward the threat and
 ## the legs sidestep/backpedal, instead of the body turning to chase movement.
