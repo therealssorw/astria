@@ -44,12 +44,13 @@ extends CharacterBody3D
 @export var swing_wooshes: AudioStream = preload("res://Assets/Audio/SFX/Wooshes/woosh_sounds.tres")
 @export_group("Perception")
 ## The bandit only turns hostile once it SEES the player: within this range,
-## inside its forward vision cone, with clear line of sight. Kept short so a
-## player who doesn't want trouble can walk around them.
-@export var sight_range := 11.0
+## inside its forward vision cone, with clear line of sight. Sneaking past
+## means using cover or staying behind them, not just keeping your distance.
+@export var sight_range := 22.0
 @export var sight_fov_deg := 140.0
-## Loses interest and stands down beyond this distance.
-@export var deaggro_range := 26.0
+## Loses interest and stands down beyond this distance. Keep this comfortably
+## above sight_range or aggro flickers on and off at the boundary.
+@export var deaggro_range := 34.0
 @export_group("Combat AI")
 ## Inside this distance the enemy fights (attack/retreat/block cycle).
 @export var engage_range := 7.0
