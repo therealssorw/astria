@@ -3,6 +3,7 @@ extends CanvasLayer
 ## death overlay. Binds to the LOCAL player's pawn (group "local_player").
 
 const SCOREBOARD := preload("res://scripts/ui/scoreboard.gd")
+const NPC_PROMPTS := preload("res://scripts/ui/dialog/npc_prompt_overlay.gd")
 
 var player: Player
 var hp_fill: ColorRect
@@ -31,6 +32,7 @@ func _ready() -> void:
 	telegraph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(telegraph)
 
+	root.add_child(NPC_PROMPTS.new())
 	root.add_child(SCOREBOARD.new())
 	_build_death_overlay(root)
 
