@@ -95,7 +95,7 @@ func _show_line(line_id: String) -> void:
 	_body.visible_characters = 0
 	_type_accum = 0.0
 	_typing = true
-	_hint.text = "%s — skip" % InputDevice.interact_label()
+	_hint.text = "%s — skip" % InputDevice.menu_accept_label()
 	_hint.visible = true
 	_start_typing_sfx()
 
@@ -118,8 +118,7 @@ func _build_answers(line: Dictionary) -> void:
 		btn.pressed.connect(_on_answer.bind(answer))
 		_answers.add_child(btn)
 	_answers.visible = true
-	_hint.text = "%s / %s — choose      %s — move" % [InputDevice.interact_label(),
-			InputDevice.accept_label(),
+	_hint.text = "%s — choose      %s — move" % [InputDevice.menu_accept_label(),
 			"stick" if InputDevice.kind != InputDeviceTracker.Kind.KEYBOARD else "W S"]
 	if _answers.get_child_count() > 0:
 		(_answers.get_child(0) as Button).grab_focus()
@@ -166,19 +165,22 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		close()
 		return
-	if event.is_action_pressed("interact"):
-		get_viewport().set_input_as_handled()
-		if _typing:
-			_finish_typing()
-		else:
-			var focused := get_viewport().gui_get_focus_owner()
-			if focused is Button and focused.get_parent() == _answers:
-				(focused as Button).pressed.emit()
-			elif _answers.get_child_count() > 0:
-				(_answers.get_child(0) as Button).grab_focus()
-	elif _typing and event.is_action_pressed("ui_accept"):
-		get_viewport().set_input_as_handled()
+	var accept := InputDevice.is_menu_accept(event)
+	if not accept and not event.is_action_pressed("interact"):
+		return
+	# an interact press is swallowed even when it no longer chooses (pad Y):
+	# left unhandled it reaches the NPC and reopens the conversation we are in
+	get_viewport().set_input_as_handled()
+	if not accept:
+		return
+	if _typing:
 		_finish_typing()
+	else:
+		var focused := get_viewport().gui_get_focus_owner()
+		if focused is Button and focused.get_parent() == _answers:
+			(focused as Button).pressed.emit()
+		elif _answers.get_child_count() > 0:
+			(_answers.get_child(0) as Button).grab_focus()
 
 # ---------------- audio ----------------
 

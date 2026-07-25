@@ -59,3 +59,19 @@ func accept_label() -> String:
 		Kind.XBOX: return "A"
 		Kind.PLAYSTATION: return "Cross"
 		_: return "Enter"
+
+## Everything that picks a menu entry on the current device — on a keyboard E
+## works alongside Enter, on a pad it is the bottom face button ONLY.
+func menu_accept_label() -> String:
+	if kind == Kind.KEYBOARD:
+		return "E / Enter"
+	return accept_label()
+
+## True when this event picks the focused menu entry. On a pad that is strictly
+## the bottom face button (PS5 Cross / Xbox A — the same physical place), never
+## the interact button: Y / triangle is the world's "press at a thing" and
+## letting it double as a menu confirm made the two blur together.
+func is_menu_accept(event: InputEvent) -> bool:
+	if event.is_action_pressed("ui_accept"):
+		return true
+	return event.is_action_pressed("interact") and not (event is InputEventJoypadButton)

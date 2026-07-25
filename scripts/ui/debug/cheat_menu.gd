@@ -89,12 +89,14 @@ func _input(event: InputEvent) -> void:
 		else:
 			_page = "root"
 			_refresh()
-	elif event.is_action_pressed("interact"):
-		# E / Y accepts here too, matching the dialog box and the shop
+	elif InputDevice.is_menu_accept(event) or event.is_action_pressed("interact"):
+		# swallow interact even when it no longer picks (pad Y), matching the
+		# dialog box and the shop
 		get_viewport().set_input_as_handled()
-		var focused := get_viewport().gui_get_focus_owner()
-		if focused is Button:
-			(focused as Button).pressed.emit()
+		if InputDevice.is_menu_accept(event):
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused is Button:
+				(focused as Button).pressed.emit()
 
 # ---------------- pages ----------------
 
@@ -181,7 +183,7 @@ func _set_hint(text: String, color: Color) -> void:
 func _default_hint() -> String:
 	if not Net.cheats_allowed():
 		return "This server has cheats off."
-	return "%s — pick      Esc — %s" % [InputDevice.interact_label(),
+	return "%s — pick      Esc — %s" % [InputDevice.menu_accept_label(),
 			"back" if _page != "root" else "close"]
 
 ## One row = a focusable button, styled like the shop's so the two read the same.

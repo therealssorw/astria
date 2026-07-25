@@ -76,6 +76,14 @@ mixed pile.
   the SAME trigger as attack, so a swing is also a use (which is why the
   server's use replies carry no message yet), `cheat_menu` = Z / Options
   (Menu).
+- Picking an entry in any menu (dialog answers, shop rows, cheat rows, bag and
+  hotbar slots) is `ui_accept`: on a pad strictly the bottom face button — PS5
+  Cross, Xbox A, the same physical place — and E or Enter on a keyboard. The
+  interact button is NOT a menu confirm on a pad: Y / triangle is "press at a
+  thing" in the world and the two blurred together. Ask with
+  `InputDevice.is_menu_accept(event)` rather than testing the actions by hand;
+  it is what keeps that split in one place. Panels still swallow an interact
+  press they ignore, or it reaches the NPC standing behind them.
 
 ## Movement: sliding
 

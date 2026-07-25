@@ -126,12 +126,14 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		close()
-	elif event.is_action_pressed("interact"):
-		# E doubles as accept in here, exactly as it does in the dialog box
+	elif InputDevice.is_menu_accept(event) or event.is_action_pressed("interact"):
+		# swallow interact even when it no longer picks (pad Y), so it cannot
+		# reach the shopkeeper standing behind the panel
 		get_viewport().set_input_as_handled()
-		var focused := get_viewport().gui_get_focus_owner()
-		if focused is Button:
-			(focused as Button).pressed.emit()
+		if InputDevice.is_menu_accept(event):
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused is Button:
+				(focused as Button).pressed.emit()
 
 # ---------------- list ----------------
 
@@ -236,8 +238,7 @@ func _set_selling(on: bool) -> void:
 	_refresh()
 
 func _default_hint() -> String:
-	return "%s / %s — trade      %s — leave" % [InputDevice.interact_label(),
-			InputDevice.accept_label(),
+	return "%s — trade      %s — leave" % [InputDevice.menu_accept_label(),
 			"Circle" if InputDevice.kind == InputDeviceTracker.Kind.PLAYSTATION
 			else ("B" if InputDevice.kind == InputDeviceTracker.Kind.XBOX else "Esc")]
 
