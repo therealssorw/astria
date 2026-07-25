@@ -89,4 +89,14 @@ func _run() -> void:
 	_check(IntroCutscene.darkness() == 0.0, "screen went black again for a later pawn")
 	_check(DialogSystem.dialog_id == "", "dialog reopened for a later pawn")
 
+	# ...but the cheat menu's "Start cutscene" runs the whole thing again
+	IntroCutscene.replay()
+	_check(IntroCutscene.darkness() == 1.0, "replay did not black the screen out again")
+	ok = await _until(func() -> bool: return DialogSystem.dialog_id == IntroCutscene.DARK_DIALOG)
+	_check(ok, "replay never reopened the first line")
+	ok = await _until(func() -> bool: return not IntroCutscene.is_playing())
+	_check(ok, "replay never ended")
+	_check(IntroCutscene.darkness() == 0.0, "screen left dark after the replay")
+	_check(not pawn.ui_open, "player left frozen after the replay")
+
 	_done()

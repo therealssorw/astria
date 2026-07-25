@@ -12,6 +12,11 @@ extends CanvasLayer
 ## `Net.request_cheat_*`. The lists inside the pages come from the game's own
 ## data — ItemDb for "Give item", TeleportData for "Teleport" — so a new sword
 ## or a new destination shows up here the moment it is in the catalogue.
+##
+## "Start cutscene" is the one row that does NOT go through the server, because
+## a cutscene is one player's screen and nothing else: replaying your own intro
+## gains you nothing the server owns. Anything that touches game state still
+## has to ask.
 
 const GOLD := Color(0.95, 0.79, 0.42)
 const DIM := Color(0.78, 0.79, 0.84)
@@ -123,6 +128,13 @@ func _build_root() -> void:
 	_add_row("Teleport…", "", func() -> void:
 		_page = "teleport"
 		_refresh())
+	# both close the menu first so you actually see the thing you asked for
+	_add_row("Start cutscene", "intro", func() -> void:
+		close()
+		IntroCutscene.replay())
+	_add_row("Start tutorial", "city raid", func() -> void:
+		close()
+		Net.request_cheat_tutorial())
 
 ## Every place in TeleportData, whether or not it has been built yet — a
 ## destination with no anchor in the level answers with that, which is more

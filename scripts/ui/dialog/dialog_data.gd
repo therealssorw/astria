@@ -63,6 +63,66 @@ const DIALOGS := {
 			},
 		},
 	},
+	# --- tutorial ---
+	# PLACEHOLDER TEXT. These are the lines the tutorial speaks; the step table
+	# in scripts/world/tutorial/tutorial_data.gd names them and nothing else
+	# does, so rewriting every "text" below changes the tutorial's script
+	# without touching a line of code. Keep the "auto" beats (they are what
+	# makes a line play by itself while the fight is held still) and keep each
+	# id, or the step that asks for it will find nothing to say.
+	"tut_attack": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "PLACEHOLDER — the bandit is on you. Tell the player to swing.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	"tut_block": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "PLACEHOLDER — that one is winding up. Tell the player to guard.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	"tut_lock_on": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "PLACEHOLDER — two of them now. Tell the player to lock on.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	"tut_heavy": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "PLACEHOLDER — the last of them. Tell the player to hold the swing.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	# The villager who walks over once the city is clear. This is the hand-off
+	# to the mayor — the mayor's own conversation is not written yet.
+	"tut_mayor": {
+		"speaker": "Villager",
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "PLACEHOLDER — thank the player, then send them to the mayor.",
+				"auto": 2.4,
+				"goto": END,
+			},
+		},
+	},
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",

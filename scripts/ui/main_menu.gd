@@ -34,8 +34,10 @@ func _ready() -> void:
 		print("[Server] Dedicated mode — hosting on port %d" % port)
 		Net.host_game("", true, port)
 		return
-	# we may have come back here mid-intro (a drop); don't leave the black up
+	# we may have come back here mid-intro or mid-tutorial (a drop); don't
+	# leave the black screen up, or a stale step on the way back in
 	IntroCutscene.abort()
+	Tutorial.client_leave()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_build_ui()
 	_load_settings()

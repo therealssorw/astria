@@ -1,0 +1,100 @@
+class_name TutorialData
+extends RefCounted
+## The tutorial script, and where the per-player copies of the tutorial city
+## live. Changing the lesson is changing this table — `tutorial_system.gd` only
+## walks it, and nothing else in the game knows what step 3 is.
+##
+## Every step is one dictionary with a "kind":
+##
+##   "wait_ready" — hold until that player's client says the intro cutscene is
+##                  over. Nothing moves before the player can see.
+##   "wave"       — spawn `count` bandits at the arena's spawn markers.
+##                  `frozen: true` drops them in mid-charge and holds them
+##                  there, which is what a freeze gate is standing on.
+##   "gate"       — freeze the fight and teach ONE button. Its `dialog` plays
+##                  first (write those lines in DialogData), then the prompt
+##                  goes up and the world stays still until the player really
+##                  does it. `action` is the input map name; the server watches
+##                  for the real thing (a swing request, a raised guard) rather
+##                  than believing a "I pressed it" message, except where it
+##                  cannot see it — those carry `client_gate: true`, and the
+##                  worst a patched client wins there is skipping its own
+##                  lesson.
+##   "clear"      — no prompt, no pause: fight. Ends when every bandit spawned
+##                  so far is dead.
+##   "talk"       — a villager walks over and talks (the mayor hand-off). Ends
+##                  when the conversation closes.
+##   "end"        — out of the city and onto the island; the copy is torn down.
+##
+## The pacing rule the table follows: a pause only ever buys a NEW button, and
+## the fight starts moving again the moment it is pressed. Four gates, and the
+## last wave is fought without a single interruption.
+
+## Scene instanced once per player in the tutorial — placeholder art, meant to
+## be replaced by a real city without anything here changing.
+const ARENA_SCENE := preload("res://scenes/world/tutorial/tutorial_arena.tscn")
+
+## Copies sit in a row high above the island, far enough apart that no two
+## players in the tutorial can ever see, shoot or shove each other. This is the
+## "cloned world": one physics space, but a private block of it per player.
+const SLOT_ORIGIN := Vector3(0.0, 4000.0, 0.0)
+const SLOT_SPACING := 500.0
+## Beyond this many at once, the newest player waits on the island instead.
+const MAX_SLOTS := 16
+
+const STEPS := [
+	{"id": "wake", "kind": "wait_ready"},
+	# one bandit already swinging at you when the world starts moving
+	{"id": "first_bandit", "kind": "wave", "count": 1, "frozen": true},
+	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack"},
+	{"id": "kill_first", "kind": "clear", "banner": "Put him down."},
+	{"id": "pair", "kind": "wave", "count": 2, "frozen": true},
+	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block"},
+	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "dialog": "tut_lock_on",
+			"client_gate": true},
+	{"id": "kill_pair", "kind": "clear", "banner": "Two of them. Keep your guard up."},
+	{"id": "last_wave", "kind": "wave", "count": 3, "frozen": true},
+	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "dialog": "tut_heavy"},
+	# no gates left on purpose — the lesson ends and the fight is just a fight
+	{"id": "clear_city", "kind": "clear", "banner": "Drive them out."},
+	{"id": "mayor", "kind": "talk", "dialog": "tut_mayor"},
+	{"id": "leave", "kind": "end"},
+]
+
+## Where player `slot`'s copy of the city sits.
+static func slot_origin(slot: int) -> Vector3:
+	return SLOT_ORIGIN + Vector3(float(slot) * SLOT_SPACING, 0.0, 0.0)
+
+static func step_count() -> int:
+	return STEPS.size()
+
+static func step(i: int) -> Dictionary:
+	if i < 0 or i >= STEPS.size():
+		return {}
+	return STEPS[i]
+
+static func index_of(step_id: String) -> int:
+	for i in STEPS.size():
+		if str(STEPS[i]["id"]) == step_id:
+			return i
+	return -1
+
+## Short line under the prompt telling you what the button is FOR. The button
+## itself is drawn from the input map, so this never names a key.
+static func gate_hint(step_id: String) -> String:
+	match step_id:
+		"teach_attack":
+			return "Swing"
+		"teach_block":
+			return "Raise your guard"
+		"teach_lock_on":
+			return "Lock on"
+		"teach_heavy":
+			return "Hold for a heavy swing"
+	return ""
+
+## Input action whose button glyph the prompt draws. "attack_heavy" is not a
+## binding of its own — a heavy is the attack button held down — so the glyph
+## comes from `attack` and the hint says to hold it.
+static func gate_action_binding(action: String) -> String:
+	return "attack" if action == "attack_heavy" else action

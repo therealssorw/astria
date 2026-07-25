@@ -75,3 +75,42 @@ func is_menu_accept(event: InputEvent) -> bool:
 	if event.is_action_pressed("ui_accept"):
 		return true
 	return event.is_action_pressed("interact") and not (event is InputEventJoypadButton)
+
+## Spelled-out name of whatever button an action is on for the device in use —
+## what the tutorial's prompts show. These mirror the bindings in
+## project.godot's input map; a rebinding has to be reflected here by hand,
+## because Godot's own event names ("Joypad Button 5") are not what a player
+## calls the button.
+func action_label(action: String) -> String:
+	match action:
+		"attack":
+			match kind:
+				Kind.XBOX: return "RT"
+				Kind.PLAYSTATION: return "R2"
+				_: return "Left Mouse"
+		"block":
+			match kind:
+				Kind.XBOX: return "LT"
+				Kind.PLAYSTATION: return "L2"
+				_: return "Right Mouse"
+		"lock_on":
+			match kind:
+				Kind.KEYBOARD: return "Middle Mouse"
+				_: return "R3"
+		"jump", "slide":
+			match kind:
+				Kind.XBOX: return "A"
+				Kind.PLAYSTATION: return "Cross"
+				_: return "Space"
+		"interact":
+			return interact_label()
+		"inventory":
+			match kind:
+				Kind.KEYBOARD: return "Tab"
+				_: return "D-pad Up"
+		"use_item":
+			match kind:
+				Kind.XBOX: return "RT"
+				Kind.PLAYSTATION: return "R2"
+				_: return "F"
+	return action

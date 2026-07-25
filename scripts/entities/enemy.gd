@@ -99,6 +99,15 @@ extends CharacterBody3D
 enum CombatState { CHASE, ATTACK, RETREAT, BLOCK }
 
 var puppet := false   # true on clients: no AI, just replicated state
+## 0 = a bandit of the shared world. Anything else is a tutorial bandit
+## belonging to that peer's private copy of the city: it only ever fights that
+## player, and only that player is told it exists (see Net).
+var owner_peer := 0
+## Server-side hold, used by the tutorial's freeze gates: the bandit keeps its
+## pose and its footing but stops deciding, moving and swinging until it is let
+## go. Nothing extra is replicated for it — a frozen bandit simply stops
+## sending new positions, so every screen sees the same still fight.
+var frozen := false
 
 var health: float
 var dead := false
@@ -205,6 +214,19 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	# held by a tutorial gate: still solid, still hittable, just not thinking.
+	# The swing in progress is dropped rather than paused, so the player is
+	# never let go into a hit they could not have seen coming.
+	if frozen:
+		attacking = false
+		velocity.x = 0.0
+		velocity.z = 0.0
+		if not is_on_floor():
+			velocity.y -= _gravity() * delta
+		move_and_slide()
+		_animate(delta)
+		return
+
 	# staggered: no decisions, no guard, no swing — just stumble it out
 	if stagger_left > 0.0:
 		stagger_left -= delta
@@ -304,11 +326,17 @@ func _separate() -> void:
 	velocity.x = clampf(velocity.x + push.x, -move_speed, move_speed)
 	velocity.z = clampf(velocity.z + push.z, -move_speed, move_speed)
 
+## Nearest living player — except for a tutorial bandit, which has exactly one
+## player it is allowed to care about. The copies of the city are far enough
+## apart that distance alone would already do this; the check is here so that
+## stays true even if they are ever moved next door to each other.
 func _acquire_player() -> void:
 	var best: Node3D = null
 	var best_d := INF
 	for p in get_tree().get_nodes_in_group("player"):
 		if not is_instance_valid(p) or p.get("dead"):
+			continue
+		if owner_peer != 0 and p.get("peer_id") != owner_peer:
 			continue
 		var d := global_position.distance_to((p as Node3D).global_position)
 		if d < best_d:
@@ -554,6 +582,8 @@ func _attack_trace() -> void:
 	for p in get_tree().get_nodes_in_group("player"):
 		if not is_instance_valid(p) or p.get("dead"):
 			continue
+		if owner_peer != 0 and p.get("peer_id") != owner_peer:
+			continue # a tutorial bandit can only ever hit its own student
 		var target_pos: Vector3 = p.server_body_pos()
 		var to_p: Vector3 = target_pos + Vector3.UP * 1.0 - origin
 		var dist := to_p.length()

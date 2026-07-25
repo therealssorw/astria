@@ -1,0 +1,170 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/world/tutorial/tutorial_arena.gd" id="1_arena"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.34, 0.33, 0.3, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_wall"]
+albedo_color = Color(0.46, 0.45, 0.43, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_house"]
+albedo_color = Color(0.55, 0.42, 0.31, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_villager"]
+albedo_color = Color(0.42, 0.55, 0.68, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_ground"]
+material = SubResource("Mat_ground")
+size = Vector3(90, 1, 90)
+
+[sub_resource type="BoxShape3D" id="Shape_ground"]
+size = Vector3(90, 1, 90)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_x"]
+material = SubResource("Mat_wall")
+size = Vector3(90, 7, 1.5)
+
+[sub_resource type="BoxShape3D" id="Shape_wall_x"]
+size = Vector3(90, 7, 1.5)
+
+[sub_resource type="BoxMesh" id="Mesh_wall_z"]
+material = SubResource("Mat_wall")
+size = Vector3(1.5, 7, 90)
+
+[sub_resource type="BoxShape3D" id="Shape_wall_z"]
+size = Vector3(1.5, 7, 90)
+
+[sub_resource type="BoxMesh" id="Mesh_house"]
+material = SubResource("Mat_house")
+size = Vector3(9, 6, 9)
+
+[sub_resource type="BoxShape3D" id="Shape_house"]
+size = Vector3(9, 6, 9)
+
+[sub_resource type="CapsuleMesh" id="Mesh_villager"]
+material = SubResource("Mat_villager")
+radius = 0.35
+height = 1.8
+
+[node name="TutorialArena" type="Node3D"]
+script = ExtResource("1_arena")
+
+[node name="Ground" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("Mesh_ground")
+
+[node name="Collision" type="CollisionShape3D" parent="Ground"]
+shape = SubResource("Shape_ground")
+
+[node name="WallNorth" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.5, -44)
+
+[node name="Mesh" type="MeshInstance3D" parent="WallNorth"]
+mesh = SubResource("Mesh_wall_x")
+
+[node name="Collision" type="CollisionShape3D" parent="WallNorth"]
+shape = SubResource("Shape_wall_x")
+
+[node name="WallSouth" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.5, 44)
+
+[node name="Mesh" type="MeshInstance3D" parent="WallSouth"]
+mesh = SubResource("Mesh_wall_x")
+
+[node name="Collision" type="CollisionShape3D" parent="WallSouth"]
+shape = SubResource("Shape_wall_x")
+
+[node name="WallWest" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -44, 3.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="WallWest"]
+mesh = SubResource("Mesh_wall_z")
+
+[node name="Collision" type="CollisionShape3D" parent="WallWest"]
+shape = SubResource("Shape_wall_z")
+
+[node name="WallEast" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 44, 3.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="WallEast"]
+mesh = SubResource("Mesh_wall_z")
+
+[node name="Collision" type="CollisionShape3D" parent="WallEast"]
+shape = SubResource("Shape_wall_z")
+
+[node name="House1" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 3, -16)
+
+[node name="Mesh" type="MeshInstance3D" parent="House1"]
+mesh = SubResource("Mesh_house")
+
+[node name="Collision" type="CollisionShape3D" parent="House1"]
+shape = SubResource("Shape_house")
+
+[node name="House2" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19, 3, -13)
+
+[node name="Mesh" type="MeshInstance3D" parent="House2"]
+mesh = SubResource("Mesh_house")
+
+[node name="Collision" type="CollisionShape3D" parent="House2"]
+shape = SubResource("Shape_house")
+
+[node name="House3" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -21, 3, 17)
+
+[node name="Mesh" type="MeshInstance3D" parent="House3"]
+mesh = SubResource("Mesh_house")
+
+[node name="Collision" type="CollisionShape3D" parent="House3"]
+shape = SubResource("Shape_house")
+
+[node name="House4" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17, 3, 19)
+
+[node name="Mesh" type="MeshInstance3D" parent="House4"]
+mesh = SubResource("Mesh_house")
+
+[node name="Collision" type="CollisionShape3D" parent="House4"]
+shape = SubResource("Shape_house")
+
+[node name="PlayerSpawn" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 6)
+
+[node name="BanditSpawns" type="Node3D" parent="."]
+
+[node name="Spawn1" type="Marker3D" parent="BanditSpawns"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -7)
+
+[node name="Spawn2" type="Marker3D" parent="BanditSpawns"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 1, -4)
+
+[node name="Spawn3" type="Marker3D" parent="BanditSpawns"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 1, -4)
+
+[node name="Spawn4" type="Marker3D" parent="BanditSpawns"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 1, 12)
+
+[node name="Spawn5" type="Marker3D" parent="BanditSpawns"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1, 13)
+
+[node name="VillagerStart" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1, 26)
+
+[node name="Villager" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -14, 1, 26)
+
+[node name="Mesh" type="MeshInstance3D" parent="Villager"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+mesh = SubResource("Mesh_villager")
+
+[node name="Name" type="Label3D" parent="Villager"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3, 0)
+billboard = 1
+pixel_size = 0.004
+font_size = 64
+outline_size = 16
+text = "Villager"

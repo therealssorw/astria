@@ -60,6 +60,16 @@ func on_local_pawn_ready() -> void:
 	_freeze(true)
 	_begin.call_deferred() # let the pawn finish entering the tree first
 
+## Play it again from the top, whatever is on screen right now — the cheat
+## menu's "Start cutscene". Local like the rest of it: watching your own intro
+## again gains you nothing the server owns, so there is nothing to ask it for.
+func replay() -> void:
+	if DialogSystem.is_open():
+		DialogSystem.close()
+	_finish() # tidy away anything already in flight
+	arm()
+	on_local_pawn_ready()
+
 ## Drop everything and give the screen back — used when the world goes away
 ## under us (a disconnect back to the menu) rather than at the end of the scene.
 func abort() -> void:
@@ -108,6 +118,7 @@ func _speak_awake() -> void:
 		_finish()
 
 func _finish() -> void:
+	var was_playing := _playing
 	_armed = false
 	_playing = false
 	if _tween and _tween.is_valid():
@@ -118,6 +129,10 @@ func _finish() -> void:
 	_freeze(false)
 	if get_tree().get_first_node_in_group("local_player") != null:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# the tutorial city waits for this: nothing swings at a player who is still
+	# looking at a black screen
+	if was_playing:
+		Net.report_tutorial_ready()
 
 func _freeze(on: bool) -> void:
 	var pawn := get_tree().get_first_node_in_group("local_player")

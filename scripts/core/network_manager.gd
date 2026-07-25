@@ -149,6 +149,7 @@ func _on_peer_disconnected(id: int) -> void:
 	if players.has(id):
 		print("[Net] %s left" % players[id]["name"])
 		players.erase(id)
+	Tutorial.server_end(id, false) # their copy of the city goes with them
 	var pawn := _pawn(id)
 	if pawn:
 		pawn.queue_free()
@@ -224,7 +225,8 @@ func _handle_world_ready(id: int) -> void:
 	var en := _enemies_node()
 	if en:
 		for e in en.get_children():
-			if not e.dead:
+			# another player's tutorial bandits are not in this player's world
+			if not e.dead and int(e.owner_peer) in [0, id]:
 				rpc_id(id, "cl_spawn_enemy", String(e.name), e.global_position)
 	var dn := _drops_node()
 	if dn:
@@ -239,7 +241,11 @@ func _server_spawn_player(id: int) -> void:
 	var pn := _players_node()
 	if pn == null or pn.has_node(str(id)):
 		return
-	var pos := spawn_position(pn.get_child_count())
+	# a player joining wakes up in their own copy of the tutorial city, not on
+	# the island; only when there is no room for one do they start out here
+	var pos := Tutorial.server_begin(id)
+	if pos == Vector3.INF:
+		pos = spawn_position(pn.get_child_count())
 	rpc("cl_spawn_player", id, players[id]["name"], pos)
 	_do_spawn_player(id, players[id]["name"], pos)
 	_send_purse(id) # first sync of their gold/bag, now that they have a pawn
@@ -289,6 +295,11 @@ func _public_players() -> Dictionary:
 		out[id] = {"name": e["name"], "kills": e["kills"], "deaths": e["deaths"],
 				"held": held_item(e)}
 	return out
+
+## This peer's pawn, or null if it has none right now. On the server this is
+## the authoritative copy — the one combat and the tutorial's gates read.
+func pawn_of(id: int) -> Node:
+	return _pawn(id)
 
 ## What peer `id` has in hand, whichever side of the wire this is: the server
 ## reads its own bar, a client reads the "held" field of the public registry.
@@ -463,6 +474,42 @@ func _server_cheat_give(id: int, item_id: String) -> void:
 	items[item_id] = int(items.get(item_id, 0)) + 1
 	_trade_reply(id, "Gave %s." % ItemDb.item_name(item_id), true)
 	_bag_changed(id)
+
+## Client -> server: put me back at the start of the tutorial. Editor builds
+## only — and it is a real restart on the server (a fresh copy of the city, its
+## own bandits), not a client pretending to be at step one.
+func request_cheat_tutorial() -> void:
+	if multiplayer.is_server():
+		_server_cheat_tutorial(multiplayer.get_unique_id())
+	else:
+		rpc_id(1, "sv_cheat_tutorial")
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_cheat_tutorial() -> void:
+	if not multiplayer.is_server():
+		return
+	_server_cheat_tutorial(multiplayer.get_remote_sender_id())
+
+func _server_cheat_tutorial(id: int) -> void:
+	if not players.has(id):
+		return
+	if not cheats_allowed():
+		_trade_reply(id, "Cheats are off on this server.", false)
+		return
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		_trade_reply(id, "Not while you are down.", false)
+		return
+	var pos := Tutorial.server_begin(id)
+	if pos == Vector3.INF:
+		_trade_reply(id, "No room for another copy of the city.", false)
+		return
+	pawn.net_teleport(pos)
+	if id != 1:
+		rpc_id(id, "cl_force_position", pos)
+	# no cutscene is playing to say "I can see now", so the city starts at once
+	Tutorial.server_report_ready(id)
+	_trade_reply(id, "Tutorial restarted.", true)
 
 ## Client -> server: put my pawn at a named place. Editor builds only.
 func request_cheat_teleport(dest_id: String) -> void:
@@ -869,7 +916,11 @@ func server_respawn_player(id: int) -> void:
 	var pn := _players_node()
 	if pn == null:
 		return
-	var pos := spawn_position(randi() % 8)
+	# dying in the tutorial puts you back in the tutorial: the island is
+	# somewhere you have not earned yet
+	var pos := Tutorial.server_respawn_position(id)
+	if pos == Vector3.INF:
+		pos = spawn_position(randi() % 8)
 	rpc("cl_player_respawn", id, pos)
 	var pawn := _pawn(id)
 	if pawn:
@@ -906,11 +957,22 @@ func _broadcast_enemy_states() -> void:
 	if en == null:
 		return
 	var batch := []
+	var private := {} # peer -> its own tutorial bandits, which only it can see
 	for e in en.get_children():
-		if not e.dead:
+		if e.dead:
+			continue
+		var audience := int(e.owner_peer)
+		if audience == 0:
 			batch.append(e.net_visual_state())
+		else:
+			if not private.has(audience):
+				private[audience] = []
+			private[audience].append(e.net_visual_state())
 	if not batch.is_empty():
 		rpc("cl_enemy_states", batch)
+	for peer: int in private:
+		if peer != 1:
+			rpc_id(peer, "cl_enemy_states", private[peer])
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func cl_enemy_states(batch: Array) -> void:
@@ -965,6 +1027,118 @@ func cl_enemy_died(enemy_name: String) -> void:
 
 func server_remove_enemy(enemy_name: String) -> void:
 	rpc("cl_remove_enemy", enemy_name)
+
+# ---------------- tutorial ----------------
+#
+# The tutorial gives each player a private copy of a city (see
+# scripts/world/tutorial/). The rules are the usual ones: the SERVER owns the
+# copy, its bandits and which step you are on; the client owns nothing but the
+# screen. What is different is the audience — a tutorial bandit is spawned and
+# updated only for the one player it belongs to, because it is not in anyone
+# else's world.
+
+## SERVER: spawn one bandit into `id`'s copy of the city and tell only them.
+func server_spawn_tutorial_bandit(id: int, pos: Vector3, frozen: bool) -> Node:
+	if not multiplayer.is_server():
+		return null
+	var en := _enemies_node()
+	if en == null:
+		return null
+	var bandit := ENEMY_SCENE.instantiate()
+	bandit.name = next_enemy_name()
+	bandit.owner_peer = id
+	en.add_child(bandit)
+	bandit.global_position = pos
+	bandit.frozen = frozen
+	if id != 1:
+		rpc_id(id, "cl_spawn_enemy", String(bandit.name), pos)
+	return bandit
+
+## SERVER: take a bandit out of the world entirely (the copy is being torn
+## down), as opposed to killing it.
+func server_despawn_enemy(enemy: Node) -> void:
+	if not multiplayer.is_server() or not is_instance_valid(enemy):
+		return
+	var enemy_name := String(enemy.name)
+	var audience := int(enemy.get("owner_peer"))
+	if audience > 1:
+		rpc_id(audience, "cl_remove_enemy", enemy_name)
+	elif audience == 0:
+		rpc("cl_remove_enemy", enemy_name)
+	enemy.queue_free()
+
+## SERVER: out of the tutorial and onto the island, wherever that is today.
+func server_place_on_island(id: int) -> void:
+	var pawn := _pawn(id)
+	if pawn == null:
+		return
+	var pos := spawn_position(0)
+	pawn.net_teleport(pos)
+	if id != 1:
+		rpc_id(id, "cl_force_position", pos)
+
+## SERVER -> one client: build your copy of the city / step / tear it down.
+## The host is both ends at once, so it calls its own client half directly —
+## `call_remote` RPCs never come back round to the peer that sent them.
+func tutorial_enter(id: int, slot: int) -> void:
+	if id == 1:
+		Tutorial.client_enter(slot)
+	else:
+		rpc_id(id, "cl_tutorial_enter", slot)
+
+func tutorial_step(id: int, step_id: String) -> void:
+	if id == 1:
+		Tutorial.client_step(step_id)
+	else:
+		rpc_id(id, "cl_tutorial_step", step_id)
+
+func tutorial_leave(id: int) -> void:
+	if id == 1:
+		Tutorial.client_leave()
+	else:
+		rpc_id(id, "cl_tutorial_leave")
+
+@rpc("authority", "call_remote", "reliable")
+func cl_tutorial_enter(slot: int) -> void:
+	Tutorial.client_enter(slot)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_tutorial_step(step_id: String) -> void:
+	Tutorial.client_step(step_id)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_tutorial_leave() -> void:
+	Tutorial.client_leave()
+
+## CLIENT -> server: my intro cutscene is over, the city can start moving.
+func report_tutorial_ready() -> void:
+	if not active:
+		return
+	if multiplayer.is_server():
+		Tutorial.server_report_ready(multiplayer.get_unique_id())
+	else:
+		rpc_id(1, "sv_tutorial_ready")
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_tutorial_ready() -> void:
+	if multiplayer.is_server():
+		Tutorial.server_report_ready(multiplayer.get_remote_sender_id())
+
+## CLIENT -> server: I did the thing this step asked for. Only the steps the
+## server cannot watch for itself are taken on trust (see TutorialData), and
+## the most a patched client wins by lying is skipping its own lesson.
+func report_tutorial_pressed(step_id: String) -> void:
+	if not active:
+		return
+	if multiplayer.is_server():
+		Tutorial.server_report_pressed(multiplayer.get_unique_id(), step_id)
+	else:
+		rpc_id(1, "sv_tutorial_pressed", step_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_tutorial_pressed(step_id: String) -> void:
+	if multiplayer.is_server():
+		Tutorial.server_report_pressed(multiplayer.get_remote_sender_id(), step_id)
 
 # ---------------- gold drops ----------------
 # The pile itself is cosmetic on every peer; the server owns who gets paid.

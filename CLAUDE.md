@@ -176,6 +176,59 @@ mixed pile.
   8 against a stand-in pawn and checks each beat, plus that a later pawn does
   not replay it.
 
+## The tutorial
+
+- What happens: you wake up (intro cutscene) in a city being raided, you are
+  taught one fighting button at a time while the fight is held still, and when
+  the last bandit is down a villager walks over and sends you to the mayor.
+  Then you are put on the island. It runs on every join, right after the
+  cutscene reports in.
+- Each player gets their OWN copy of the city — the "cloned world". Copies are
+  the same scene instanced at `TutorialData.slot_origin(slot)`, a row of slots
+  500m apart and 4km above the island: one physics space, a private block of it
+  each. Nobody in the tutorial can see, hit or interrupt anybody else.
+- Server-authoritative like everything else (`scripts/world/tutorial/`):
+  `tutorial_system.gd` (autoload `Tutorial`) owns the copy, its bandits and
+  which step you are on; the client owns the screen and nothing else. The
+  client instances its own copy of the arena scene at the same coordinates —
+  exactly how the world scene itself works — and only the bandits are
+  replicated.
+- A tutorial bandit carries `owner_peer`: it is spawned and updated ONLY for
+  that player (`Net.server_spawn_tutorial_bandit`, the private batches in
+  `_broadcast_enemy_states`, the filter in `_handle_world_ready`), only fights
+  that player, and can only hit that player. `owner_peer == 0` means an
+  ordinary bandit of the shared world.
+- The lesson is a table: `TutorialData.STEPS`. `wave` spawns bandits, `gate`
+  freezes them and teaches one button, `clear` is just a fight and ends when
+  the wave is dead, `talk` is the villager, `end` sends you to the island.
+  Reordering the lesson is reordering that array.
+- A freeze gate stops the BANDITS (`Enemy.frozen` — still solid, still
+  hittable, not thinking), never the player: you can walk and look around while
+  the fight holds. It opens on the real action, read off the server's own copy
+  of the pawn (`attacking` / `attack_is_heavy` / `blocking`), so the lesson
+  cannot be clicked past without doing it. Lock-on lives entirely in the
+  client's camera, so that one step carries `client_gate: true` and is taken on
+  trust — the most a patched client wins is skipping its own lesson.
+- Pacing rule to keep: a pause only ever buys a NEW button, the fight resumes
+  the instant it is pressed, and the last wave is fought without a single
+  interruption. Steps that are just a fight get a `banner` line instead — no
+  box, no pause, nothing to dismiss.
+- All the spoken text is `tut_*` in DialogData, and is PLACEHOLDER: rewriting
+  those `text` fields rewrites the tutorial. Keep the `auto` beats (they are
+  what makes a line play by itself) and keep the ids.
+- Placeholder art too: `scenes/world/tutorial/tutorial_arena.tscn` is boxes and
+  a wall ring, and the villager is a capsule. Replace the scene (or drop a
+  built NPC in place of `Villager`) — the logic finds everything by node name
+  through `tutorial_arena.gd`'s accessors.
+- The mayor does not exist yet: the villager's line is the hand-off, and the
+  step after it is "go to the island".
+- Test: `--headless res://tests/test_tutorial.tscn` (prints
+  `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
+  lesson: joining lands in the city and not on the island, nothing moves until
+  the cutscene reports in, every gate holds the fight frozen until the action
+  is really done, clearing a wave advances by itself, and finishing leaves no
+  arena and no bandits behind.
+
 ## NPC dialog
 
 - To make an NPC talkable: instance `scenes/entities/npc/npc_interactable.tscn`
@@ -333,9 +386,12 @@ mixed pile.
 
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —
   `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
-  (everything in `ItemDb.ITEMS`; picking one asks the server for a copy) and
-  "Teleport" (everything in `TeleportData.DESTINATIONS`). Adding a cheat is one
-  row in `_build_root`.
+  (everything in `ItemDb.ITEMS`; picking one asks the server for a copy),
+  "Teleport" (everything in `TeleportData.DESTINATIONS`), "Start cutscene" and
+  "Start tutorial". Adding a cheat is one row in `_build_root`.
+- "Start cutscene" is the one cheat that does NOT go through the server: a
+  cutscene is one player's screen and nothing else. "Start tutorial" does, and
+  is a real restart — a fresh copy of the city with its own bandits.
 - It is editor-only at BOTH ends: the menu doesn't build unless
   `OS.has_feature("editor")`, and every `Net._server_cheat_*` refuses unless the
   SERVER is an editor run (`Net.cheats_allowed`). So an exported dedicated

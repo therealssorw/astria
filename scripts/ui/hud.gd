@@ -6,6 +6,7 @@ extends CanvasLayer
 const SCOREBOARD := preload("res://scripts/ui/scoreboard.gd")
 const NPC_PROMPTS := preload("res://scripts/ui/dialog/npc_prompt_overlay.gd")
 const QUEST_TRACKER := preload("res://scripts/ui/quest/quest_tracker.gd")
+const TUTORIAL_OVERLAY := preload("res://scripts/ui/tutorial/tutorial_overlay.gd")
 
 var player: Player
 var hp_fill: ColorRect
@@ -47,6 +48,7 @@ func _ready() -> void:
 
 	root.add_child(NPC_PROMPTS.new())
 	root.add_child(QUEST_TRACKER.new())
+	root.add_child(TUTORIAL_OVERLAY.new())
 	root.add_child(SCOREBOARD.new())
 	_build_death_overlay(root)
 
