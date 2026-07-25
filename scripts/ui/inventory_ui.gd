@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## Inventory screen (toggled with Tab, or D-pad up on a gamepad) +
 ## always-on hotbar.
-## Tabs: Inventory (the hotbar row + equipment slots + a 32-slot item grid) and
+## Tabs: Inventory (equipment slots + the bag, whose TOP ROW is the hotbar —
+## framed in gold and labelled, with the general slots underneath it) and
 ## Stats (deaths / kills from the server registry). Gold is always visible at
 ## the bottom of the window; GameStats mirrors the server's gold, bag and bar.
 ##
@@ -22,8 +23,11 @@ extends CanvasLayer
 
 const SLOT_SIZE := 52
 const HOTBAR_SLOTS := 9
-const ITEM_COLS := 8
+const ITEM_COLS := HOTBAR_SLOTS # the bag sits directly under the bar: same width
 const ITEM_ROWS := 4
+## Padding inside the frame that highlights the hotbar row; the bag grid is
+## inset by the same amount so the two line up column for column.
+const HOTBAR_FRAME_PAD := 4
 
 const GOLD := Color(0.95, 0.79, 0.42)
 const USE_FLASH_TIME := 2.0
@@ -406,15 +410,13 @@ func _build_inventory_tab() -> Control:
 		panel_bar_slots.append(b)
 		bar.add_child(b)
 	bar_frame.add_child(bar)
-	bar_row.add_child(bar_frame)
-	bag.add_child(bar_row)
+	rows.add_child(bar_frame)
 
 	# the general slots, inset by the frame's padding so their columns line up
 	# with the hotbar slots directly above them
 	var grid_margin := MarginContainer.new()
-	grid_margin.add_theme_constant_override("margin_left",
-			int(bar_title.get_theme_font("font").get_string_size(bar_title.text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x) + 8 + HOTBAR_FRAME_PAD)
+	grid_margin.add_theme_constant_override("margin_left", HOTBAR_FRAME_PAD)
+	grid_margin.add_theme_constant_override("margin_right", HOTBAR_FRAME_PAD)
 	var grid := GridContainer.new()
 	grid.columns = ITEM_COLS
 	grid.add_theme_constant_override("h_separation", 4)
@@ -428,7 +430,15 @@ func _build_inventory_tab() -> Control:
 			_on_item_pressed(str(ids[i]) if i < ids.size() else ""))
 		item_slots.append(slot)
 		grid.add_child(slot)
-	row.add_child(grid)
+	grid_margin.add_child(grid)
+	rows.add_child(grid_margin)
+	# an empty title cell keeps the bag rows aligned with the labelled bar
+	var bag_title := Control.new()
+	bag_title.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	titles.add_child(bag_title)
+	bag.add_child(titles)
+	bag.add_child(rows)
+	row.add_child(bag)
 	col.add_child(row)
 
 	_hint = Label.new()
