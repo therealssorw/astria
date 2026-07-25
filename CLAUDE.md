@@ -275,8 +275,9 @@ mixed pile.
 - The pack ships ONE 5.5s combo take, and most of it is danced in a deep mocap
   crouch: the hips stand at 1.00, sink to ~0.75 through the middle cuts and to
   0.67 in the lunge near 4.1s, which on this character reads as squatting. So
-  only the FIRST cut is used — `"slice": [0.58, 0.98]`, which starts from the
-  standing ready pose and is out before the crouch settles. EVERY swing plays
+  only the FIRST cut is used, trimmed to the strike itself —
+  `"slice": [0.66, 0.90]`, the arm already moving at 0.66, peaking at 0.80 and
+  spent by 0.90, with the blend out of idle standing in for the raise. EVERY swing plays
   that one slash (`sword_slash`); the heavy differs only in the longer window
   it is stretched over. If more sword moves are ever wanted they need a take
   that stays on its feet, not another slice of this one.

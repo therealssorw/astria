@@ -49,8 +49,11 @@ const CLIPS := {
 	"sword_run": {"path": ANIM_DIR + "Sword/Running/Sword Run.fbx", "speed": 1.0, "loop": true},
 	# "speed" here only matters if something plays this clip outside an attack:
 	# on_attack_started always stretches it to the punch it stands in for.
+	# Trimmed to the cut itself: the arm is already moving at 0.66, peaks at
+	# 0.80 and is spent by 0.90. The raise before it and the drift after are
+	# not in the clip at all — the blend out of idle covers the lead-in.
 	"sword_slash": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
-			"loop": false, "slice": [0.58, 0.98]},
+			"loop": false, "slice": [0.66, 0.90]},
 }
 ## Clip swaps applied while a sword is in hand. Anything not listed keeps its
 ## bare-handed clip, so blocking, sliding and jumping are unchanged. Every
