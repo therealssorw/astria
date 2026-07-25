@@ -248,8 +248,9 @@ mixed pile.
   launch with a saved username connects to it without showing the menu. The
   menu appears on a first run (to pick a name) and after any failure or drop,
   carrying the reason; it deliberately does NOT auto-retry, or an unreachable
-  server would loop. `--host` and `--join=IP[:PORT]` still override it, which
-  is how local and LAN testing works.
+  server would loop. Playing from the editor always hosts locally instead of
+  joining that box, so a test run never touches the live world. `--host` and
+  `--join=IP[:PORT]` still override it, which is how local and LAN testing works.
   All networking lives in the `Net` autoload (`scripts/core/network_manager.gd`):
   ENet host/join, UPnP port mapping (so hosts don't need manual port
   forwarding; falls back to LAN with a message), the server-authoritative

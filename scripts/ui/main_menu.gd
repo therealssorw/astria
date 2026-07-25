@@ -5,6 +5,9 @@ extends Control
 ## saved username yet, and whenever a connection drops or fails -- with the
 ## reason, so a dead server reads as an error rather than a hang.
 ##
+## Running from the editor hosts locally instead of joining that box, so a test
+## run never disturbs the live world (and works with the server down).
+##
 ## A dedicated server build (feature tag "server", or the --server flag) skips
 ## the UI entirely and hosts headlessly from here.
 ##
@@ -43,6 +46,11 @@ func _ready() -> void:
 		status_label.text = Net.last_error
 		Net.last_error = ""
 	if _handle_cli_args() or returned_with_error:
+		return
+	# Playing from the editor is development, not playing the live game: host
+	# locally so a test run never touches the dedicated box (and works offline).
+	if OS.has_feature("editor"):
+		_on_host_pressed()
 		return
 	# A player who has been here before goes straight in; a new one gets to
 	# pick a name first, because it is what the scoreboard shows everyone else.
