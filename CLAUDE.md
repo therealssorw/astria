@@ -227,6 +227,28 @@ mixed pile.
   colours reach the mesh, and that a saved NPC reloads as a talkable scene —
   plus that Rouge still builds his own rig and full clip set.
 
+## Accounts and saved data
+
+- Players sign in with Discord through Supabase. Full walkthrough and the
+  one-time dashboard setup are in `docs/accounts.md`; the code lives in
+  `scripts/core/account/` (`supabase.gd` HTTP layer, `auth.gd` client-side
+  OAuth, `save_store.gd` server-side load/write) and the schema in
+  `supabase/migrations/`.
+- The client obtains an access token and sends it in `sv_register`; that token
+  proves WHO it is and nothing more. Gold, bag and score are read from the
+  database by the server and never from the client. `Supabase.service_key()`
+  is empty on any non-dedicated build, so a client cannot write a save even if
+  someone edits it in.
+- Anything that changes a persisted number must call `Net._persist(id)` —
+  `_send_purse` already covers every gold/item route, so only new kill/death
+  style counters need adding by hand. Writes are debounced (10 s) and flushed
+  on disconnect.
+- `user_id` is private, like gold and items: `_public_players` must never carry
+  it. The test asserts this.
+- Test: `--headless res://tests/test_accounts.tscn` (prints
+  `ACCOUNTTEST RESULT=PASS/FAIL`). Local play without Discord: start the server
+  with `--allow-guests`; the live server never is.
+
 ## Multiplayer
 
 - Boot flow: main scene is `scenes/ui/main_menu.tscn`. Players do not run

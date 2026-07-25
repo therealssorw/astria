@@ -55,6 +55,8 @@ var _upnp_thread: Thread
 var _upnp_cleanup_thread: Thread
 var _upnp_mapper = null      # UPNP instance that owns the active mapping
 var _mapped_port := 0        # 0 = nothing mapped on the router right now
+var _registering := {}      # peer id -> true while its account is being checked
+var _online_accounts := {}  # supabase user_id -> peer id, one session each
 var _enemy_counter := 0
 var _gold_counter := 0
 var _player_bcast_accum := 0.0
@@ -89,6 +91,8 @@ func host_game(username: String, dedicated := false, port := DEFAULT_PORT) -> Er
 	active = true
 	host_port = port
 	players.clear()
+	_online_accounts.clear()
+	_registering.clear()
 	if not dedicated:
 		players[1] = _make_entry(_sanitize_name(username))
 	_start_upnp(port)
@@ -97,7 +101,7 @@ func host_game(username: String, dedicated := false, port := DEFAULT_PORT) -> Er
 	get_tree().change_scene_to_file.call_deferred(WORLD_SCENE)
 	return OK
 
-func join_game(ip: String, username: String, port := DEFAULT_PORT) -> Error:
+func join_game(ip: String, username: String, port := DEFAULT_PORT, token := "") -> Error:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(ip, port)
 	if err != OK:
@@ -106,15 +110,27 @@ func join_game(ip: String, username: String, port := DEFAULT_PORT) -> Error:
 	multiplayer.multiplayer_peer = peer
 	active = true
 	_pending_username = username
+	_pending_token = token
 	return OK
 
 var _pending_username := ""
+var _pending_token := ""
+
+## Development escape hatch: a server started with --allow-guests takes
+## unauthenticated players, so a LAN or localhost test does not need a real
+## Discord round trip. The dedicated production server is never launched with
+## it, so it cannot be used to dodge accounts on the live world.
+func allows_guests() -> bool:
+	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	return args.has("--allow-guests")
 
 func return_to_menu(message := "") -> void:
 	last_error = message
 	active = false
 	is_dedicated = false
 	players.clear()
+	_online_accounts.clear()
+	_registering.clear()
 	_remove_upnp_mapping(false) # the server is gone, close the router port
 	upnp_status = "inactive"
 	public_ip = ""
@@ -137,8 +153,16 @@ func _on_peer_connected(id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	if not multiplayer.is_server():
 		return
+	_registering.erase(id)
 	if players.has(id):
 		print("[Net] %s left" % players[id]["name"])
+		# Write their save before the entry goes: after this line their gold
+		# and bag exist nowhere else.
+		var user_id := str(players[id].get("user_id", ""))
+		if not user_id.is_empty():
+			SaveStore.mark_dirty(user_id, players[id].duplicate(true))
+			SaveStore.flush_now(user_id)
+			_online_accounts.erase(user_id)
 		players.erase(id)
 	var pawn := _pawn(id)
 	if pawn:
@@ -147,7 +171,8 @@ func _on_peer_disconnected(id: int) -> void:
 	_sync_players()
 
 func _on_connected_to_server() -> void:
-	rpc_id(1, "sv_register", _pending_username)
+	rpc_id(1, "sv_register", _pending_token, _pending_username)
+	_pending_token = ""  # short-lived, and there is no reason to keep it around
 
 func _on_connection_failed() -> void:
 	active = false
@@ -155,22 +180,92 @@ func _on_connection_failed() -> void:
 	join_failed.emit("Could not reach the host.")
 
 func _on_server_disconnected() -> void:
+	# A refusal (cl_rejected) is always followed by the server hanging up. It
+	# already told us why, and "connection lost" would bury the real reason.
+	if not last_error.is_empty():
+		return
 	return_to_menu("Connection to the host was lost.")
 
 # ---------------- registration / world flow ----------------
 
-## Client -> server: first thing a client sends after connecting.
+## Client -> server: first thing a client sends after connecting. The token is
+## proof of a Supabase account; the username beside it is only a fallback for
+## guest servers, and is IGNORED whenever the token checks out — the name comes
+## from Discord, so nobody can pick someone else's.
+##
+## This awaits two HTTP calls, so a peer can vanish mid-handshake and a second
+## sv_register can arrive before the first finishes. `_registering` covers the
+## window that `players.has(id)` cannot.
 @rpc("any_peer", "call_remote", "reliable")
-func sv_register(username: String) -> void:
+func sv_register(token: String, username: String) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
-	if players.has(id):
+	if players.has(id) or _registering.has(id):
 		return  # re-registration would reset stats — never allow it
-	players[id] = _make_entry(_sanitize_name(username))
-	print("[Net] %s joined (peer %d)" % [players[id]["name"], id])
+	_registering[id] = true
+	await _server_register(id, token, username)
+	_registering.erase(id)
+
+func _server_register(id: int, token: String, username: String) -> void:
+	var entry := {}
+	var user_id := ""
+
+	if not token.strip_edges().is_empty() or not allows_guests():
+		var who: Dictionary = await SaveStore.verify(token)
+		if not who["ok"]:
+			_reject(id, who["error"])
+			return
+		user_id = str(who["user_id"])
+		# One session per account. Two peers sharing a login would each hold a
+		# copy of the same purse and the last one to leave would overwrite the
+		# other — silently eating whatever the first player earned.
+		if _online_accounts.has(user_id):
+			_reject(id, "That account is already playing.")
+			return
+		var loaded: Dictionary = await SaveStore.load_save(user_id, str(who["username"]))
+		if not loaded["ok"]:
+			_reject(id, loaded["error"])
+			return
+		if not _still_connected(id):
+			return
+		_online_accounts[user_id] = id
+		entry = loaded["entry"]
+		entry["user_id"] = user_id
+		entry["name"] = _sanitize_name(str(who["username"]))
+		SaveStore.upsert_profile(user_id, entry["name"], str(who["discord_id"]), str(who["avatar_url"]))
+	else:
+		# Guest server only (see Net.allows_guests): nothing is persisted.
+		entry = _make_entry(_sanitize_name(username))
+
+	if not _still_connected(id):
+		_online_accounts.erase(user_id)
+		return
+	players[id] = entry
+	print("[Net] %s joined (peer %d)%s" % [entry["name"], id, "" if user_id.is_empty() else " [account]"])
 	_sync_players()
 	rpc_id(id, "cl_load_world")
+
+## The peer may have given up while we were talking to Supabase; registering it
+## then would leave a ghost in the registry that nothing ever removes.
+func _still_connected(id: int) -> bool:
+	return multiplayer.multiplayer_peer != null \
+		and multiplayer.get_peers().has(id)
+
+func _reject(id: int, reason: String) -> void:
+	print("[Net] refused peer %d: %s" % [id, reason])
+	if _still_connected(id):
+		rpc_id(id, "cl_rejected", reason)
+		# Give the message a moment to actually go out before cutting the wire.
+		await get_tree().create_timer(0.35).timeout
+		if _still_connected(id):
+			multiplayer.multiplayer_peer.disconnect_peer(id)
+
+## Server -> one client: you are not getting in, and here is why. Shown on the
+## menu instead of the generic "connection lost".
+@rpc("authority", "call_remote", "reliable")
+func cl_rejected(reason: String) -> void:
+	return_to_menu(reason)
 
 ## Server -> one client: registration accepted, load into the island.
 @rpc("authority", "call_remote", "reliable")
@@ -278,7 +373,17 @@ func _public_players() -> Dictionary:
 	return out
 
 func _make_entry(username: String) -> Dictionary:
-	return {"name": username, "kills": 0, "deaths": 0, "gold": 0, "items": {}}
+	return {"name": username, "kills": 0, "deaths": 0, "gold": 0, "items": {}, "user_id": ""}
+
+## Anything on the server that changes a persisted number calls this. It only
+## queues the write (SaveStore batches them), so it is cheap enough to sit in
+## the middle of combat. A guest entry has no user_id and is silently skipped.
+func _persist(id: int) -> void:
+	if not multiplayer.is_server() or not players.has(id):
+		return
+	var user_id := str(players[id].get("user_id", ""))
+	if not user_id.is_empty():
+		SaveStore.mark_dirty(user_id, players[id])
 
 func _sanitize_name(raw: String) -> String:
 	var cleaned := ""
@@ -402,6 +507,9 @@ func _send_purse(id: int) -> void:
 	var entry: Dictionary = players.get(id, {})
 	var gold := int(entry.get("gold", 0))
 	var items: Dictionary = entry.get("items", {})
+	# Every route that moves gold or items ends here, so this is the one place
+	# persistence has to hook into to cover trades, drops and pickups alike.
+	_persist(id)
 	if id == multiplayer.get_unique_id():
 		cl_purse(gold, items)
 	else:
@@ -564,8 +672,10 @@ func server_record_player_death(victim: int, attacker: int) -> void:
 		print("[Net] %s died" % victim_name)
 	if players.has(victim):
 		players[victim]["deaths"] += 1
+		_persist(victim)
 	if attacker > 0 and attacker != victim and players.has(attacker):
 		players[attacker]["kills"] += 1
+		_persist(attacker)
 	_sync_players()
 	rpc("cl_player_died", victim)
 	var pawn := _pawn(victim)
@@ -664,6 +774,7 @@ func server_record_enemy_kill(enemy_name: String, attacker: int) -> void:
 	if attacker > 0 and players.has(attacker):
 		print("[Net] %s slew %s" % [players[attacker]["name"], enemy_name])
 		players[attacker]["kills"] += 1
+		_persist(attacker)
 		_sync_players()
 	rpc("cl_enemy_died", enemy_name)
 

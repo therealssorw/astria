@@ -1,15 +1,25 @@
 extends Control
 ## Start menu (also the boot scene). Players do not run servers: the game lives
-## on one dedicated box (Net.DEFAULT_SERVER), so a returning player launches
-## straight into it and never sees this screen. It is shown when there is no
-## saved username yet, and whenever a connection drops or fails -- with the
-## reason, so a dead server reads as an error rather than a hang.
+## on one dedicated box (Net.DEFAULT_SERVER), so a signed-in player launches
+## straight into it and never sees this screen.
+##
+## Accounts are Discord, through Supabase (see scripts/core/account/). The
+## screen therefore has exactly one state machine:
+##
+##   no saved session   -> "LOG IN WITH DISCORD"
+##   saved session      -> silently refresh it, then join. No screen at all.
+##   signed in, failed  -> the reason, and a PLAY button to try again
+##
+## There is no guest path on the main server: your gold and your bag live in
+## the database under your account, so playing without one would mean playing
+## with nothing to save into. The address row below is still there for LAN and
+## localhost testing, which pairs with the server's --allow-guests flag.
 ##
 ## A dedicated server build (feature tag "server", or the --server flag) skips
 ## the UI entirely and hosts headlessly from here.
 ##
 ## CLI conveniences (work on any build, and each one suppresses the auto-join):
-##   --username=NAME   prefill the username
+##   --username=NAME   prefill the guest username
 ##   --host            host locally instead (LAN and development)
 ##   --join=IP[:PORT]  join some other address, e.g. 127.0.0.1 for a local test
 
@@ -18,8 +28,11 @@ const SETTINGS_PATH := "user://settings.cfg"
 var name_edit: LineEdit
 var ip_edit: LineEdit
 var status_label: Label
+var account_label: Label
+var login_btn: Button
 var play_btn: Button
 var join_btn: Button
+var logout_btn: Button
 var _join_timeout := 0.0
 
 func _ready() -> void:
@@ -35,6 +48,11 @@ func _ready() -> void:
 	_build_ui()
 	_load_settings()
 	Net.join_failed.connect(_on_join_failed)
+	Auth.login_finished.connect(_on_login_finished)
+	Auth.login_status.connect(func(m: String) -> void: status_label.text = m)
+	Auth.logged_out.connect(_refresh_account_ui)
+	_refresh_account_ui()
+
 	# Arriving with an error means we just came BACK from a failed or dropped
 	# connection. Showing the menu is the point then -- auto-joining would walk
 	# straight into the same wall, forever.
@@ -44,12 +62,16 @@ func _ready() -> void:
 		Net.last_error = ""
 	if _handle_cli_args() or returned_with_error:
 		return
-	# A player who has been here before goes straight in; a new one gets to
-	# pick a name first, because it is what the scoreboard shows everyone else.
-	if not _username_saved():
-		name_edit.grab_focus()
-		return
-	_on_play_pressed()
+
+	# The returning-player path: a stored refresh token becomes a live session
+	# without anything on screen, and then straight into the world.
+	if Auth.has_saved_session():
+		if await Auth.restore_session():
+			_refresh_account_ui()
+			_on_play_pressed()
+			return
+		status_label.text = "Your sign-in expired — log in again."
+		_refresh_account_ui()
 
 func _process(delta: float) -> void:
 	if _join_timeout > 0.0:
@@ -57,9 +79,41 @@ func _process(delta: float) -> void:
 		if _join_timeout <= 0.0:
 			Net.return_to_menu("Connection timed out.")
 
+# ---------------- account ----------------
+
+func _on_login_pressed() -> void:
+	login_btn.disabled = true
+	status_label.text = "Opening Discord..."
+	Auth.login_with_discord()
+
+func _on_login_finished(ok: bool, message: String) -> void:
+	login_btn.disabled = false
+	status_label.text = message
+	_refresh_account_ui()
+	if ok:
+		# Just created an account, or just signed back in — either way the
+		# player asked to play, so do not make them press a second button.
+		_on_play_pressed()
+
+func _on_logout_pressed() -> void:
+	Auth.log_out()
+	status_label.text = "Signed out."
+
+## One place decides what is on screen, so the signed-in and signed-out layouts
+## can never drift apart.
+func _refresh_account_ui() -> void:
+	var signed_in := Auth.logged_in()
+	account_label.text = "Signed in as %s" % Auth.username if signed_in else ""
+	account_label.visible = signed_in
+	login_btn.visible = not signed_in
+	play_btn.visible = signed_in
+	logout_btn.visible = signed_in
+
 # ---------------- actions ----------------
 
 func _username() -> String:
+	if Auth.logged_in():
+		return Auth.username
 	var n := name_edit.text.strip_edges()
 	return n if not n.is_empty() else "Player"
 
@@ -88,10 +142,16 @@ func _connect_to(address: String) -> void:
 	if ":" in addr:
 		port = maxi(1, addr.get_slice(":", 1).to_int())
 		addr = addr.get_slice(":", 0)
+	# Renew first if the access token is close to expiring: the server checks
+	# it with Supabase, and a token that dies mid-handshake reads to the player
+	# as a mysterious refusal.
+	var token := ""
+	if Auth.logged_in():
+		token = await Auth.fresh_token()
 	status_label.text = "Connecting to %s..." % addr
 	play_btn.disabled = true
 	join_btn.disabled = true
-	if Net.join_game(addr, _username(), port) == OK:
+	if Net.join_game(addr, _username(), port, token) == OK:
 		_join_timeout = 12.0
 	else:
 		_on_join_failed(Net.last_error)
@@ -125,9 +185,6 @@ func _load_settings() -> void:
 	if cfg.load(SETTINGS_PATH) == OK:
 		name_edit.text = cfg.get_value("net", "username", "")
 		ip_edit.text = cfg.get_value("net", "last_ip", "")
-
-func _username_saved() -> bool:
-	return not name_edit.text.strip_edges().is_empty()
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
@@ -175,28 +232,60 @@ func _build_ui() -> void:
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(subtitle)
 
-	box.add_child(_spacer(10))
-	box.add_child(_small_label("USERNAME"))
-	name_edit = LineEdit.new()
-	name_edit.placeholder_text = "Player"
-	name_edit.max_length = 20
-	box.add_child(name_edit)
+	box.add_child(_spacer(12))
 
-	name_edit.text_submitted.connect(func(_t: String) -> void: _on_play_pressed())
+	account_label = Label.new()
+	account_label.add_theme_font_size_override("font_size", 13)
+	account_label.add_theme_color_override("font_color", Color(0.55, 0.75, 0.95))
+	account_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(account_label)
 
-	box.add_child(_spacer(6))
+	# Discord blurple, so the button reads as "the Discord one" at a glance.
+	login_btn = Button.new()
+	login_btn.text = "LOG IN WITH DISCORD"
+	login_btn.custom_minimum_size = Vector2(0, 46)
+	var blurple := StyleBoxFlat.new()
+	blurple.bg_color = Color(0.345, 0.396, 0.949)
+	blurple.set_corner_radius_all(6)
+	login_btn.add_theme_stylebox_override("normal", blurple)
+	var blurple_hover := blurple.duplicate() as StyleBoxFlat
+	blurple_hover.bg_color = Color(0.42, 0.46, 0.98)
+	login_btn.add_theme_stylebox_override("hover", blurple_hover)
+	login_btn.add_theme_color_override("font_color", Color.WHITE)
+	login_btn.pressed.connect(_on_login_pressed)
+	box.add_child(login_btn)
+
 	play_btn = Button.new()
 	play_btn.text = "PLAY"
-	play_btn.custom_minimum_size = Vector2(0, 42)
+	play_btn.custom_minimum_size = Vector2(0, 46)
 	play_btn.pressed.connect(_on_play_pressed)
 	box.add_child(play_btn)
 
-	var hint := _small_label("Everyone plays on the same world. You will join it\nautomatically next time you launch.")
+	var hint := _small_label("Your gold, bag and score are saved to your account.\nYou will join automatically next time you launch.")
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(hint)
 
+	logout_btn = Button.new()
+	logout_btn.text = "log out"
+	logout_btn.flat = true
+	logout_btn.pressed.connect(_on_logout_pressed)
+	box.add_child(logout_btn)
+
+	status_label = Label.new()
+	status_label.text = ""
+	status_label.add_theme_color_override("font_color", Color(0.95, 0.8, 0.25))
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(status_label)
+
+	# LAN / localhost testing. Pairs with a server started --allow-guests, which
+	# the live server never is.
 	box.add_child(_spacer(10))
-	box.add_child(_small_label("OR JOIN ANOTHER ADDRESS"))
+	box.add_child(_small_label("OR JOIN ANOTHER ADDRESS (LAN / TESTING)"))
+	name_edit = LineEdit.new()
+	name_edit.placeholder_text = "guest name"
+	name_edit.max_length = 20
+	box.add_child(name_edit)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	box.add_child(row)
@@ -210,13 +299,6 @@ func _build_ui() -> void:
 	join_btn.custom_minimum_size = Vector2(84, 0)
 	join_btn.pressed.connect(_on_join_pressed)
 	row.add_child(join_btn)
-
-	status_label = Label.new()
-	status_label.text = ""
-	status_label.add_theme_color_override("font_color", Color(0.95, 0.8, 0.25))
-	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(status_label)
 
 	box.add_child(_spacer(8))
 	var controls := _small_label("WASD move  •  LMB punch (hold = heavy)  •  RMB block  •  MMB lock-on\nSPACE jump  •  CTRL slide (in air: dive)  •  TAB inventory  •  hold P scoreboard")
