@@ -19,7 +19,7 @@ extends CanvasLayer
 ##   - a hotbar slot -> holds that slot; selecting the one you already hold
 ##     clears it back into the bag
 ## Out in the world R1/L1 (or ] and [) walk the selection and `use_item`
-## (F / Square) uses whatever is in hand.
+## (F / R2 — the same trigger as attack) uses whatever is in hand.
 
 const SLOT_SIZE := 52
 const HOTBAR_SLOTS := 9
@@ -56,7 +56,12 @@ func _ready() -> void:
 	Net.item_used.connect(_on_item_used)
 	_refresh_items()
 
+## The server answered a use. An empty message means "nothing worth saying" —
+## which is every use today, because use_item shares R2 with attack and a line
+## per swing would be noise.
 func _on_item_used(_item_id: String, message: String) -> void:
+	if message == "":
+		return
 	_use_label.text = message
 	_use_flash = USE_FLASH_TIME
 

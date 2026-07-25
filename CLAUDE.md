@@ -71,7 +71,11 @@ mixed pile.
 - Bindings today: `attack` = LMB / RT, `block` = RMB / LT, `jump` = Space /
   A (cross), `slide` = Space or Ctrl / A (cross) — the SAME button as jump,
   `lock_on` = MMB / R3, `interact` = E / Y (triangle), `inventory` = Tab /
-  D-pad up, `sprint` = Shift, with no pad button by request.
+  D-pad up, `sprint` = Shift, with no pad button by request,
+  `hotbar_next` / `hotbar_prev` = ] and [ / R1 and L1, `use_item` = F / R2 —
+  the SAME trigger as attack, so a swing is also a use (which is why the
+  server's use replies carry no message yet), `cheat_menu` = Z / Options
+  (Menu).
 
 ## Movement: sliding
 

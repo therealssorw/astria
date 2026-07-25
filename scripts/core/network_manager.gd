@@ -581,9 +581,13 @@ func sv_use_item() -> void:
 	_server_use_item(multiplayer.get_remote_sender_id())
 
 ## The server decides what using an item does — never the client. Right now no
-## item in the catalogue has an effect, so this validates and reports; give an
-## item one by branching on item_id here (consume a stack, heal, equip...),
-## and remember to _bag_changed(id) if the bag changed.
+## item in the catalogue has an effect, so this only validates; give an item
+## one by branching on item_id here (consume a stack, heal, equip...), and
+## remember to _bag_changed(id) if the bag changed.
+##
+## Replies carry an EMPTY message on purpose: `use_item` shares R2 with
+## `attack`, so this runs on every swing, and a line on screen each time would
+## be noise. Fill the message in when a use actually does something.
 func _server_use_item(id: int) -> void:
 	if not players.has(id):
 		return
@@ -597,9 +601,9 @@ func _server_use_item(id: int) -> void:
 		return
 	var item_id: String = bar[slot]
 	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
-		_use_reply(id, "", "Nothing in that slot.")
+		_use_reply(id, "", "")
 		return
-	_use_reply(id, item_id, "%s — nothing happens yet." % ItemDb.item_name(item_id))
+	_use_reply(id, item_id, "")
 
 func _use_reply(id: int, item_id: String, message: String) -> void:
 	if id == multiplayer.get_unique_id():
