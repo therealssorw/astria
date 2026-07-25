@@ -37,8 +37,10 @@ extends CharacterBody3D
 ## This character's grunt pair — played (one random grunt) whenever it takes
 ## damage. Each character gets exactly one pair.
 @export var hurt_grunts: AudioStream
-## Impact thud played whenever a punch lands on this character.
+## Impact thud played when a punch gets through to this character.
 @export var punch_impacts: AudioStream = preload("res://Assets/Audio/SFX/Impacts/Punches/punch_impacts.tres")
+## Played instead when its guard eats the hit — no flesh thud, no grunt.
+@export var block_impacts: AudioStream = preload("res://Assets/Audio/SFX/Impacts/Blocks/block_impacts.tres")
 ## Played once when this character dies.
 @export var death_sounds: AudioStream = preload("res://Assets/Audio/SFX/Deaths/death_sounds.tres")
 ## Swing woosh — plays the moment any attack starts, whether or not it hits.
@@ -115,6 +117,7 @@ var _player_was_attacking := false
 var _retarget_left := 0.0
 var _grunt_player: AudioStreamPlayer3D
 var _impact_player: AudioStreamPlayer3D
+var _block_player: AudioStreamPlayer3D
 var _death_player: AudioStreamPlayer3D
 var _woosh_player: AudioStreamPlayer3D
 
@@ -148,6 +151,11 @@ func _ready() -> void:
 		_impact_player.stream = punch_impacts
 		_impact_player.position.y = 1.2
 		add_child(_impact_player)
+	if block_impacts:
+		_block_player = AudioStreamPlayer3D.new()
+		_block_player.stream = block_impacts
+		_block_player.position.y = 1.2
+		add_child(_block_player)
 	if death_sounds:
 		_death_player = AudioStreamPlayer3D.new()
 		_death_player.stream = death_sounds
@@ -619,11 +627,15 @@ func net_stagger(duration: float) -> void:
 ## Flash + sounds — runs on the server (host view) and on every client.
 func _damage_fx(result: int) -> void:
 	if result == Player.Guard.BLOCKED:
+		# the guard held: it thuds off the block and it doesn't hurt, so no
+		# flesh impact and no grunt
 		body_visual.flash(Color(0.4, 0.7, 1.0), 0.15)
-	else:
-		body_visual.flash(Color(1.0, 0.85, 0.3), 0.12)
-		body_visual.hit_react(0.28)
-		body_visual.hitstop(0.06)
+		if _block_player:
+			_block_player.play()
+		return
+	body_visual.flash(Color(1.0, 0.85, 0.3), 0.12)
+	body_visual.hit_react(0.28)
+	body_visual.hitstop(0.06)
 	if _impact_player:
 		_impact_player.play()
 	if _grunt_player and health > 0.0:

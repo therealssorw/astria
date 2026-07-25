@@ -122,8 +122,11 @@ extends CharacterBody3D
 ## This character's grunt pair — one random grunt plays per unblocked hit.
 ## Each character gets exactly one pair (player pair still unassigned).
 @export var hurt_grunts: AudioStream
-## Impact thud played whenever a punch lands on this character (blocked or not).
+## Impact thud played when a punch gets through to this character.
 @export var punch_impacts: AudioStream = preload("res://Assets/Audio/SFX/Impacts/Punches/punch_impacts.tres")
+## Played instead when the guard eats the hit — a block sounds like a block,
+## and no grunt goes with it, so blocked and clean hits never sound alike.
+@export var block_impacts: AudioStream = preload("res://Assets/Audio/SFX/Impacts/Blocks/block_impacts.tres")
 ## Played once when this character dies.
 @export var death_sounds: AudioStream = preload("res://Assets/Audio/SFX/Deaths/death_sounds.tres")
 ## Swing woosh — plays the moment any attack starts, whether or not it hits.
@@ -228,6 +231,7 @@ var _srv_combo_deadline := -10.0
 var _time := 0.0
 var _grunt_player: AudioStreamPlayer3D
 var _impact_player: AudioStreamPlayer3D
+var _block_player: AudioStreamPlayer3D
 var _death_player: AudioStreamPlayer3D
 var _woosh_player: AudioStreamPlayer3D
 
@@ -260,6 +264,11 @@ func _ready() -> void:
 		_impact_player.stream = punch_impacts
 		_impact_player.position.y = 1.2
 		add_child(_impact_player)
+	if block_impacts:
+		_block_player = AudioStreamPlayer3D.new()
+		_block_player.stream = block_impacts
+		_block_player.position.y = 1.2
+		add_child(_block_player)
 	if death_sounds:
 		_death_player = AudioStreamPlayer3D.new()
 		_death_player.stream = death_sounds
@@ -1090,13 +1099,23 @@ func net_stagger(duration: float) -> void:
 	body_visual.play_stagger(duration)
 	_add_shake(0.4)
 
+## A hit the guard ate thuds off the block; only one that got through sounds
+## like flesh. A parry is the same thud pitched up — it IS a block, just a
+## perfect one, and the gold flash and banner carry the rest of the read.
+func _play_impact_sound(result: int) -> void:
+	if result == Guard.BLOCKED or result == Guard.PARRIED:
+		if _block_player:
+			_block_player.pitch_scale = 1.25 if result == Guard.PARRIED else 1.0
+			_block_player.play()
+	elif _impact_player:
+		_impact_player.play()
+
 ## Damage feedback on every peer; the owner also takes the knockback.
 func net_apply_damage(new_health: float, result: int, knockback: Vector3,
 		new_stamina: float, attacker := 0) -> void:
 	health = new_health
 	stamina = new_stamina # the guard meter is server-owned, no drift allowed
-	if _impact_player:
-		_impact_player.play() # the punch landed, guard up or not
+	_play_impact_sound(result)
 	match result:
 		Guard.PARRIED:
 			body_visual.flash(Color(1.0, 0.95, 0.6), 0.25)
