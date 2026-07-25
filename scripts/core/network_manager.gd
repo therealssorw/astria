@@ -7,6 +7,13 @@ extends Node
 ## everything a client sends is treated as a request or a cosmetic claim.
 
 const DEFAULT_PORT := 27032
+
+## The live dedicated server every client joins on launch. It is an EC2 box in
+## us-east-2, and an instance's public address is NOT stable across a stop and
+## start unless an Elastic IP is attached -- if players suddenly cannot connect,
+## check this still matches the instance before looking anywhere else.
+const DEFAULT_SERVER := "3.137.184.94"
+
 const MAX_PLAYERS := 16
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")

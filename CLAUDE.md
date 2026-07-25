@@ -229,7 +229,13 @@ mixed pile.
 
 ## Multiplayer
 
-- Boot flow: main scene is `scenes/ui/main_menu.tscn` (username + host/join).
+- Boot flow: main scene is `scenes/ui/main_menu.tscn`. Players do not run
+  servers — the game lives on one dedicated box at `Net.DEFAULT_SERVER`, so a
+  launch with a saved username connects to it without showing the menu. The
+  menu appears on a first run (to pick a name) and after any failure or drop,
+  carrying the reason; it deliberately does NOT auto-retry, or an unreachable
+  server would loop. `--host` and `--join=IP[:PORT]` still override it, which
+  is how local and LAN testing works.
   All networking lives in the `Net` autoload (`scripts/core/network_manager.gd`):
   ENet host/join, UPnP port mapping (so hosts don't need manual port
   forwarding; falls back to LAN with a message), the server-authoritative

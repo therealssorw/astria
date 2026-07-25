@@ -1,19 +1,24 @@
 extends Control
-## Start menu (also the boot scene): pick a username, then host a server or
-## join one by IP. A dedicated server build (feature tag "server", or the
-## --server flag) skips the UI entirely and hosts headlessly from here.
+## Start menu (also the boot scene). Players do not run servers: the game lives
+## on one dedicated box (Net.DEFAULT_SERVER), so a returning player launches
+## straight into it and never sees this screen. It is shown when there is no
+## saved username yet, and whenever a connection drops or fails -- with the
+## reason, so a dead server reads as an error rather than a hang.
 ##
-## CLI conveniences (work on any build):
+## A dedicated server build (feature tag "server", or the --server flag) skips
+## the UI entirely and hosts headlessly from here.
+##
+## CLI conveniences (work on any build, and each one suppresses the auto-join):
 ##   --username=NAME   prefill the username
-##   --host            host immediately
-##   --join=IP[:PORT]  join immediately
+##   --host            host locally instead (LAN and development)
+##   --join=IP[:PORT]  join some other address, e.g. 127.0.0.1 for a local test
 
 const SETTINGS_PATH := "user://settings.cfg"
 
 var name_edit: LineEdit
 var ip_edit: LineEdit
 var status_label: Label
-var host_btn: Button
+var play_btn: Button
 var join_btn: Button
 var _join_timeout := 0.0
 
@@ -30,10 +35,21 @@ func _ready() -> void:
 	_build_ui()
 	_load_settings()
 	Net.join_failed.connect(_on_join_failed)
-	if Net.last_error != "":
+	# Arriving with an error means we just came BACK from a failed or dropped
+	# connection. Showing the menu is the point then -- auto-joining would walk
+	# straight into the same wall, forever.
+	var returned_with_error := Net.last_error != ""
+	if returned_with_error:
 		status_label.text = Net.last_error
 		Net.last_error = ""
-	_handle_cli_args()
+	if _handle_cli_args() or returned_with_error:
+		return
+	# A player who has been here before goes straight in; a new one gets to
+	# pick a name first, because it is what the scoreboard shows everyone else.
+	if not _username_saved():
+		name_edit.grab_focus()
+		return
+	_on_play_pressed()
 
 func _process(delta: float) -> void:
 	if _join_timeout > 0.0:
@@ -53,18 +69,27 @@ func _on_host_pressed() -> void:
 	if Net.host_game(_username()) != OK:
 		status_label.text = Net.last_error
 
+## The normal way in: the one server everybody plays on.
+func _on_play_pressed() -> void:
+	_connect_to(Net.DEFAULT_SERVER)
+
+## The address box, for a LAN game or a local test build.
 func _on_join_pressed() -> void:
-	_save_settings()
 	var addr := ip_edit.text.strip_edges()
 	if addr.is_empty():
-		status_label.text = "Enter the host's IP address."
+		status_label.text = "Enter an address, or press PLAY for the main server."
 		return
+	_connect_to(addr)
+
+func _connect_to(address: String) -> void:
+	_save_settings()
+	var addr := address
 	var port := Net.DEFAULT_PORT
 	if ":" in addr:
 		port = maxi(1, addr.get_slice(":", 1).to_int())
 		addr = addr.get_slice(":", 0)
 	status_label.text = "Connecting to %s..." % addr
-	host_btn.disabled = true
+	play_btn.disabled = true
 	join_btn.disabled = true
 	if Net.join_game(addr, _username(), port) == OK:
 		_join_timeout = 12.0
@@ -74,10 +99,11 @@ func _on_join_pressed() -> void:
 func _on_join_failed(reason: String) -> void:
 	_join_timeout = 0.0
 	status_label.text = reason
-	host_btn.disabled = false
+	play_btn.disabled = false
 	join_btn.disabled = false
 
-func _handle_cli_args() -> void:
+## True if any flag took over, so the caller knows not to auto-join as well.
+func _handle_cli_args() -> bool:
 	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
 	for a in args:
 		if a.begins_with("--username="):
@@ -85,11 +111,12 @@ func _handle_cli_args() -> void:
 	for a in args:
 		if a == "--host":
 			_on_host_pressed()
-			return
+			return true
 		if a.begins_with("--join="):
 			ip_edit.text = a.get_slice("=", 1)
 			_on_join_pressed()
-			return
+			return true
+	return false
 
 # ---------------- settings ----------------
 
@@ -98,6 +125,9 @@ func _load_settings() -> void:
 	if cfg.load(SETTINGS_PATH) == OK:
 		name_edit.text = cfg.get_value("net", "username", "")
 		ip_edit.text = cfg.get_value("net", "last_ip", "")
+
+func _username_saved() -> bool:
+	return not name_edit.text.strip_edges().is_empty()
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
@@ -152,24 +182,26 @@ func _build_ui() -> void:
 	name_edit.max_length = 20
 	box.add_child(name_edit)
 
-	box.add_child(_spacer(6))
-	host_btn = Button.new()
-	host_btn.text = "HOST GAME"
-	host_btn.custom_minimum_size = Vector2(0, 42)
-	host_btn.pressed.connect(_on_host_pressed)
-	box.add_child(host_btn)
+	name_edit.text_submitted.connect(func(_t: String) -> void: _on_play_pressed())
 
-	var hint := _small_label("Hosting tries UPnP automatically — no port forwarding needed\non most routers. Friends join with your public IP.")
+	box.add_child(_spacer(6))
+	play_btn = Button.new()
+	play_btn.text = "PLAY"
+	play_btn.custom_minimum_size = Vector2(0, 42)
+	play_btn.pressed.connect(_on_play_pressed)
+	box.add_child(play_btn)
+
+	var hint := _small_label("Everyone plays on the same world. You will join it\nautomatically next time you launch.")
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(hint)
 
 	box.add_child(_spacer(10))
-	box.add_child(_small_label("JOIN A SERVER"))
+	box.add_child(_small_label("OR JOIN ANOTHER ADDRESS"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	box.add_child(row)
 	ip_edit = LineEdit.new()
-	ip_edit.placeholder_text = "host ip (e.g. 203.0.113.7)"
+	ip_edit.placeholder_text = "ip (e.g. 127.0.0.1 for a local test)"
 	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ip_edit.text_submitted.connect(func(_t: String) -> void: _on_join_pressed())
 	row.add_child(ip_edit)
