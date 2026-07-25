@@ -323,8 +323,8 @@ func _local_tick(delta: float) -> void:
 		move_and_slide()
 		return
 
-	_gamepad_look(delta)
 	if not ui_open:
+		_gamepad_look(delta)
 		_update_lockon(delta)
 		_camera_assist(delta)
 		if stagger_time <= 0.0: # helpless: no guard, no swings, no slides
@@ -522,7 +522,7 @@ func _move(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, target.x, accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, accel * delta)
 
-	if Input.is_action_just_pressed("jump") and was_on_floor:
+	if not ui_open and Input.is_action_just_pressed("jump") and was_on_floor:
 		velocity.y = jump_velocity
 
 	move_and_slide()

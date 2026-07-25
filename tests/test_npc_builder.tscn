@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://baoo66jj5yh21"]
+
+[ext_resource type="Script" path="res://tests/test_npc_builder.gd" id="1_test"]
+
+[node name="NpcBuilderTest" type="Node"]
+script = ExtResource("1_test")

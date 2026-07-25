@@ -47,12 +47,13 @@ extends CharacterBody3D
 @export var swing_wooshes: AudioStream = preload("res://Assets/Audio/SFX/Wooshes/woosh_sounds.tres")
 @export_group("Perception")
 ## The bandit only turns hostile once it SEES the player: within this range,
-## inside its forward vision cone, with clear line of sight. Kept short so a
-## player who doesn't want trouble can walk around them.
-@export var sight_range := 11.0
+## inside its forward vision cone, with clear line of sight. Sneaking past
+## means using cover or staying behind them, not just keeping your distance.
+@export var sight_range := 22.0
 @export var sight_fov_deg := 140.0
-## Loses interest and stands down beyond this distance.
-@export var deaggro_range := 26.0
+## Loses interest and stands down beyond this distance. Keep this comfortably
+## above sight_range or aggro flickers on and off at the boundary.
+@export var deaggro_range := 34.0
 @export_group("Combat AI")
 ## Inside this distance the enemy fights (attack/retreat/block cycle).
 @export var engage_range := 7.0
@@ -83,6 +84,10 @@ extends CharacterBody3D
 @export var stagger_damage_mult := 1.4
 @export_group("Death")
 @export var despawn_delay := 5.0
+## Gold dropped at the corpse — the SERVER rolls a whole number in
+## [gold_min, gold_max]; whoever walks over the pile first gets it.
+@export var gold_min := 5
+@export var gold_max := 15
 
 @onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
 @onready var body_visual: Node3D = $Visual
@@ -643,6 +648,10 @@ func _damage_fx(result: int) -> void:
 
 func _die(attacker: int) -> void:
 	Net.server_record_enemy_kill(String(name), attacker) # scoreboard + tells clients
+	# drop the pile a step to the side so the corpse doesn't lie on top of it
+	var side := randf() * TAU
+	Net.server_spawn_gold(global_position + Vector3(cos(side), 0, sin(side)) * 0.7,
+			randi_range(gold_min, maxi(gold_min, gold_max)))
 	net_die() # local presentation on the host
 	get_tree().create_timer(despawn_delay).timeout.connect(func() -> void:
 		if is_instance_valid(self):

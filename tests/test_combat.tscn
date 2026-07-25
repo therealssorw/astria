@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://combattest0astria"]
+
+[ext_resource type="Script" path="res://tests/test_combat.gd" id="1_test"]
+
+[node name="CombatTest" type="Node3D"]
+script = ExtResource("1_test")
+
+[node name="Players" type="Node3D" parent="."]
+
+[node name="Enemies" type="Node3D" parent="."]
