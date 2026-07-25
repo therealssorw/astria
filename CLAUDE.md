@@ -100,6 +100,15 @@ mixed pile.
   `server`) -> `build/AstriaServer.exe`; it auto-hosts headlessly (see
   `build/run_server.bat`). Any build also accepts `--server [--port=N]`,
   and clients accept `--username=NAME --host / --join=IP[:PORT]`.
+- Enemies drop server-rolled gold (`gold_min`/`gold_max` exports on
+  `enemy.gd`): `Net.server_spawn_gold` replicates a `GoldDrop`
+  (`scripts/world/gold_drop.gd`) into a runtime `World/Drops` container;
+  the server pays the first living player within pickup range into the
+  registry's `gold`, and every registry sync mirrors your own gold into
+  `GameStats.coins` for local UI/shops. Unclaimed piles despawn after 2 min.
+- Integration tests live in `tests/` — plain scenes run headless, e.g.
+  `--headless res://tests/test_gold_drops.tscn` (prints RESULT=PASS/FAIL
+  and sets the exit code).
 - Exports: presets in `export_presets.cfg`; templates installed under
   `%APPDATA%\Godot\export_templates\4.7.1.stable.steam`. Export with
   `--headless --export-release "Windows Client|Windows Server" <path>`.

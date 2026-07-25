@@ -68,6 +68,10 @@ extends CharacterBody3D
 @export var block_reflex_dist := 3.5
 @export_group("Death")
 @export var despawn_delay := 5.0
+## Gold dropped at the corpse — the SERVER rolls a whole number in
+## [gold_min, gold_max]; whoever walks over the pile first gets it.
+@export var gold_min := 5
+@export var gold_max := 15
 
 @onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
 @onready var body_visual: Node3D = $Visual
@@ -551,6 +555,7 @@ func _damage_fx(blocked: bool) -> void:
 
 func _die(attacker: int) -> void:
 	Net.server_record_enemy_kill(String(name), attacker) # scoreboard + tells clients
+	Net.server_spawn_gold(global_position, randi_range(gold_min, maxi(gold_min, gold_max)))
 	net_die() # local presentation on the host
 	get_tree().create_timer(despawn_delay).timeout.connect(func() -> void:
 		if is_instance_valid(self):
