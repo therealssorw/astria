@@ -555,7 +555,10 @@ func _damage_fx(blocked: bool) -> void:
 
 func _die(attacker: int) -> void:
 	Net.server_record_enemy_kill(String(name), attacker) # scoreboard + tells clients
-	Net.server_spawn_gold(global_position, randi_range(gold_min, maxi(gold_min, gold_max)))
+	# drop the pile a step to the side so the corpse doesn't lie on top of it
+	var side := randf() * TAU
+	Net.server_spawn_gold(global_position + Vector3(cos(side), 0, sin(side)) * 0.7,
+			randi_range(gold_min, maxi(gold_min, gold_max)))
 	net_die() # local presentation on the host
 	get_tree().create_timer(despawn_delay).timeout.connect(func() -> void:
 		if is_instance_valid(self):

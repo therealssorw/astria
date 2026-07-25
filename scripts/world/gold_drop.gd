@@ -17,22 +17,26 @@ func _ready() -> void:
 	mat.albedo_color = Color(0.95, 0.78, 0.2)
 	mat.metallic = 0.8
 	mat.roughness = 0.35
+	# soft self-glow so the pile pops even in shade / tall grass
+	mat.emission_enabled = true
+	mat.emission = Color(0.55, 0.4, 0.08)
+	mat.emission_energy_multiplier = 0.7
 	# small stack of coins, slightly scattered so it reads as a pile
 	for i in 3:
 		var coin := MeshInstance3D.new()
 		var mesh := CylinderMesh.new()
-		mesh.top_radius = 0.11
-		mesh.bottom_radius = 0.11
-		mesh.height = 0.035
+		mesh.top_radius = 0.16
+		mesh.bottom_radius = 0.16
+		mesh.height = 0.05
 		coin.mesh = mesh
 		coin.material_override = mat
-		coin.position = Vector3(cos(i * 2.4) * 0.07, 0.02 + i * 0.037, sin(i * 2.4) * 0.07)
+		coin.position = Vector3(cos(i * 2.4) * 0.09, 0.03 + i * 0.052, sin(i * 2.4) * 0.09)
 		coin.rotation.y = i * 1.1
 		_visual.add_child(coin)
 
 func _process(delta: float) -> void:
 	_t += delta
-	_visual.position.y = 0.06 + sin(_t * 2.5) * 0.05
+	_visual.position.y = 0.1 + sin(_t * 2.5) * 0.06
 	_visual.rotation.y += delta * 1.8
 
 ## Floating "+N gold" feedback where a pile was collected (all peers).

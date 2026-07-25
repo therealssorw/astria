@@ -64,6 +64,11 @@ class Runner:
 			_fail("amount out of range")
 			return
 
+		# brief pause with the pile on the ground — running this scene
+		# WITHOUT --headless makes it a visual check of the drop too
+		for i in 300:
+			await tree.physics_frame
+
 		# step onto the pile (teleporting the host pawn is authoritative)
 		pawn.global_position = drop.global_position
 		var gold := 0

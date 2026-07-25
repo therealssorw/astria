@@ -1,7 +1,8 @@
 extends CanvasLayer
-## Inventory screen (toggled with I) + always-on hotbar.
+## Inventory screen (toggled with TAB) + always-on hotbar.
 ## Tabs: Inventory (equipment slots + 32-slot item grid) and Stats
-## (coins / deaths / kills, from the GameStats autoload).
+## (deaths / kills from the server registry). Gold is always visible at
+## the bottom of the window — GameStats.coins mirrors the server's count.
 
 const SLOT_SIZE := 52
 const HOTBAR_SLOTS := 9
@@ -14,6 +15,7 @@ var stats_content: Control
 var coins_label: Label
 var deaths_label: Label
 var kills_label: Label
+var gold_label: Label
 var open := false
 var player: Node
 
@@ -38,10 +40,12 @@ func _toggle() -> void:
 func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("inventory") and not DialogSystem.is_open():
 		_toggle()
+	if open:
+		gold_label.text = "Gold: %d" % GameStats.coins
 	if open and stats_content.visible:
-		# kills/deaths come from the server's registry, not local counters
+		# kills/deaths/gold come from the server's registry, not local counters
 		var st: Dictionary = Net.my_stats()
-		coins_label.text = "Coins: %d" % GameStats.coins
+		coins_label.text = "Gold: %d" % GameStats.coins
 		deaths_label.text = "Deaths: %d" % int(st["deaths"])
 		kills_label.text = "Kills: %d" % int(st["kills"])
 
@@ -131,6 +135,25 @@ func _build_panel() -> void:
 	vbox.add_child(inv_content)
 	vbox.add_child(stats_content)
 	stats_content.visible = false
+
+	# gold readout, visible on every tab (vector coin, no glyph textures)
+	var gold_row := HBoxContainer.new()
+	gold_row.add_theme_constant_override("separation", 7)
+	var coin := Panel.new()
+	coin.custom_minimum_size = Vector2(15, 15)
+	coin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var cstyle := StyleBoxFlat.new()
+	cstyle.bg_color = Color(0.95, 0.78, 0.2)
+	cstyle.border_color = Color(0.62, 0.47, 0.1)
+	cstyle.set_border_width_all(2)
+	cstyle.set_corner_radius_all(8)
+	coin.add_theme_stylebox_override("panel", cstyle)
+	gold_row.add_child(coin)
+	gold_label = Label.new()
+	gold_label.add_theme_font_size_override("font_size", 18)
+	gold_label.add_theme_color_override("font_color", Color(0.98, 0.85, 0.3))
+	gold_row.add_child(gold_label)
+	vbox.add_child(gold_row)
 
 	inv_btn.pressed.connect(func() -> void:
 		inv_content.visible = true
