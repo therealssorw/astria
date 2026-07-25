@@ -107,6 +107,6 @@ transform = Transform3D(0.15, 0, 0, 0, 0.15, 0, 0, 0, 0.15, 235.9942, 92.89832, 
 [node name="Enemies" type="Node3D" parent="." unique_id=294465096]
 
 [node name="newBlacksmith_1" parent="." unique_id=13707196 instance=ExtResource("15_xo05s")]
-transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 235.88385, 93.00493, -152.04044)
+transform = Transform3D(0.008352024, 0, 0.099650614, 0, 0.1, 0, -0.099650614, 0, 0.008352024, 235.88385, 92.974525, -152.04044)
 
 [node name="RigidBody3D" type="RigidBody3D" parent="newBlacksmith_1" unique_id=2097015641]

@@ -166,7 +166,6 @@ var _srv_pending_lock := NodePath("")
 var _srv_combo_deadline := -10.0
 
 var _time := 0.0
-var _was_on_floor := true
 var _grunt_player: AudioStreamPlayer3D
 var _impact_player: AudioStreamPlayer3D
 var _death_player: AudioStreamPlayer3D
@@ -266,7 +265,6 @@ func _local_tick(delta: float) -> void:
 	_orient_body(delta)
 	_regen_stamina(delta)
 	_animate(delta)
-	_was_on_floor = is_on_floor()
 	_net_send(delta)
 
 func _net_send(delta: float) -> void:
@@ -378,16 +376,12 @@ func _input_dir() -> Vector3:
 	return (Basis(Vector3.UP, cam_rig.rotation.y) * Vector3(v.x, 0, v.y)).normalized()
 
 func _move(delta: float) -> void:
-	var on_floor := is_on_floor()
-	if not on_floor:
+	# floor state BEFORE this frame's move — landing is detected by comparing
+	# against the state AFTER move_and_slide() below (is_on_floor() only
+	# changes inside move_and_slide, so a pre-move comparison never fires)
+	var was_on_floor := is_on_floor()
+	if not was_on_floor:
 		velocity.y -= _gravity() * delta
-
-	# landing: the dive is over either way; start the buffered slide if allowed
-	if on_floor and not _was_on_floor:
-		diving = false
-		if pending_landing_slide or (_time - pending_slide_time) <= slide_input_buffer:
-			pending_landing_slide = false
-			_start_ground_slide()
 
 	if sliding:
 		var half := slide_timer < slide_duration * 0.5
@@ -403,14 +397,21 @@ func _move(delta: float) -> void:
 	var dir := _input_dir()
 	var speed := block_walk_speed if blocking else walk_speed
 	var target := dir * speed
-	var accel := ground_accel if on_floor else ground_accel * air_control
+	var accel := ground_accel if was_on_floor else ground_accel * air_control
 	velocity.x = move_toward(velocity.x, target.x, accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, accel * delta)
 
-	if Input.is_action_just_pressed("jump") and on_floor:
+	if Input.is_action_just_pressed("jump") and was_on_floor:
 		velocity.y = jump_velocity
 
 	move_and_slide()
+
+	# just touched down: the dive is over either way; start the buffered slide
+	if is_on_floor() and not was_on_floor:
+		diving = false
+		if pending_landing_slide or (_time - pending_slide_time) <= slide_input_buffer:
+			pending_landing_slide = false
+			_start_ground_slide()
 
 func _orient_body(delta: float) -> void:
 	var target_dir := Vector3.ZERO
