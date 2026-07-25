@@ -27,7 +27,12 @@ var _repaint: Timer
 var _file_dialog: FileDialog
 
 func _ready() -> void:
+	# The editor's main screen is a VBoxContainer, so it lays its children out
+	# by their size flags and ignores anchors entirely. Without EXPAND the tab
+	# opens collapsed to nothing.
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_repaint = Timer.new()
 	_repaint.one_shot = true
 	_repaint.wait_time = PREVIEW_DELAY
