@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://er1uke0ytepg"]
+
+[ext_resource type="Script" path="res://tests/test_teleport.gd" id="1_test"]
+
+[node name="TeleportTest" type="Node"]
+script = ExtResource("1_test")

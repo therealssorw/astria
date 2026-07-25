@@ -1308,6 +1308,19 @@ func _restore_capsule() -> void:
 	shape.height = capsule_half_height * 2.0
 	col_shape.position.y = capsule_half_height
 
+## SERVER: drop this pawn somewhere else at once, with no travel in between.
+## `net_pos` moves with it or the owner's next honest report — sent from the
+## far side of the island — reads as a speedhack and gets snapped back; other
+## peers' puppets snap by themselves, since `_puppet_tick` stops interpolating
+## past 6 m. Any slide in progress is cancelled, so nobody arrives skidding.
+func net_teleport(pos: Vector3) -> void:
+	global_position = pos
+	velocity = Vector3.ZERO
+	net_pos = pos
+	if sliding or diving:
+		_end_slide()
+	pending_landing_slide = false
+
 ## Respawn, runs on every peer (position is server-chosen).
 func net_respawn(pos: Vector3) -> void:
 	dead = false

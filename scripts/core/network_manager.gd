@@ -464,6 +464,45 @@ func _server_cheat_give(id: int, item_id: String) -> void:
 	_trade_reply(id, "Gave %s." % ItemDb.item_name(item_id), true)
 	_bag_changed(id)
 
+## Client -> server: put my pawn at a named place. Editor builds only.
+func request_cheat_teleport(dest_id: String) -> void:
+	if multiplayer.is_server():
+		_server_cheat_teleport(multiplayer.get_unique_id(), dest_id)
+	else:
+		rpc_id(1, "sv_cheat_teleport", dest_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_cheat_teleport(dest_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_cheat_teleport(multiplayer.get_remote_sender_id(), dest_id)
+
+## The server moves its OWN copy of the pawn and then tells the owner where it
+## now is. Doing it the other way round would be a client teleport, which the
+## position validator exists to reject.
+func _server_cheat_teleport(id: int, dest_id: String) -> void:
+	if not players.has(id):
+		return
+	if not cheats_allowed():
+		_trade_reply(id, "Cheats are off on this server.", false)
+		return
+	if not TeleportData.has(dest_id):
+		_trade_reply(id, "No such place.", false)
+		return
+	var anchor := TeleportData.anchor(get_tree(), dest_id)
+	if anchor == null:
+		_trade_reply(id, "%s has no anchor in this level yet." % TeleportData.label(dest_id), false)
+		return
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		_trade_reply(id, "Not while you are down.", false)
+		return
+	var pos: Vector3 = anchor.global_position
+	pawn.net_teleport(pos)
+	if id != 1:
+		rpc_id(id, "cl_force_position", pos)
+	_trade_reply(id, "Teleported to %s." % TeleportData.label(dest_id), true)
+
 # ---------------- hotbar (server-owned) ----------------
 #
 # The bar is part of the registry, not a client-side view of it: what you are

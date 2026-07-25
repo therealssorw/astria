@@ -9,8 +9,9 @@ extends CanvasLayer
 ## locally — "Give item" asks the server exactly like a shop purchase does.
 ##
 ## Adding a cheat is one entry in `_build_root`: a button that calls a
-## `Net.request_cheat_*`. Item lists come from ItemDb, so a new sword shows up
-## here the moment it is in the catalogue.
+## `Net.request_cheat_*`. The lists inside the pages come from the game's own
+## data — ItemDb for "Give item", TeleportData for "Teleport" — so a new sword
+## or a new destination shows up here the moment it is in the catalogue.
 
 const GOLD := Color(0.95, 0.79, 0.42)
 const DIM := Color(0.78, 0.79, 0.84)
@@ -103,6 +104,8 @@ func _refresh() -> void:
 		c.queue_free()
 	if _page == "give":
 		_build_give()
+	elif _page == "teleport":
+		_build_teleport()
 	else:
 		_build_root()
 	_set_hint(_default_hint(), Color(1, 1, 1, 0.38))
@@ -114,6 +117,22 @@ func _build_root() -> void:
 	_title.text = "Cheats"
 	_add_row("Give item…", "", func() -> void:
 		_page = "give"
+		_refresh())
+	_add_row("Teleport…", "", func() -> void:
+		_page = "teleport"
+		_refresh())
+
+## Every place in TeleportData, whether or not it has been built yet — a
+## destination with no anchor in the level answers with that, which is more
+## use while building one than quietly hiding it from the list.
+func _build_teleport() -> void:
+	_title.text = "Cheats  ›  Teleport"
+	for id: String in TeleportData.ids():
+		var placed := TeleportData.anchor(get_tree(), id) != null
+		_add_row(TeleportData.label(id), "" if placed else "not in this level",
+				func() -> void: Net.request_cheat_teleport(id))
+	_add_row("‹ Back", "", func() -> void:
+		_page = "root"
 		_refresh())
 
 func _build_give() -> void:
@@ -133,9 +152,15 @@ func _on_purse_changed() -> void:
 		_refresh.call_deferred() # can land inside a row button's own signal
 
 func _on_result(message: String, ok: bool) -> void:
-	if _open:
-		_set_hint(message, GOLD if ok else BAD)
-		_flash_left = FLASH_TIME
+	if not _open:
+		return
+	# a teleport that worked gets out of the way, so you see where you landed;
+	# one that was refused stays up with the reason on the hint line
+	if ok and _page == "teleport":
+		close()
+		return
+	_set_hint(message, GOLD if ok else BAD)
+	_flash_left = FLASH_TIME
 
 # ---------------- construction ----------------
 
