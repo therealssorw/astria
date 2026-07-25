@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://npctest0astria"]
+
+[ext_resource type="Script" path="res://tests/test_npc_builder.gd" id="1_test"]
+
+[node name="NpcBuilderTest" type="Node"]
+script = ExtResource("1_test")

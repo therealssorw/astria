@@ -14,13 +14,18 @@ Current structure to follow and extend:
     (`Combat/LightM1`, `Combat/HeavyM1`, `Combat/Blocking`, `Movement/Idle`,
     `Movement/Walking`, `Movement/Running`, `Movement/Sliding`, ...)
   - `Models/` — `Entity/Humanoid/Human/` for characters, `World/Islands/...`
-    for level geometry; skeleton bone maps live in `Models/Entity/Humanoid/`
+    for level geometry; skeleton bone maps live in `Models/Entity/Humanoid/`;
+    NPC part models in `Entity/Humanoid/VoxelNpc/Parts/<Set>/<Slot>/`
   - `Textures/` — mirrors the model grouping (e.g. `Humanoid/Human/Rouge/`)
+  - `Data/Npcs/` — `NpcDefinition` resources written by the NPC Builder
 - `scenes/` — .tscn scene files; reusable building blocks go in subfolders
-  (`scenes/entities/npc/`, `scenes/effects/`, `scenes/ui/`)
+  (`scenes/entities/npc/`, `scenes/effects/`, `scenes/ui/`); built NPCs land
+  in `scenes/entities/npc/built/`
 - `scripts/` — GDScript, grouped by domain: `entities/` (player, enemy,
-  character visuals, `npc/` interaction), `ui/` (HUD, `dialog/`),
+  character visuals, `npc/` interaction + rigging), `ui/` (HUD, `dialog/`),
   `world/` (level/world logic), `core/` (autoloads)
+- `addons/` — editor plugins (`npc_builder/`, `grass_brush/`, ...)
+- `tools/` — command-line asset pipeline scripts, e.g. `voxel/gox_to_gltf.py`
 
 When adding new assets or code, place them in the most specific folder that
 makes sense; create new subfolders rather than letting a folder grow into a
@@ -76,6 +81,59 @@ mixed pile.
   `accept_label()` for the same reason.
 - Keys: `interact` = E / pad Y (triangle); `inventory` = Tab. Lock-on lost
   its Tab binding for that — it is middle mouse / R3 only now.
+
+## Building NPCs
+
+- The "NPC Builder" tab (editor plugin in `addons/npc_builder/`) assembles a
+  villager from voxel parts, colours it, rigs it and saves it. Saving writes a
+  pair: the data (`Assets/Data/Npcs/<name>.tres`, an `NpcDefinition`) and a
+  placeable scene (`scenes/entities/npc/built/<name>.tscn`). Drag the scene
+  into the world like any other prop — everything under it is rebuilt from the
+  definition at load, so recolouring an NPC updates every copy already placed.
+- Part models live in `Assets/Models/Entity/Humanoid/VoxelNpc/Parts/<Set>/
+  <Slot>/`. `<Set>` is a character family (`Base`, `Undead`) and becomes its
+  own section in the builder's menus; `<Slot>` is Head/Body/Arms/Feet. Drop a
+  Goxel glTF export in the right folder and press "Rescan parts" — there is no
+  metadata to register. `tools/voxel/gox_to_gltf.py` converts a `.gox` if the
+  glTF export was never made.
+- Parts are auto-fitted, never hand-placed. Each is centred by matching the art
+  against its own mirror image rather than by its bounding box (the template
+  feet model has a stray 1x1 column beside the legs, and a bbox centre would
+  let it drag the whole model sideways). Feet/body/head then stack, while the
+  arms are anchored to the TORSO's frame — which is why the undead arms, drawn
+  up at shoulder height, land there instead of at the hips. "Adjust placement"
+  per slot is the escape hatch when art needs a nudge.
+- Colour: a model's Goxel palette becomes one swatch per entry. Past 8 entries
+  the model is hand-shaded (the zombie parts run to dozens of noise shades) and
+  only the per-part tint is offered — the tint multiplies over everything and
+  is always available.
+
+## How built NPCs are rigged
+
+- Built NPCs animate off the SAME clips as the player. `NpcVisual` and
+  `RougeVisual` are both `HumanoidVisual` (`scripts/entities/humanoid_visual.gd`),
+  which owns the skeleton, the Mixamo clip library and the tick/attack/death
+  API; subclasses only supply a model. An NPC's skeleton IS Rouge's — rouge.fbx
+  is instanced, its meshes are thrown away, and the bones are kept.
+- `NpcRig` (`scripts/entities/npc/npc_rig.gd`) then does two things:
+  - Reshapes the skeleton onto the voxel proportions instead of stretching the
+    art onto human ones. That is only safe because the retargeted clips are
+    rotation-only — every bone but Hips has just a rotation track, so rest
+    positions are free to move. If the animations are ever reimported with
+    per-bone position tracks this silently breaks; the test catches it.
+  - Rigidly skins each part: one bone per voxel, weight 1, picked by nearest
+    bone segment within that slot's allowed bone set (`BIND_SETS`). Whole
+    voxels are bound as units, so they rotate about joints instead of tearing.
+- `NpcVisual._adapt_hips` rebases the clips' Hips position track per NPC — it
+  was authored around a human pelvis and would otherwise yank a short-legged
+  voxel NPC up to Rouge's hip height.
+- `HumanoidVisual` is not a `@tool` script, so editor code (the builder
+  preview, `NpcCharacter` in the world view) must call `build()` by hand.
+- Test: `--headless res://tests/test_npc_builder.tscn` (prints
+  `NPCTEST RESULT=PASS/FAIL`). It rigs every part model in the library, checks
+  the bind sets, that animation still moves the reshaped bones, that re-rigging
+  is idempotent, that colours reach the mesh, and that a saved NPC reloads as a
+  talkable scene — plus that Rouge still builds his own rig and full clip set.
 
 ## Multiplayer
 
