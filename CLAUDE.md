@@ -132,6 +132,14 @@ mixed pile.
   ring, steel blue = "defended" (the shield in the ring when the locked target
   has its guard up). Keep new markers on that split rather than inventing a
   colour per feature.
+- Screen HUD layout: health and stamina bars in the top-left (x 24, y 24 and
+  52, 280x20 each), and the "Current Quest" heading
+  (`scripts/ui/quest/quest_tracker.gd`) under them on the opposite side, pinned
+  24 px in from the right. Its star is a drawn polygon, the same one as the
+  wind-up star: Godot's default font has NO U+2605, so a typed ★ renders as
+  tofu — any symbol in the HUD has to be drawn, which is the rule above anyway.
+- Anchored HUD pieces set `offset_*`, never `position`: `position` is
+  parent-relative, so on a right-anchored control it lands off the left edge.
 
 ## NPC dialog
 

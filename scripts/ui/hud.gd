@@ -1,9 +1,11 @@
 extends CanvasLayer
-## Code-built HUD: HP bar, stamina bar, lock-on reticle, hold-P scoreboard,
-## death overlay. Binds to the LOCAL player's pawn (group "local_player").
+## Code-built HUD: HP bar, stamina bar, quest heading, lock-on reticle, hold-P
+## scoreboard, death overlay. Binds to the LOCAL player's pawn (group
+## "local_player").
 
 const SCOREBOARD := preload("res://scripts/ui/scoreboard.gd")
 const NPC_PROMPTS := preload("res://scripts/ui/dialog/npc_prompt_overlay.gd")
+const QUEST_TRACKER := preload("res://scripts/ui/quest/quest_tracker.gd")
 
 var player: Player
 var hp_fill: ColorRect
@@ -44,6 +46,7 @@ func _ready() -> void:
 	root.add_child(telegraph)
 
 	root.add_child(NPC_PROMPTS.new())
+	root.add_child(QUEST_TRACKER.new())
 	root.add_child(SCOREBOARD.new())
 	_build_death_overlay(root)
 
