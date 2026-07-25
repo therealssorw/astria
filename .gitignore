@@ -1,0 +1,6 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# Exported binaries (rebuild with --headless --export-release)
+/build/

@@ -1,0 +1,156 @@
+[gd_scene load_steps=15 format=3 uid="uid://bmain00astria"]
+
+[ext_resource type="Script" path="res://scripts/world/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/enemy.tscn" id="3_enemy"]
+[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="4_hud"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.25, 0.42, 0.65, 1)
+sky_horizon_color = Color(0.65, 0.7, 0.75, 1)
+ground_bottom_color = Color(0.15, 0.15, 0.18, 1)
+ground_horizon_color = Color(0.65, 0.7, 0.75, 1)
+
+[sub_resource type="Sky" id="Sky_main"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_main")
+ambient_light_source = 3
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+albedo_color = Color(0.35, 0.4, 0.35, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_obst"]
+albedo_color = Color(0.5, 0.45, 0.4, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(40, 0.5, 40)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(40, 0.5, 40)
+
+[sub_resource type="BoxMesh" id="BoxMesh_obst"]
+size = Vector3(2, 2, 2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_obst"]
+size = Vector3(2, 2, 2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wallx"]
+size = Vector3(40, 3, 0.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wallx"]
+size = Vector3(40, 3, 0.5)
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.642788, 0.766044, 0, -0.766044, 0.642788, 0, 12, 0)
+shadow_enabled = true
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+
+[node name="Floor" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/Floor"]
+mesh = SubResource("BoxMesh_floor")
+surface_material_override/0 = SubResource("StandardMaterial3D_floor")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/Floor"]
+shape = SubResource("BoxShape3D_floor")
+
+[node name="Obstacle1" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 1, -3)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/Obstacle1"]
+mesh = SubResource("BoxMesh_obst")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/Obstacle1"]
+shape = SubResource("BoxShape3D_obst")
+
+[node name="Obstacle2" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 1, 5)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/Obstacle2"]
+mesh = SubResource("BoxMesh_obst")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/Obstacle2"]
+shape = SubResource("BoxShape3D_obst")
+
+[node name="Obstacle3" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 1, 8)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/Obstacle3"]
+mesh = SubResource("BoxMesh_obst")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/Obstacle3"]
+shape = SubResource("BoxShape3D_obst")
+
+[node name="Obstacle4" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 1, -8)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/Obstacle4"]
+mesh = SubResource("BoxMesh_obst")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/Obstacle4"]
+shape = SubResource("BoxShape3D_obst")
+
+[node name="WallN" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -20)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/WallN"]
+mesh = SubResource("BoxMesh_wallx")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/WallN"]
+shape = SubResource("BoxShape3D_wallx")
+
+[node name="WallS" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 20)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/WallS"]
+mesh = SubResource("BoxMesh_wallx")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/WallS"]
+shape = SubResource("BoxShape3D_wallx")
+
+[node name="WallE" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, 20, 1.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/WallE"]
+mesh = SubResource("BoxMesh_wallx")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/WallE"]
+shape = SubResource("BoxShape3D_wallx")
+
+[node name="WallW" type="StaticBody3D" parent="NavigationRegion3D"]
+transform = Transform3D(0, 0, -1, 0, 1, 0, 1, 0, 0, -20, 1.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="NavigationRegion3D/WallW"]
+mesh = SubResource("BoxMesh_wallx")
+surface_material_override/0 = SubResource("StandardMaterial3D_obst")
+
+[node name="Col" type="CollisionShape3D" parent="NavigationRegion3D/WallW"]
+shape = SubResource("BoxShape3D_wallx")
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 12)
+
+[node name="Enemy1" parent="." instance=ExtResource("3_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, -4)
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("4_hud")

@@ -1,0 +1,109 @@
+[gd_scene load_steps=13 format=3 uid="uid://bfurnacefire01"]
+
+[ext_resource type="Script" path="res://scripts/effects/fire_flicker.gd" id="1_flicker"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_flame"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+emission_enabled = true
+emission = Color(1, 0.55, 0.1, 1)
+emission_energy_multiplier = 1.6
+
+[sub_resource type="BoxMesh" id="Mesh_flame"]
+material = SubResource("Mat_flame")
+size = Vector3(0.14, 0.14, 0.14)
+
+[sub_resource type="Gradient" id="Grad_flame"]
+offsets = PackedFloat32Array(0, 0.25, 0.6, 1)
+colors = PackedColorArray(1, 0.95, 0.6, 1, 1, 0.75, 0.2, 1, 1, 0.35, 0.05, 0.9, 0.6, 0.1, 0.05, 0)
+
+[sub_resource type="StandardMaterial3D" id="Mat_smoke"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[sub_resource type="BoxMesh" id="Mesh_smoke"]
+material = SubResource("Mat_smoke")
+size = Vector3(0.22, 0.22, 0.22)
+
+[sub_resource type="Gradient" id="Grad_smoke"]
+offsets = PackedFloat32Array(0, 0.3, 1)
+colors = PackedColorArray(0.25, 0.24, 0.23, 0.5, 0.35, 0.34, 0.33, 0.35, 0.45, 0.45, 0.45, 0)
+
+[sub_resource type="StandardMaterial3D" id="Mat_ember"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+emission_enabled = true
+emission = Color(1, 0.6, 0.15, 1)
+emission_energy_multiplier = 2.5
+
+[sub_resource type="BoxMesh" id="Mesh_ember"]
+material = SubResource("Mat_ember")
+size = Vector3(0.045, 0.045, 0.045)
+
+[sub_resource type="Gradient" id="Grad_ember"]
+offsets = PackedFloat32Array(0, 0.7, 1)
+colors = PackedColorArray(1, 0.85, 0.4, 1, 1, 0.45, 0.1, 1, 0.7, 0.2, 0.05, 0)
+
+[sub_resource type="Curve" id="Curve_shrink"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.1), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_grow"]
+_data = [Vector2(0, 0.5), 0.0, 0.0, 0, 0, Vector2(1, 1.6), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[node name="FurnaceFire" type="Node3D"]
+script = ExtResource("1_flicker")
+
+[node name="Flames" type="CPUParticles3D" parent="."]
+amount = 42
+lifetime = 0.75
+randomness = 0.4
+mesh = SubResource("Mesh_flame")
+emission_shape = 3
+emission_box_extents = Vector3(0.3, 0.05, 0.3)
+gravity = Vector3(0, 3.5, 0)
+initial_velocity_min = 0.8
+initial_velocity_max = 1.6
+angular_velocity_min = -180.0
+angular_velocity_max = 180.0
+scale_amount_min = 0.6
+scale_amount_curve = SubResource("Curve_shrink")
+color_ramp = SubResource("Grad_flame")
+
+[node name="Smoke" type="CPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+amount = 14
+lifetime = 2.4
+randomness = 0.5
+mesh = SubResource("Mesh_smoke")
+emission_shape = 3
+emission_box_extents = Vector3(0.2, 0.05, 0.2)
+gravity = Vector3(0.25, 1.1, 0)
+initial_velocity_min = 0.3
+initial_velocity_max = 0.7
+angular_velocity_min = -60.0
+angular_velocity_max = 60.0
+scale_amount_min = 0.8
+scale_amount_curve = SubResource("Curve_grow")
+color_ramp = SubResource("Grad_smoke")
+
+[node name="Embers" type="CPUParticles3D" parent="."]
+amount = 10
+lifetime = 1.4
+randomness = 0.6
+mesh = SubResource("Mesh_ember")
+emission_shape = 3
+emission_box_extents = Vector3(0.25, 0.05, 0.25)
+gravity = Vector3(0.4, 2.2, 0)
+initial_velocity_min = 1.2
+initial_velocity_max = 2.4
+color_ramp = SubResource("Grad_ember")
+
+[node name="Light" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+light_color = Color(1, 0.6, 0.25, 1)
+light_energy = 2.2
+omni_range = 7.0
+shadow_enabled = true

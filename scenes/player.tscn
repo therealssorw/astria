@@ -1,0 +1,32 @@
+[gd_scene load_steps=5 format=3 uid="uid://bplayer0astria"]
+
+[ext_resource type="Script" path="res://scripts/entities/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/entities/rouge_visual.gd" id="2_visual"]
+[ext_resource type="AudioStreamRandomizer" path="res://Assets/Audio/SFX/Grunts/Pair2/grunt_pair_2.tres" id="3_grunts"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
+radius = 0.4
+height = 1.92
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("1_player")
+hurt_grunts = ExtResource("3_grunts")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.96, 0)
+shape = SubResource("CapsuleShape3D_body")
+
+[node name="Visual" type="Node3D" parent="."]
+script = ExtResource("2_visual")
+attack_speed_mult = 1.25
+
+[node name="CameraRig" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CameraRig"]
+transform = Transform3D(1, 0, 0, 0, 0.976296, 0.21644, 0, -0.21644, 0.976296, 0, 0, 0)
+spring_length = 4.0
+margin = 0.2
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig/SpringArm3D"]
+fov = 70.0

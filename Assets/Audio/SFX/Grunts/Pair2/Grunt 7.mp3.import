@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c8jhfnu81wwku"
+path="res://.godot/imported/Grunt 7.mp3-083e22da037ddaa797b74b0e338fd63f.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 7.mp3"
+dest_files=["res://.godot/imported/Grunt 7.mp3-083e22da037ddaa797b74b0e338fd63f.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://durdqnbrwuu5u"
+path="res://.godot/imported/Grunt 6.mp3-20161ad35b65909ac96d2cb197fc73cc.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 6.mp3"
+dest_files=["res://.godot/imported/Grunt 6.mp3-20161ad35b65909ac96d2cb197fc73cc.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

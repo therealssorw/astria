@@ -1,0 +1,909 @@
+class_name Player
+extends CharacterBody3D
+## Third-person action character. All spec numbers converted UE cm -> m
+## and kept as @export tunables (mirrors the EditAnywhere UPROPERTYs).
+##
+## Multiplayer roles (one pawn per connected player, node name = peer id):
+## - OWNER (is_local): simulates its own movement/swings for feel, reports
+##   cosmetic state to the server ~20 Hz and asks the server to attack.
+## - SERVER: runs the authoritative combat sim for EVERY pawn — stamina,
+##   swing timing, hit traces, health, kills, deaths. Client reports are
+##   validated (speed caps, anim whitelist); client damage never happens.
+## - PUPPET (everyone else's view): interpolates relayed state, no physics.
+
+# --- Movement ---
+@export var walk_speed := 6.5            # was 5.0 (spec 500 cm/s)
+@export var block_walk_speed := 1.5      # 150 cm/s
+@export var jump_velocity := 5.0         # 500
+@export var air_control := 0.35
+@export var ground_accel := 40.0
+@export var orient_speed_deg := 500.0    # body orient-to-movement
+@export var locked_orient_speed_deg := 540.0
+
+# --- Attacks ---
+@export var heavy_attack_hold_time := 0.28
+@export var combo_input_cache_tolerance := 0.5
+@export var light_damage := 10.0
+@export var light_reach := 1.4
+@export var light_radius := 0.7
+@export var light_knockback := 4.5       # 450
+@export var light_launch := 2.5          # 250
+@export var heavy_damage := 25.0
+@export var heavy_reach := 1.8
+@export var heavy_radius := 0.9
+@export var heavy_knockback := 7.5       # 750
+@export var heavy_launch := 4.0          # 400
+@export var attack_cone_deg := 70.0
+@export var locked_hit_bonus := 0.4      # +40 cm guaranteed-hit slack
+# Timed stand-ins for montage anim notifies (light montage played at 1.45x,
+# heavy at 1.25x in the original -> these are the resulting real-time marks).
+@export var light_duration := 0.45
+@export var light_hit_time := 0.18
+@export var heavy_duration := 0.6
+@export var heavy_hit_time := 0.3
+
+# --- Stamina ---
+@export var max_stamina := 100.0
+@export var stamina_cost := 10.0
+@export var stamina_regen := 10.0
+
+# --- Slide / dive ---
+@export var dive_speed := 9.5            # 950
+@export var dive_down_speed := 4.5       # 450
+@export var slide_duration := 1.0
+@export var slide_friction_boost_mult := 1.35
+@export var slide_min_boost_speed := 9.5
+@export var slide_slow_cap := 1.4        # 140
+@export var slide_slow_mult := 0.30
+@export var slide_jump_min_speed := 13.0 # 1300
+@export var slide_jump_walk_mult := 2.0
+@export var slide_jump_up := 4.5         # +450 up
+@export var slide_weak_hop_mult := 0.85
+@export var slide_input_buffer := 0.15
+@export var slide_cooldown := 0.5
+@export var capsule_half_height := 0.96
+@export var slide_capsule_half_height := 0.48
+
+# --- Lock-on ---
+@export var lockon_cone_deg := 55.0
+@export var lockon_range := 15.0         # 1500
+@export var lockon_break_range := 20.0   # 2000
+@export var auto_lockon_range := 5.5     # 550
+## How snappily the locked camera tracks the target (higher = stiffer).
+@export var lock_camera_speed := 8.0
+## The lock only tracks while the target is within this half-angle of the
+## camera's view; behind you, the camera is yours to turn until he's back in it.
+@export var lock_view_cone_deg := 80.0
+
+# --- Health ---
+@export var max_health := 100.0
+@export var death_restart_delay := 3.0
+## This character's grunt pair — one random grunt plays per unblocked hit.
+## Each character gets exactly one pair (player pair still unassigned).
+@export var hurt_grunts: AudioStream
+## Impact thud played whenever a punch lands on this character (blocked or not).
+@export var punch_impacts: AudioStream = preload("res://Assets/Audio/SFX/Impacts/Punches/punch_impacts.tres")
+## Played once when this character dies.
+@export var death_sounds: AudioStream = preload("res://Assets/Audio/SFX/Deaths/death_sounds.tres")
+## Swing woosh — plays the moment any attack starts, whether or not it hits.
+@export var swing_wooshes: AudioStream = preload("res://Assets/Audio/SFX/Wooshes/woosh_sounds.tres")
+
+@export var mouse_sensitivity := 0.0025
+
+@onready var cam_rig: Node3D = $CameraRig
+@onready var spring_arm: SpringArm3D = $CameraRig/SpringArm3D
+@onready var camera: Camera3D = $CameraRig/SpringArm3D/Camera3D
+@onready var body_visual: Node3D = $Visual
+@onready var col_shape: CollisionShape3D = $CollisionShape3D
+
+# --- Multiplayer identity (set by Net before add_child) ---
+var peer_id := 1
+var username := ""
+var is_local := true
+
+const NET_SEND_INTERVAL := 1.0 / 20.0
+const ANIM_WHITELIST := ["idle", "run", "air", "block", "slide", "dive",
+		"strafe_l", "strafe_r", "walk_back",
+		"attack_heavy", "attack_light_0", "attack_light_1", "attack_light_2"]
+# movement validation: fastest legit burst (slide jump 13 + knockback 7.5)
+const MAX_H_SPEED := 26.0
+const MAX_UP_SPEED := 14.0
+
+var health: float
+var stamina: float
+var blocking := false
+var dead := false
+var ui_open := false # set by the inventory UI; freezes combat/movement input
+
+# attack state
+var attacking := false
+var attack_is_heavy := false
+var attack_timer := 0.0
+var attack_did_hit := false
+var combo_index := 0
+var attack_duration := 0.45
+var attack_hit_time := 0.18
+var hit_actors := {}
+var attack_face_dir := Vector3.FORWARD
+# tap/hold
+var holding_attack := false
+var hold_time := 0.0
+var cached_press_time := -10.0
+
+# slide state
+var sliding := false
+var slide_timer := 0.0
+var slide_dir := Vector3.FORWARD
+var pending_landing_slide := false
+var pending_slide_time := -10.0
+var slide_cooldown_left := 0.0
+var diving := false
+
+# lock-on
+var lock_target: Node3D = null
+var look_input_time := -10.0
+
+# what _animate last showed — this is what gets replicated
+var last_anim := "idle"
+var last_anim_t := 0.0
+var last_ratio := 0.0
+
+# puppet interpolation targets (on the server: the last ACCEPTED claim)
+var net_pos := Vector3.ZERO
+var net_yaw := 0.0
+var net_anim := "idle"
+var net_anim_t := 0.0
+var net_ratio := 0.0
+var net_blocking := false
+var _net_has_state := false
+var _last_report_time := -1.0
+var _net_send_accum := 0.0
+
+# server-side combat bookkeeping for remote pawns
+var _srv_pending_heavy := false
+var _srv_pending_time := -10.0
+var _srv_pending_lock := NodePath("")
+var _srv_combo_deadline := -10.0
+
+var _time := 0.0
+var _was_on_floor := true
+var _grunt_player: AudioStreamPlayer3D
+var _impact_player: AudioStreamPlayer3D
+var _death_player: AudioStreamPlayer3D
+var _woosh_player: AudioStreamPlayer3D
+
+func _ready() -> void:
+	health = max_health
+	stamina = max_stamina
+	add_to_group("player")
+	is_local = peer_id == multiplayer.get_unique_id()
+	if is_local:
+		add_to_group("local_player")
+		camera.current = true
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else:
+		# puppets don't collide or self-simulate — the owner + server do
+		collision_layer = 0
+		collision_mask = 0
+		set_process_unhandled_input(false)
+		cam_rig.queue_free()
+		cam_rig = null
+		spring_arm = null
+		camera = null
+		_make_nametag()
+	if hurt_grunts:
+		_grunt_player = AudioStreamPlayer3D.new()
+		_grunt_player.stream = hurt_grunts
+		_grunt_player.position.y = 1.4
+		add_child(_grunt_player)
+	if punch_impacts:
+		_impact_player = AudioStreamPlayer3D.new()
+		_impact_player.stream = punch_impacts
+		_impact_player.position.y = 1.2
+		add_child(_impact_player)
+	if death_sounds:
+		_death_player = AudioStreamPlayer3D.new()
+		_death_player.stream = death_sounds
+		_death_player.position.y = 1.2
+		add_child(_death_player)
+	if swing_wooshes:
+		_woosh_player = AudioStreamPlayer3D.new()
+		_woosh_player.stream = swing_wooshes
+		_woosh_player.position.y = 1.2
+		add_child(_woosh_player)
+
+func _make_nametag() -> void:
+	var tag := Label3D.new()
+	tag.text = username
+	tag.position = Vector3(0, 2.3, 0)
+	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tag.font_size = 64
+	tag.pixel_size = 0.004
+	tag.outline_size = 16
+	tag.visibility_range_end = 60.0
+	add_child(tag)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if not _lock_in_view(): # tracking camera owns yaw; pitch stays free
+			cam_rig.rotation.y -= event.relative.x * mouse_sensitivity
+		spring_arm.rotation.x = clampf(spring_arm.rotation.x - event.relative.y * mouse_sensitivity, deg_to_rad(-75), deg_to_rad(60))
+		if event.relative.length_squared() > 0.5:
+			look_input_time = _time
+	elif event.is_action_pressed("ui_cancel"):
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
+
+func _physics_process(delta: float) -> void:
+	_time += delta
+	if is_local:
+		_local_tick(delta)
+	else:
+		_puppet_tick(delta)
+		if multiplayer.is_server():
+			_server_sim_tick(delta)
+
+# ---------------- owner simulation ----------------
+
+func _local_tick(delta: float) -> void:
+	if dead:
+		velocity.x = 0
+		velocity.z = 0
+		if not is_on_floor():
+			velocity.y -= _gravity() * delta
+		move_and_slide()
+		return
+
+	_gamepad_look(delta)
+	if not ui_open:
+		_update_lockon(delta)
+		_camera_assist(delta)
+		_handle_block()
+		_handle_attack_input(delta)
+		_handle_slide_input()
+	_tick_attack(delta)
+	_tick_slide(delta)
+	_move(delta)
+	_orient_body(delta)
+	_regen_stamina(delta)
+	_animate(delta)
+	_was_on_floor = is_on_floor()
+	_net_send(delta)
+
+func _net_send(delta: float) -> void:
+	_net_send_accum += delta
+	if _net_send_accum >= NET_SEND_INTERVAL:
+		_net_send_accum = 0.0
+		Net.send_player_state(global_position, body_visual.rotation.y,
+				last_anim, last_anim_t, last_ratio, blocking)
+
+func _gravity() -> float:
+	return ProjectSettings.get_setting("physics/3d/default_gravity")
+
+# ---------------- puppet / server views ----------------
+
+func _puppet_tick(delta: float) -> void:
+	if _net_has_state:
+		if global_position.distance_to(net_pos) > 6.0:
+			global_position = net_pos
+		else:
+			global_position = global_position.lerp(net_pos, minf(delta * 12.0, 1.0))
+		body_visual.rotation.y = lerp_angle(body_visual.rotation.y, net_yaw, minf(delta * 14.0, 1.0))
+	if dead:
+		return
+	body_visual.tick(delta, net_anim, net_anim_t, net_ratio)
+
+## SERVER: authoritative stamina/swing/blocking sim for a remote pawn.
+func _server_sim_tick(delta: float) -> void:
+	if dead:
+		return
+	blocking = net_blocking and not attacking
+	if not attacking:
+		stamina = minf(max_stamina, stamina + stamina_regen * delta)
+		return
+	attack_timer += delta
+	if not attack_did_hit and attack_timer >= attack_hit_time:
+		attack_did_hit = true
+		_do_attack_trace()
+	if attack_timer >= attack_duration:
+		attacking = false
+		if attack_is_heavy:
+			combo_index = 0
+			_srv_combo_deadline = -10.0
+		else:
+			_srv_combo_deadline = _time + combo_input_cache_tolerance
+		if _time - _srv_pending_time <= combo_input_cache_tolerance:
+			var h := _srv_pending_heavy
+			var lp := _srv_pending_lock
+			_srv_pending_time = -10.0
+			_srv_try_start(h, lp)
+
+## SERVER: last position accepted from the owner (never the interpolated one).
+func server_body_pos() -> Vector3:
+	if not is_local and _net_has_state:
+		return net_pos
+	return global_position
+
+## SERVER: apply + validate an owner's state report. False = rejected.
+func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
+		ratio: float, blocking_flag: bool) -> bool:
+	if not pos.is_finite() or not is_finite(yaw):
+		return false
+	var prev := net_pos if _net_has_state else global_position
+	var dt := 0.1
+	if _last_report_time >= 0.0:
+		dt = clampf(_time - _last_report_time, 1.0 / 60.0, 0.5)
+	_last_report_time = _time
+	var dv := pos - prev
+	if Vector2(dv.x, dv.z).length() > MAX_H_SPEED * dt + 0.4:
+		return false
+	if dv.y > MAX_UP_SPEED * dt + 0.5:
+		return false # falling (negative) is unrestricted
+	net_pos = pos
+	net_yaw = yaw
+	net_anim = anim if ANIM_WHITELIST.has(anim) else "idle"
+	net_anim_t = clampf(anim_t, 0.0, 10.0)
+	net_ratio = clampf(ratio, 0.0, 3.0)
+	net_blocking = blocking_flag
+	_net_has_state = true
+	return true
+
+## CLIENT: relayed state of someone else's pawn.
+func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
+		ratio: float, blocking_flag: bool) -> void:
+	net_pos = pos
+	net_yaw = yaw
+	net_anim = anim if ANIM_WHITELIST.has(anim) else "idle"
+	net_anim_t = anim_t
+	net_ratio = ratio
+	net_blocking = blocking_flag
+	if not multiplayer.is_server():
+		blocking = blocking_flag
+	_net_has_state = true
+
+## What the server relays to everyone about this pawn.
+func net_collect_state() -> Array:
+	if is_local:
+		return [peer_id, global_position, body_visual.rotation.y,
+				last_anim, last_anim_t, last_ratio, blocking]
+	return [peer_id, net_pos, net_yaw, net_anim, net_anim_t, net_ratio, net_blocking]
+
+# ---------------- movement ----------------
+
+func _input_dir() -> Vector3:
+	if ui_open:
+		return Vector3.ZERO
+	var v := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if v == Vector2.ZERO:
+		return Vector3.ZERO
+	return (Basis(Vector3.UP, cam_rig.rotation.y) * Vector3(v.x, 0, v.y)).normalized()
+
+func _move(delta: float) -> void:
+	var on_floor := is_on_floor()
+	if not on_floor:
+		velocity.y -= _gravity() * delta
+
+	# landing: the dive is over either way; start the buffered slide if allowed
+	if on_floor and not _was_on_floor:
+		diving = false
+		if pending_landing_slide or (_time - pending_slide_time) <= slide_input_buffer:
+			pending_landing_slide = false
+			_start_ground_slide()
+
+	if sliding:
+		var half := slide_timer < slide_duration * 0.5
+		var speed := maxf(slide_min_boost_speed, walk_speed * slide_friction_boost_mult) if half \
+				else minf(slide_slow_cap, walk_speed * slide_slow_mult)
+		velocity.x = slide_dir.x * speed
+		velocity.z = slide_dir.z * speed
+		if Input.is_action_just_pressed("jump"):
+			_slide_jump(half)
+		move_and_slide()
+		return
+
+	var dir := _input_dir()
+	var speed := block_walk_speed if blocking else walk_speed
+	var target := dir * speed
+	var accel := ground_accel if on_floor else ground_accel * air_control
+	velocity.x = move_toward(velocity.x, target.x, accel * delta)
+	velocity.z = move_toward(velocity.z, target.z, accel * delta)
+
+	if Input.is_action_just_pressed("jump") and on_floor:
+		velocity.y = jump_velocity
+
+	move_and_slide()
+
+func _orient_body(delta: float) -> void:
+	var target_dir := Vector3.ZERO
+	var rate := orient_speed_deg
+	# lock-on no longer steers the body — only the camera tracks the target;
+	# attacks still aim via attack_face_dir (which uses the lock target)
+	if attacking:
+		target_dir = attack_face_dir
+		rate = locked_orient_speed_deg
+	else:
+		var h := Vector3(velocity.x, 0, velocity.z)
+		if h.length() > 0.5:
+			target_dir = h
+	target_dir.y = 0
+	if target_dir.length_squared() < 0.001:
+		return
+	var target_yaw := atan2(-target_dir.x, -target_dir.z) + PI
+	body_visual.rotation.y = rotate_toward(body_visual.rotation.y, target_yaw, deg_to_rad(rate) * delta)
+
+func _body_forward() -> Vector3:
+	# facing dir is +Z: the orient yaw (atan2 + PI) turns basis.z toward the target
+	return body_visual.global_transform.basis.z
+
+# ---------------- block ----------------
+
+func _handle_block() -> void:
+	# punching overrides blocking: the guard only holds while not swinging,
+	# and comes back up on its own after the swing if block is still held
+	blocking = Input.is_action_pressed("block") and not attacking
+
+# ---------------- attacks ----------------
+
+func _handle_attack_input(delta: float) -> void:
+	if Input.is_action_just_pressed("attack"):
+		cached_press_time = _time
+		holding_attack = true
+		hold_time = 0.0
+		_auto_lockon()
+	if holding_attack:
+		hold_time += delta
+		if hold_time >= heavy_attack_hold_time:
+			holding_attack = false
+			_try_start_attack(true)
+		elif Input.is_action_just_released("attack"):
+			holding_attack = false
+			_try_start_attack(false)
+
+func _try_start_attack(heavy: bool) -> void:
+	if dead or sliding:
+		return
+	if attacking:
+		return # press already cached for the combo check
+	if stamina < stamina_cost:
+		return
+	_start_swing(heavy, 0 if heavy else combo_index)
+
+func _start_swing(heavy: bool, section: int) -> void:
+	stamina -= stamina_cost
+	if _woosh_player:
+		_woosh_player.play()
+	attacking = true
+	blocking = false # guard drops the moment the punch starts
+	attack_is_heavy = heavy
+	attack_timer = 0.0
+	attack_did_hit = false
+	combo_index = section
+	hit_actors = {}
+	# swing timing comes from the actual clip at montage rate (1.45x light /
+	# 1.25x heavy) when the visual provides it; exports are the fallback
+	if body_visual.has_method("get_attack_info"):
+		var info: Dictionary = body_visual.get_attack_info(heavy, section)
+		attack_duration = info.duration
+		attack_hit_time = info.hit
+		body_visual.on_attack_started(heavy, section)
+	else:
+		attack_duration = heavy_duration if heavy else light_duration
+		attack_hit_time = heavy_hit_time if heavy else light_hit_time
+	# facing: locked target first, else velocity, else camera forward
+	if lock_target:
+		attack_face_dir = lock_target.global_position - global_position
+	elif Vector3(velocity.x, 0, velocity.z).length() > 0.5:
+		attack_face_dir = Vector3(velocity.x, 0, velocity.z)
+	else:
+		attack_face_dir = -camera.global_transform.basis.z
+	attack_face_dir.y = 0
+	if attack_face_dir.length_squared() > 0.001:
+		attack_face_dir = attack_face_dir.normalized()
+	# the owner's swing is a prediction — only the server's copy of this
+	# swing (host pawn, or _srv_start_swing for remote pawns) deals damage
+	if multiplayer.is_server():
+		Net.server_broadcast_swing(peer_id, heavy, section)
+	else:
+		var lock_path := NodePath("")
+		if is_instance_valid(lock_target):
+			lock_path = lock_target.get_path()
+		Net.request_attack(heavy, lock_path)
+
+func _tick_attack(delta: float) -> void:
+	if not attacking:
+		return
+	attack_timer += delta
+	var dur := attack_duration
+	var hit_t := attack_hit_time
+
+	if not attack_did_hit and attack_timer >= hit_t:
+		attack_did_hit = true
+		if multiplayer.is_server(): # only the server's trace deals damage
+			_do_attack_trace()
+
+	if attack_timer >= dur:
+		# the swing must fully finish before the next one; a press cached
+		# within the tolerance window chains into the next combo section
+		if not attack_is_heavy \
+				and (_time - cached_press_time) <= combo_input_cache_tolerance \
+				and _time - cached_press_time > 0.01 and stamina >= stamina_cost:
+			_start_swing(false, (combo_index + 1) % 3)
+			return
+		attacking = false
+		combo_index = 0
+
+## SERVER: a remote client pressed attack. Validate, don't trust.
+func server_handle_attack_request(heavy: bool, lock_path: NodePath) -> void:
+	if dead or sliding:
+		return
+	if attacking:
+		# cache it like the local combo buffer does
+		_srv_pending_heavy = heavy
+		_srv_pending_time = _time
+		_srv_pending_lock = lock_path
+		return
+	_srv_try_start(heavy, lock_path)
+
+func _srv_try_start(heavy: bool, lock_path: NodePath) -> void:
+	if dead or stamina < stamina_cost:
+		return
+	var section := 0
+	if not heavy and _time <= _srv_combo_deadline:
+		section = (combo_index + 1) % 3
+	# resolve the claimed lock target; the trace still range-checks it
+	lock_target = null
+	if not lock_path.is_empty():
+		var t := get_node_or_null(lock_path)
+		if t is Node3D and t != self \
+				and (t.is_in_group("enemies") or t.is_in_group("player")):
+			lock_target = t
+	stamina -= stamina_cost
+	attacking = true
+	blocking = false
+	attack_is_heavy = heavy
+	attack_timer = 0.0
+	attack_did_hit = false
+	combo_index = section
+	hit_actors = {}
+	var info: Dictionary = body_visual.get_attack_info(heavy, section)
+	attack_duration = info.duration
+	attack_hit_time = info.hit
+	if lock_target:
+		attack_face_dir = lock_target.global_position - server_body_pos()
+	else:
+		attack_face_dir = Vector3(sin(net_yaw), 0, cos(net_yaw))
+	attack_face_dir.y = 0
+	if attack_face_dir.length_squared() > 0.001:
+		attack_face_dir = attack_face_dir.normalized()
+	Net.server_broadcast_swing(peer_id, heavy, section)
+
+## Cosmetic swing on a puppet (the server already validated it).
+func puppet_play_swing(heavy: bool, section: int) -> void:
+	if _woosh_player:
+		_woosh_player.play()
+	if body_visual.has_method("on_attack_started"):
+		body_visual.on_attack_started(heavy, clampi(section, 0, 2))
+
+## SERVER ONLY: the single place a player swing deals damage. Uses the
+## server's own positions and damage numbers — nothing client-supplied.
+func _do_attack_trace() -> void:
+	var reach := heavy_reach if attack_is_heavy else light_reach
+	var radius := heavy_radius if attack_is_heavy else light_radius
+	var damage := heavy_damage if attack_is_heavy else light_damage
+	var knockback := heavy_knockback if attack_is_heavy else light_knockback
+	var launch := heavy_launch if attack_is_heavy else light_launch
+
+	var origin := server_body_pos() + Vector3.UP * 1.0
+	var fwd := attack_face_dir
+	if fwd.length_squared() < 0.001:
+		fwd = _body_forward()
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var cone_cos := cos(deg_to_rad(attack_cone_deg))
+
+	var targets := []
+	for e in get_tree().get_nodes_in_group("enemies"):
+		targets.append(e)
+	for p in get_tree().get_nodes_in_group("player"):
+		if p != self:
+			targets.append(p) # PvP: other players can be punched too
+	for e: Node3D in targets:
+		if not is_instance_valid(e) or e.get("dead"):
+			continue
+		if hit_actors.has(e):
+			continue
+		var target_pos: Vector3 = e.server_body_pos() if e is Player else e.global_position
+		var to_target: Vector3 = target_pos + Vector3.UP * 1.0 - origin
+		var dist := to_target.length()
+		var flat := Vector3(to_target.x, 0, to_target.z).normalized()
+		var in_range := dist <= reach + radius
+		var in_cone := fwd.dot(flat) >= cone_cos
+		# locked target is guaranteed within reach + radius + slack, even off-angle
+		var guaranteed: bool = e == lock_target and dist <= reach + radius + locked_hit_bonus
+		if (in_range and in_cone) or guaranteed:
+			hit_actors[e] = true
+			var away := flat if flat.length_squared() > 0.001 else fwd
+			var kb := away * knockback + Vector3.UP * launch
+			if e is Player:
+				e.server_take_damage(damage, kb, peer_id)
+			else:
+				e.take_damage(damage, kb, peer_id)
+
+func _auto_lockon() -> void:
+	var nearest := _nearest_target(auto_lockon_range)
+	if nearest:
+		lock_target = nearest
+
+# ---------------- slide / dive ----------------
+
+func _handle_slide_input() -> void:
+	if not Input.is_action_just_pressed("slide"):
+		return
+	pending_slide_time = _time
+	if is_on_floor() or sliding or slide_cooldown_left > 0.0:
+		return # jump-first: grounded presses do nothing
+	# air dive
+	var dir := _input_dir()
+	if dir == Vector3.ZERO:
+		dir = _body_forward()
+		dir.y = 0
+		dir = dir.normalized()
+	slide_dir = dir
+	velocity = dir * dive_speed + Vector3.DOWN * dive_down_speed
+	diving = true
+	pending_landing_slide = true
+
+func _start_ground_slide() -> void:
+	# clear the dive BEFORE the cooldown gate — otherwise a blocked slide
+	# leaves `diving` true forever (stuck lean-forward pose)
+	diving = false
+	if slide_cooldown_left > 0.0:
+		return
+	sliding = true
+	slide_timer = 0.0
+	attacking = false
+	var shape: CapsuleShape3D = col_shape.shape
+	shape.height = slide_capsule_half_height * 2.0
+	col_shape.position.y = slide_capsule_half_height
+
+func _tick_slide(delta: float) -> void:
+	slide_cooldown_left = maxf(0.0, slide_cooldown_left - delta)
+	if not sliding:
+		return
+	slide_timer += delta
+	if slide_timer >= slide_duration:
+		_end_slide()
+
+func _end_slide() -> void:
+	sliding = false
+	diving = false
+	slide_cooldown_left = slide_cooldown
+	var shape: CapsuleShape3D = col_shape.shape
+	shape.height = capsule_half_height * 2.0
+	col_shape.position.y = capsule_half_height
+
+func _slide_jump(in_boost_half: bool) -> void:
+	if in_boost_half:
+		# the core trick: huge launch preserving direction
+		var speed := maxf(slide_jump_min_speed, walk_speed * slide_jump_walk_mult)
+		velocity = slide_dir * speed + Vector3.UP * slide_jump_up
+	else:
+		# weak hop, no speed carry
+		var h := Vector3(velocity.x, 0, velocity.z)
+		var cap := walk_speed * slide_weak_hop_mult
+		if h.length() > cap:
+			h = h.normalized() * cap
+		velocity = Vector3(h.x, jump_velocity, h.z)
+	_end_slide()
+
+# ---------------- lock-on ----------------
+
+func _update_lockon(_delta: float) -> void:
+	if Input.is_action_just_pressed("lock_on"):
+		if lock_target:
+			lock_target = null
+		else:
+			lock_target = _pick_lockon_target()
+	if lock_target:
+		if not is_instance_valid(lock_target) or lock_target.get("dead") \
+				or global_position.distance_to(lock_target.global_position) > lockon_break_range:
+			lock_target = null
+
+## Enemies plus every other living player (PvP lock-on).
+func _lockon_candidates() -> Array:
+	var out := []
+	for e in get_tree().get_nodes_in_group("enemies"):
+		out.append(e)
+	for p in get_tree().get_nodes_in_group("player"):
+		if p != self:
+			out.append(p)
+	return out
+
+func _pick_lockon_target() -> Node3D:
+	var cam_fwd := -camera.global_transform.basis.z
+	var cone_cos := cos(deg_to_rad(lockon_cone_deg))
+	var best: Node3D = null
+	var best_dist := INF
+	var nearest: Node3D = null
+	var nearest_dist := INF
+	for e: Node3D in _lockon_candidates():
+		if not is_instance_valid(e) or e.get("dead"):
+			continue
+		var to_e: Vector3 = e.global_position - camera.global_position
+		var dist := global_position.distance_to(e.global_position)
+		if dist < nearest_dist:
+			nearest_dist = dist
+			nearest = e
+		if dist <= lockon_range and cam_fwd.dot(to_e.normalized()) >= cone_cos and dist < best_dist:
+			best_dist = dist
+			best = e
+	return best if best else nearest
+
+func _nearest_target(max_range: float) -> Node3D:
+	var best: Node3D = null
+	var best_dist := max_range
+	for e: Node3D in _lockon_candidates():
+		if not is_instance_valid(e) or e.get("dead"):
+			continue
+		var d := global_position.distance_to(e.global_position)
+		if d <= best_dist:
+			best_dist = d
+			best = e
+	return best
+
+func _gamepad_look(delta: float) -> void:
+	var x := Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
+	var y := Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
+	if absf(x) > 0.15 or absf(y) > 0.15:
+		if not _lock_in_view(): # tracking camera owns yaw; pitch stays free
+			cam_rig.rotation.y -= x * 2.5 * delta
+		spring_arm.rotation.x = clampf(spring_arm.rotation.x - y * 1.8 * delta, deg_to_rad(-75), deg_to_rad(60))
+		look_input_time = _time
+
+## True when the locked target is within the tracking cone of the camera view.
+func _lock_in_view() -> bool:
+	if not lock_target:
+		return false
+	var to_t := lock_target.global_position - camera.global_position
+	to_t.y = 0
+	if to_t.length_squared() < 0.01:
+		return true
+	var fwd := -camera.global_transform.basis.z
+	fwd.y = 0
+	if fwd.length_squared() < 0.001:
+		return true
+	return fwd.normalized().angle_to(to_t.normalized()) <= deg_to_rad(lock_view_cone_deg)
+
+func _camera_assist(delta: float) -> void:
+	# hard lock: while a target is locked AND in view the camera owns yaw and
+	# keeps the enemy framed; the body stays fully player-driven. A target
+	# behind the view must be brought back manually before tracking resumes.
+	if not _lock_in_view():
+		return
+	var to_t := lock_target.global_position - camera.global_position
+	to_t.y = 0
+	if to_t.length_squared() < 0.01:
+		return
+	var target_yaw := atan2(-to_t.x, -to_t.z)
+	var weight := 1.0 - exp(-lock_camera_speed * delta)
+	cam_rig.rotation.y = lerp_angle(cam_rig.rotation.y, target_yaw, weight)
+
+# ---------------- stamina / health ----------------
+
+func _regen_stamina(delta: float) -> void:
+	if not attacking:
+		stamina = minf(max_stamina, stamina + stamina_regen * delta)
+
+## SERVER ONLY: all player damage funnels through here.
+func server_take_damage(amount: float, knockback: Vector3, attacker := 0) -> float:
+	if not multiplayer.is_server() or dead:
+		return 0.0
+	var blocked := blocking
+	if not blocked:
+		health -= amount
+	Net.server_broadcast_player_damage(peer_id, health, blocked, knockback)
+	if not blocked and health <= 0.0:
+		_server_die(attacker)
+	return 0.0 if blocked else amount
+
+## SERVER ONLY: unconditional kill (fell off the island, admin, ...).
+func server_kill(attacker: int) -> void:
+	if not multiplayer.is_server() or dead:
+		return
+	health = 0.0
+	Net.server_broadcast_player_damage(peer_id, 0.0, false, Vector3.ZERO)
+	_server_die(attacker)
+
+## Damage feedback on every peer; the owner also takes the knockback.
+func net_apply_damage(new_health: float, blocked: bool, knockback: Vector3) -> void:
+	health = new_health
+	if _impact_player:
+		_impact_player.play() # the punch landed, guard up or not
+	if blocked:
+		body_visual.flash(Color(0.4, 0.7, 1.0), 0.2) # BlockedDamage event
+		return
+	body_visual.flash(Color(1.0, 0.3, 0.3), 0.15)
+	if _grunt_player and health > 0.0:
+		_grunt_player.play() # lethal hits voice the death sound instead
+	if is_local and not dead:
+		velocity += knockback * 0.5
+
+func _server_die(attacker: int) -> void:
+	# records the death/kill on the server scoreboard AND broadcasts the
+	# death (which also runs net_die on this server-side pawn)
+	Net.server_record_player_death(peer_id, attacker)
+	get_tree().create_timer(death_restart_delay + 1.5).timeout.connect(func() -> void:
+		if is_instance_valid(self) and dead:
+			Net.server_respawn_player(peer_id))
+
+## Death presentation + state, runs on every peer.
+func net_die() -> void:
+	if dead:
+		return
+	dead = true
+	attacking = false
+	sliding = false
+	diving = false
+	pending_landing_slide = false
+	blocking = false
+	holding_attack = false
+	lock_target = null
+	collision_layer = 0
+	if is_local:
+		_restore_capsule() # dying mid-slide must not leave the short capsule
+	if _death_player:
+		_death_player.play()
+	body_visual.play_death()
+
+func _restore_capsule() -> void:
+	var shape: CapsuleShape3D = col_shape.shape
+	shape.height = capsule_half_height * 2.0
+	col_shape.position.y = capsule_half_height
+
+## Respawn, runs on every peer (position is server-chosen).
+func net_respawn(pos: Vector3) -> void:
+	dead = false
+	health = max_health
+	stamina = max_stamina
+	attacking = false
+	attack_did_hit = false
+	hit_actors = {}
+	sliding = false
+	diving = false
+	pending_landing_slide = false
+	slide_cooldown_left = 0.0
+	if is_local:
+		_restore_capsule()
+	_srv_combo_deadline = -10.0
+	net_pos = pos
+	net_anim = "idle"
+	global_position = pos
+	velocity = Vector3.ZERO
+	if body_visual.has_method("revive"):
+		body_visual.revive()
+	if is_local:
+		collision_layer = 1
+
+# ---------------- animation ----------------
+
+func _animate(delta: float) -> void:
+	var h_speed := Vector3(velocity.x, 0, velocity.z).length()
+	var ratio := h_speed / walk_speed
+	var anim := "idle"
+	var t := 0.0
+	if attacking:
+		anim = "attack_heavy" if attack_is_heavy else "attack_light_%d" % combo_index
+		t = attack_timer / attack_duration
+	elif sliding:
+		anim = "slide"
+	elif diving:
+		anim = "dive"
+	elif blocking:
+		anim = "block"
+	elif not is_on_floor():
+		anim = "air"
+	elif h_speed > 0.3:
+		anim = "run"
+	last_anim = anim
+	last_anim_t = t
+	last_ratio = ratio
+	body_visual.tick(delta, anim, t, ratio)

@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://b2c34m5acuiej"]
+
+[ext_resource type="Shader" uid="uid://nfl4ysvgm10x" path="res://Assets/Textures/Shaders/ocean.gdshader" id="1_v0nlx"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_i7141"]
+render_priority = 0
+shader = ExtResource("1_v0nlx")
+shader_parameter/water_color = Color(0, 0.4, 0.6, 1)
+shader_parameter/wave_speed = 1.0
+shader_parameter/wave_strength = 2.8
+shader_parameter/wave_frequency = 0.055
+shader_parameter/terrace_sharpness = 4.0
+shader_parameter/detail_strength = 0.35
+shader_parameter/detail_frequency = 0.13
+shader_parameter/freeze_time = true
+shader_parameter/frozen_time = 17.55
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_g4v7s"]
+material = SubResource("ShaderMaterial_i7141")
+subdivide_width = 20
+subdivide_depth = 20
+
+[node name="WaveMesh" type="MeshInstance3D" unique_id=1766404963]
+transform = Transform3D(9.305, 0, 0, 0, 9.305, 0, 0, 0, 9.305, 0, 0, 0)
+mesh = SubResource("PlaneMesh_g4v7s")

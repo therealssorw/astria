@@ -1,0 +1,14 @@
+[gd_resource type="AudioStreamRandomizer" load_steps=5 format=3]
+
+[ext_resource type="AudioStreamMP3" uid="uid://bhpkaw7s0s52v" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-04-383965.mp3" id="1_p04"]
+[ext_resource type="AudioStreamMP3" uid="uid://bylrdrkqrbfkm" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-02-123106.mp3" id="2_p02"]
+[ext_resource type="AudioStreamMP3" uid="uid://dd2xrhunu646r" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-140236.mp3" id="3_p14"]
+[ext_resource type="AudioStreamMP3" uid="uid://b8xjosstqkqls" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-classic-punch-impact-352711.mp3" id="4_classic"]
+
+[resource]
+random_pitch = 1.06
+streams_count = 4
+stream_0/stream = ExtResource("1_p04")
+stream_1/stream = ExtResource("2_p02")
+stream_2/stream = ExtResource("3_p14")
+stream_3/stream = ExtResource("4_classic")

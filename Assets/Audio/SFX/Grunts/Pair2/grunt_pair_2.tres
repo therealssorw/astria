@@ -1,0 +1,20 @@
+[gd_resource type="AudioStreamRandomizer" load_steps=8 format=3]
+
+[ext_resource type="AudioStreamMP3" uid="uid://m14kh5ueq7xl" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 1.mp3" id="1_g1"]
+[ext_resource type="AudioStreamMP3" uid="uid://b7eob6qvsxrl8" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 2.mp3" id="2_g2"]
+[ext_resource type="AudioStreamMP3" uid="uid://c8x4t2b2kc2ay" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 3.mp3" id="3_g3"]
+[ext_resource type="AudioStreamMP3" uid="uid://dynsa6y8irya8" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 4.mp3" id="4_g4"]
+[ext_resource type="AudioStreamMP3" uid="uid://dtin17rv0ppal" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 5.mp3" id="5_g5"]
+[ext_resource type="AudioStreamMP3" uid="uid://durdqnbrwuu5u" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 6.mp3" id="6_g6"]
+[ext_resource type="AudioStreamMP3" uid="uid://c8jhfnu81wwku" path="res://Assets/Audio/SFX/Grunts/Pair2/Grunt 7.mp3" id="7_g7"]
+
+[resource]
+random_pitch = 1.06
+streams_count = 7
+stream_0/stream = ExtResource("1_g1")
+stream_1/stream = ExtResource("2_g2")
+stream_2/stream = ExtResource("3_g3")
+stream_3/stream = ExtResource("4_g4")
+stream_4/stream = ExtResource("5_g5")
+stream_5/stream = ExtResource("6_g6")
+stream_6/stream = ExtResource("7_g7")
