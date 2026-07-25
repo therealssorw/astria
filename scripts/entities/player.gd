@@ -315,6 +315,11 @@ func _server_sim_tick(delta: float) -> void:
 			_srv_pending_time = -10.0
 			_srv_try_start(h, lp)
 
+## True while the guard is up. Mirrors Enemy.is_blocking() so the HUD can ask
+## any lock-on target the same question; `blocking` is already replicated.
+func is_blocking() -> bool:
+	return blocking and not dead
+
 ## SERVER: last position accepted from the owner (never the interpolated one).
 func server_body_pos() -> Vector3:
 	if not is_local and _net_has_state:

@@ -122,6 +122,7 @@ var net_ratio := 0.0
 var net_windup := false
 var net_windup_prog := 0.0
 var net_attacking := false
+var net_blocking := false
 var _net_has_state := false
 
 func _ready() -> void:
@@ -265,11 +266,12 @@ func _puppet_tick(delta: float) -> void:
 func net_visual_state() -> Array:
 	return [String(name), global_position, body_visual.rotation.y,
 			last_anim, last_anim_t, last_ratio,
-			is_winding_up(), windup_progress(), attacking, attack_duration]
+			is_winding_up(), windup_progress(), attacking, attack_duration,
+			is_blocking()]
 
 func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 		ratio: float, windup: bool, windup_prog: float,
-		is_attacking: bool, atk_duration: float) -> void:
+		is_attacking: bool, atk_duration: float, guarding := false) -> void:
 	net_pos = pos
 	net_yaw = yaw
 	net_anim = anim
@@ -284,6 +286,7 @@ func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 		if body_visual.has_method("on_attack_started"):
 			body_visual.on_attack_started(false, 0, atk_duration)
 	net_attacking = is_attacking
+	net_blocking = guarding
 	_net_has_state = true
 
 func net_apply_damage(new_health: float, blocked: bool) -> void:
@@ -511,6 +514,14 @@ func is_winding_up() -> bool:
 	if puppet:
 		return net_windup
 	return attacking and not attack_did_hit
+
+## True while the guard is up — the same condition that actually reduces
+## incoming damage in take_damage, so the HUD shield can't promise a block
+## the server won't honour. Replicated, because the AI only runs server-side.
+func is_blocking() -> bool:
+	if puppet:
+		return net_blocking
+	return state == CombatState.BLOCK and not attacking and not dead
 
 ## 0 -> 1 progress through the wind-up, for telegraph intensity.
 func windup_progress() -> float:
