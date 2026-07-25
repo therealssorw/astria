@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://wupvjp1sm40g"]
+
+[ext_resource type="Script" path="res://tests/test_dungeon_walls.gd" id="1_test"]
+
+[node name="DungeonWallTest" type="Node"]
+script = ExtResource("1_test")
