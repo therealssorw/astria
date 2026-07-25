@@ -301,6 +301,9 @@ func _ready() -> void:
 	# peer draws the same thing in its hand
 	Net.player_list_changed.connect(_refresh_held_item)
 	_refresh_held_item()
+	if is_local:
+		# only does anything on the first pawn of a fresh load into the world
+		IntroCutscene.on_local_pawn_ready()
 
 ## Put the hotbar item the SERVER says this player holds into its hand. Purely
 ## visual: the pawn asks nobody's permission to draw it, and the id is not

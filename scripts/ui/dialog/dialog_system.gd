@@ -17,6 +17,8 @@ const CHARS_PER_SEC := 42.0
 const SENTENCE_PAUSE := 6.0   # extra "characters" of silence after . ! ?
 const CLAUSE_PAUSE := 3.0     # ...and after , ; :
 const TYPING_VOLUME_DB := -9.0
+## Fallback pause for a line whose "auto" is not a number of seconds.
+const AUTO_PAUSE := 1.5
 
 var dialog_id := ""
 
@@ -33,6 +35,7 @@ var _line_id := ""
 var _full_text := ""
 var _typing := false
 var _type_accum := 0.0
+var _auto_left := -1.0 # >= 0 while an "auto" line is counting down to its goto
 var _player: Node
 
 func _ready() -> void:
@@ -71,6 +74,7 @@ func close() -> void:
 	var was := dialog_id
 	dialog_id = ""
 	_typing = false
+	_auto_left = -1.0
 	_sfx.stop()
 	_root.visible = false
 	set_process(false)
@@ -94,6 +98,7 @@ func _show_line(line_id: String) -> void:
 	_body.text = _full_text
 	_body.visible_characters = 0
 	_type_accum = 0.0
+	_auto_left = -1.0
 	_typing = true
 	_hint.text = "%s — skip" % InputDevice.menu_accept_label()
 	_hint.visible = true
@@ -106,8 +111,14 @@ func _finish_typing() -> void:
 	_build_answers(_lines.get(_line_id, {}))
 
 ## A line with no explicit answers still gets one button, so keyboard and
-## gamepad advance the same way everywhere.
+## gamepad advance the same way everywhere — unless it is an "auto" line, which
+## is a monologue that advances itself after a beat (see DialogData's header).
 func _build_answers(line: Dictionary) -> void:
+	var auto: Variant = line.get("auto")
+	if auto != null:
+		_auto_left = float(auto) if auto is float or auto is int else AUTO_PAUSE
+		_hint.text = "%s — skip" % InputDevice.interact_label()
+		return
 	var list: Array = line.get("answers", [])
 	if list.is_empty():
 		var goto := str(line.get("goto", DialogData.END))
@@ -132,6 +143,13 @@ func _on_answer(answer: Dictionary) -> void:
 	if action != "":
 		action_triggered.emit(id, action)
 
+## Follow an "auto" line's goto, either because its beat ran out or because the
+## player pressed interact to hurry it.
+func _advance_auto() -> void:
+	_auto_left = -1.0
+	var line: Dictionary = _lines.get(_line_id, {})
+	_show_line(str(line.get("goto", DialogData.END)))
+
 func _clear_answers() -> void:
 	for c in _answers.get_children():
 		_answers.remove_child(c) # detach now so the next line's buttons index from 0
@@ -144,6 +162,11 @@ func _process(delta: float) -> void:
 	# the pawn can die or despawn mid-conversation
 	if not _typing and not is_instance_valid(_player):
 		_player = _local_player()
+	if _auto_left >= 0.0:
+		_auto_left -= delta
+		if _auto_left < 0.0:
+			_advance_auto()
+		return
 	if not _typing:
 		return
 	_type_accum += delta * CHARS_PER_SEC
@@ -175,6 +198,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if _typing:
 		_finish_typing()
+	elif _auto_left >= 0.0:
+		_advance_auto() # a cutscene line: hurry it along instead of choosing
 	else:
 		var focused := get_viewport().gui_get_focus_owner()
 		if focused is Button and focused.get_parent() == _answers:

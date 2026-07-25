@@ -23,6 +23,7 @@ InputDevice="*res://scripts/core/input_device.gd"
 DialogSystem="*res://scripts/ui/dialog/dialog_system.gd"
 ShopSystem="*res://scripts/ui/shop/shop_ui.gd"
 CheatMenu="*res://scripts/ui/debug/cheat_menu.gd"
+IntroCutscene="*res://scripts/ui/cutscene/intro_cutscene.gd"
 
 [display]
 

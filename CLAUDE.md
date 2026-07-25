@@ -149,6 +149,33 @@ mixed pile.
 - Anchored HUD pieces set `offset_*`, never `position`: `position` is
   parent-relative, so on a right-anchored control it lands off the left edge.
 
+## Intro cutscene
+
+- Loading into the island opens on a black screen: you hear your own head
+  complain, the world fades up over ~4.5s, and then you ask where you are.
+  `IntroCutscene` (autoload, `scripts/ui/cutscene/intro_cutscene.gd`) owns the
+  black rect and the timing; the two lines are ordinary DialogData entries
+  (`intro_wake`, `intro_where`) so all writing still happens in one file.
+- Three hooks, nothing else: `world.gd` calls `arm()` from `_ready` (before a
+  frame of the island is drawn, which is the whole point — arming it later
+  would flash the world first), `player.gd` calls `on_local_pawn_ready()` for
+  the local pawn, and `main_menu.gd` calls `abort()` so a drop mid-cutscene
+  never leaves the menu behind a black screen. Only an armed cutscene plays, so
+  a respawn cannot replay it; it runs once per load into the world.
+- It is purely local and cosmetic — nothing about it is networked. The server
+  spawns the pawn exactly as always and the player is simply frozen (`ui_open`)
+  and hidden behind the rect until it ends.
+- Two lines and not one conversation because the fade happens BETWEEN them: the
+  cutscene waits on `DialogSystem.closed` for the first before fading.
+- A dialog line may carry `"auto": <seconds>` — it shows no button, waits that
+  long after typing, and follows its `goto` by itself, which is how the
+  monologue plays hands-free (interact still hurries it along). That is a
+  general DialogData feature, not cutscene-only.
+- Test: `--headless res://tests/test_intro_cutscene.tscn` (prints
+  `INTROTEST RESULT=PASS/FAIL`) — it runs the sequence at `Engine.time_scale`
+  8 against a stand-in pawn and checks each beat, plus that a later pawn does
+  not replay it.
+
 ## NPC dialog
 
 - To make an NPC talkable: instance `scenes/entities/npc/npc_interactable.tscn`

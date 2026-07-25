@@ -20,6 +20,12 @@ extends RefCounted
 ##               ],
 ##               # ...or leave answers out and just chain with "goto",
 ##               # which shows a single "Continue" button.
+##               #
+##               # A line may also carry "auto": <seconds>, which drops the
+##               # button entirely — the line waits that long after it finishes
+##               # typing and then follows its "goto" by itself. That is what a
+##               # cutscene monologue uses; the player can still press interact
+##               # to hurry it along.
 ##           },
 ##       },
 ##   }
@@ -33,6 +39,30 @@ extends RefCounted
 const END := ""
 
 const DIALOGS := {
+	# The intro cutscene talks to nobody: IntroCutscene plays these two on its
+	# own, the first over the black screen and the second once the island has
+	# faded up. They are separate conversations because the fade happens
+	# BETWEEN them — the cutscene waits for the first to close.
+	"intro_wake": {
+		"start": "ugh",
+		"lines": {
+			"ugh": {
+				"text": "Ugh.\nmy head feels awful",
+				"auto": 1.8,
+				"goto": END,
+			},
+		},
+	},
+	"intro_where": {
+		"start": "where",
+		"lines": {
+			"where": {
+				"text": "where even am I?",
+				"auto": 2.0,
+				"goto": END,
+			},
+		},
+	},
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",
