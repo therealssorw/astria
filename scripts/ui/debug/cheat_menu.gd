@@ -137,6 +137,11 @@ func _build_root() -> void:
 	_add_row("Start tutorial", "island raid", func() -> void:
 		close()
 		Net.request_cheat_tutorial())
+	# the same exit the last lesson uses, so the city and its bandits go away
+	# and the follow-up quest is handed over — not a teleport out
+	_add_row("Enter starter town", "ends the tutorial", func() -> void:
+		close()
+		Net.request_cheat_leave_tutorial())
 
 ## Every place in TeleportData, whether or not it has been built yet — a
 ## destination with no anchor in the level answers with that, which is more

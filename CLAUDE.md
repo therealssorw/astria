@@ -84,6 +84,13 @@ mixed pile.
   `InputDevice.is_menu_accept(event)` rather than testing the actions by hand;
   it is what keeps that split in one place. Panels still swallow an interact
   press they ignore, or it reaches the NPC standing behind them.
+- `ui_accept` is written out IN FULL in `project.godot` (Enter, Kp Enter, Space,
+  pad button 0). Godot's built-in default for it carries no pad button at all,
+  which is a silent one: every menu worked on a keyboard and no controller
+  could confirm anything anywhere in the game. If a `ui_*` action is ever
+  relied on for a pad, check `InputMap.action_get_events()` for it rather than
+  assuming the engine's default has a button on it — `ui_cancel` is still
+  Escape only.
 
 ## The mouse pointer
 
@@ -606,10 +613,14 @@ mixed pile.
   `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
   (everything in `ItemDb.ITEMS`; picking one asks the server for a copy),
   "Quest" (everything in `QuestData.QUESTS`, plus "Clear quest"),
-  "Teleport" (everything in `TeleportData.DESTINATIONS`) and "Start tutorial".
-  Adding a cheat is one row in `_build_root`.
+  "Teleport" (everything in `TeleportData.DESTINATIONS`), "Start tutorial" and
+  "Enter starter town". Adding a cheat is one row in `_build_root`.
 - "Start tutorial" goes through the server like everything else, and is a real
   restart: a fresh copy of the island with its own bandits.
+- "Enter starter town" GRADUATES you (`Tutorial.server_end(id, true)`) rather
+  than teleporting out, so the copy of the city is torn down, its bandits go
+  with it and the follow-up quest is handed over — the same exit the last
+  lesson uses. A teleport would leave the lesson running behind you.
 - A conversation does not keep the menu shut (the box is closed on the way in).
   Half of what these cheats are for is getting out of something that is talking
   to you — an NPC, or a gate you cannot find the button for.
