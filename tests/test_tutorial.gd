@@ -137,6 +137,9 @@ class Runner:
 			return "the HUD has no tutorial overlay"
 		if not await _until(overlay.showing_popup, 120):
 			return "%s never put its popup on screen" % step_id
+		# ...and all of it is on screen, not half off an edge
+		if not overlay.popup_fully_visible():
+			return "%s drew its popup partly off screen" % step_id
 		# each lesson switches the bandits down to exactly what it teaches
 		# against: a metronome for the block gate, a dummy for the swings
 		for b in held:

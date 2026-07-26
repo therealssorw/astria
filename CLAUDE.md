@@ -181,6 +181,13 @@ mixed pile.
   tofu — any symbol in the HUD has to be drawn, which is the rule above anyway.
 - Anchored HUD pieces set `offset_*`, never `position`: `position` is
   parent-relative, so on a right-anchored control it lands off the left edge.
+- `set_anchors_preset()` KEEPS THE CONTROL'S CURRENT RECT, baking offsets to
+  match it — and a code-built Control has never been sized, so the preset
+  leaves it 0x0 with the anchors merely looking right. The drawing overlays get
+  away with it (a `_draw()` is not clipped to the rect, which is why the
+  wind-up star and NPC bubbles were fine), but anything that LAYS OUT CHILDREN
+  must set its anchors and all four offsets by hand. The tutorial popup was
+  centring itself inside nothing and hanging half off the left edge.
 
 ## Intro cutscene
 

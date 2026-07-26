@@ -26,7 +26,19 @@ var _banner: Label
 var _t := 0.0
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Full rect BY HAND. `set_anchors_preset()` keeps the control's current
+	# rect by baking offsets to match it, and a code-built Control has never
+	# been sized — so the preset leaves it 0x0 with the anchors merely looking
+	# right. The HUD's drawing overlays get away with it (a _draw() call is not
+	# clipped to the rect), but anything that LAYS OUT CHILDREN does not: the
+	# popup was centring itself inside nothing, half off the left edge, and the
+	# banner was anchored to a right edge sitting at x=0.
+	anchor_right = 1.0
+	anchor_bottom = 1.0
+	offset_left = 0.0
+	offset_top = 0.0
+	offset_right = 0.0
+	offset_bottom = 0.0
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build()
 	_gate.visible = false
@@ -37,6 +49,16 @@ func _ready() -> void:
 ## "the player was shown one".
 func showing_popup() -> bool:
 	return _gate.visible
+
+## ...and WHOLLY on screen. It was centring inside a zero-sized parent and
+## hanging half off the left edge, which every flag-level check called a pass.
+func popup_fully_visible() -> bool:
+	if not _gate.visible:
+		return false
+	var rect := _gate.get_global_rect()
+	var view := get_viewport().get_visible_rect().size
+	return rect.position.x >= 0.0 and rect.position.y >= 0.0 \
+			and rect.end.x <= view.x and rect.end.y <= view.y
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -69,7 +91,18 @@ func _update_banner(step: Dictionary) -> void:
 
 func _build() -> void:
 	_gate = PanelContainer.new()
-	_gate.set_anchors_preset(Control.PRESET_CENTER)
+	# Anchored to the middle of the screen BY HAND, and every offset set: the
+	# PRESET_CENTER helper bakes absolute offsets out of whatever size the
+	# control happens to have when it is called (zero, here), which pinned the
+	# panel's centre to the top-left corner and hung half of it off the screen.
+	# Anchors 0.5 with zero offsets and GROW_BOTH means "grow out from the
+	# middle", which is what centring a self-sizing panel actually needs.
+	_gate.anchor_left = 0.5
+	_gate.anchor_right = 0.5
+	_gate.anchor_top = 0.5
+	_gate.anchor_bottom = 0.5
+	_gate.offset_left = 0
+	_gate.offset_right = 0
 	_gate.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_gate.grow_vertical = Control.GROW_DIRECTION_BOTH
 	_gate.offset_top = 90 # below the reticle, out of the fight's way
