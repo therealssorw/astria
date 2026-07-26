@@ -110,7 +110,7 @@ const DIALOGS := {
 			"caravan": {
 				"text": "Ah, very well.\nThey've been a sort of a problem.\nThey just recently raided our caravan.",
 				"answers": [
-					{"text": "I can help.", "goto": "hideout"},
+					{"text": "I want to help stop that.", "goto": "hideout"},
 				],
 			},
 			# the three questions all come back here, so none of them is a dead
