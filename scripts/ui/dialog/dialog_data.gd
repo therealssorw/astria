@@ -92,6 +92,42 @@ const DIALOGS := {
 			},
 		},
 	},
+	# The first thing the island asks of you: the tutorial hands out
+	# "speak_to_king" as it puts you ashore, and the star leads you here. The
+	# answer that reports in carries `finish_quest`, which is only a REQUEST —
+	# the server checks you are actually standing in front of him.
+	"king": {
+		"speaker": "King Aldric",
+		"start": "greeting",
+		"lines": {
+			"greeting": {
+				"text": "So the sea gave one back. Word came ahead of you — a stranger on the shore, swinging at my bandits before they'd had their breakfast.\nCome closer. Let me hear it from you.",
+				"answers": [
+					{"text": "I'm here, Your Majesty.", "goto": "reporting",
+							"action": "finish_quest:speak_to_king"},
+					{"text": "Who's asking?", "goto": "who"},
+				],
+			},
+			"who": {
+				"text": "Aldric. This hall, that harbour, and every stone between them. You are standing in the middle of all three.",
+				"answers": [
+					{"text": "Then I'll report properly. I'm here.", "goto": "reporting",
+							"action": "finish_quest:speak_to_king"},
+				],
+			},
+			"reporting": {
+				"text": "Good. You'll find the smith down by the water — he has been losing iron to that camp for a season and complains to me about it weekly. Start there, and we'll see what you're worth.",
+				"answers": [
+					{"text": "I'll speak to him.", "goto": END},
+					{"text": "What's in it for me?", "goto": "pay"},
+				],
+			},
+			"pay": {
+				"text": "Coin, eventually. Goodwill, immediately. Take the second and the first tends to follow.",
+				"goto": END,
+			},
+		},
+	},
 }
 
 static func has(dialog_id: String) -> bool:

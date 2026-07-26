@@ -16,6 +16,18 @@ extends RefCounted
 ## himself rather than at a spot near him).
 
 const QUESTS := {
+	## What the tutorial hands you the moment it puts you on the island — see
+	## `TutorialData.NEXT_QUEST`. Nobody gives it out (`from` is empty), so the
+	## only way onto it is the server putting you there.
+	"speak_to_king": {
+		"name": "Speak to the King",
+		"target": "king",
+		"height": 2.9,
+		"from": "",
+		## `dialog_id` of the NPC you have to be STANDING AT to finish it. The
+		## conversation is local, so this is the half the server can check.
+		"done_at": "king",
+	},
 	"bandit_camp": {
 		"name": "Drive off the bandits",
 		"target": "bandit_camp",
@@ -47,12 +59,20 @@ static func label(id: String) -> String:
 static func group(target: String) -> String:
 	return "quest_" + target
 
-## `dialog_id` of the NPC allowed to give this quest, or "" when nobody does
-## (a quest only the cheat menu hands out while it is being built).
+## `dialog_id` of the NPC allowed to give this quest, or "" when nobody does —
+## either because the server hands it out (the tutorial's), or because it is
+## still being built and only the cheat menu can start it.
 static func giver(id: String) -> String:
 	if not QUESTS.has(id):
 		return ""
 	return str(QUESTS[id].get("from", ""))
+
+## `dialog_id` of the NPC this quest is finished at, or "" when talking to
+## somebody is not how it ends.
+static func done_at(id: String) -> String:
+	if not QUESTS.has(id):
+		return ""
+	return str(QUESTS[id].get("done_at", ""))
 
 ## Where the star should sit, or null when this quest's target is not in the
 ## level — a normal answer, not an error: a quest can be written here before

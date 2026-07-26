@@ -83,6 +83,11 @@ const FINISH_GRACE := 1.5
 ## just at a price a first fight can afford.
 const DAMAGE_MULT := 0.4
 
+## The quest a graduate is put on the moment the island opens up, so nobody is
+## dropped into an empty world with nothing to walk towards. The star leads them
+## to whoever `QuestData` says it points at. "" for no hand-off at all.
+const NEXT_QUEST := "speak_to_king"
+
 const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
 

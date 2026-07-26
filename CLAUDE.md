@@ -439,9 +439,25 @@ mixed pile.
   same thing a shop checks: `_near_npc`, is that pawn really standing at the NPC
   who hands this quest out. So the dialog answer only ASKS.
 - Giving an NPC a quest to hand out is one dialog answer carrying
-  `"action": "start_quest:<id>"`, and `QuestSystem` (autoload `Quests`) turns it
-  into the request — exactly how `"open_shop"` and `ShopSystem` work. No NPC
-  needs code of its own.
+  `"action": "start_quest:<id>"`, and finishing one at an NPC is an answer
+  carrying `"action": "finish_quest:<id>"`. `QuestSystem` (autoload `Quests`)
+  turns both into requests — exactly how `"open_shop"` and `ShopSystem` work.
+  No NPC needs code of its own. `done_at` is the `dialog_id` the server insists
+  you are standing at to hand it in; `from` is the one it insists you are
+  standing at to start it, and an empty `from` means only the SERVER hands that
+  quest out.
+- Finishing the tutorial puts you straight on `TutorialData.NEXT_QUEST`
+  ("Speak to the King") as it puts you ashore, through
+  `Net.server_grant_quest` — the server deciding, so there is nothing to
+  validate. Before that the lesson ended by dropping you in the middle of a
+  large quiet island with no reason to walk anywhere. Set `NEXT_QUEST` to ""
+  for no hand-off.
+- The King is the built voxel NPC (`scenes/entities/npc/built/kingnpc.tscn`)
+  placed beside the TownHall, in the groups `npc` and `quest_king` — the group
+  is what the star reads, so moving him in the editor moves the objective. His
+  `NpcInteractable` is a CHILD of him rather than a sibling (the blacksmith's
+  way round), which is the better of the two: at the origin of its parent it
+  needs no transform of its own and it follows him wherever he is dragged.
 - The HUD: `quest_tracker.gd` is the heading (the quest's name, and nothing at
   all when you are on none — it used to read "Current Quest ★" whether or not
   there was one), and `quest_marker_overlay.gd` is the star out in the world
@@ -457,7 +473,11 @@ mixed pile.
   `QUESTTEST RESULT=PASS/FAIL`) — the marker maths including the behind-you
   case, and the state: a new player is on nothing, an unknown quest is refused,
   a quest is refused to a pawn stood 80 m from the giver and granted next to
-  them, the heading follows the mirror, and it can be dropped again.
+  them, the heading follows the mirror, and it can be dropped again. Then the
+  King one end to end: the tutorial's follow-up is a real quest whose target
+  and quest-giver NPC are both in the level, the server can hand it out, it
+  will not hand IN from 60 m away, it does at his feet, and handing in a quest
+  you are not on does nothing.
 
 ## Items and shops
 

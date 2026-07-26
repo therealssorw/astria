@@ -168,7 +168,67 @@ class Runner:
 			return false
 
 		print("QUESTTEST target=", QuestData.target_pos(tree, QUEST))
+		return await _king_quest(tree, pawn)
+
+	## The hand-off the tutorial makes, and handing it back in at the other end.
+	func _king_quest(tree: SceneTree, pawn: Node3D) -> bool:
+		var quest := TutorialData.NEXT_QUEST
+		if not _check(quest != "" and QuestData.has(quest),
+				"the tutorial's follow-up quest '%s' is not in the catalogue" % quest):
+			return false
+		# the King has to actually be standing in the world, or graduating hands
+		# out a quest whose star points at nothing
+		if not _check(QuestData.target_pos(tree, quest) != null,
+				"nothing in the world wears quest '%s's target group" % quest):
+			return false
+		var at := QuestData.done_at(quest)
+		var npc := _npc_with(tree, at)
+		if not _check(npc != null, "the NPC this quest ends at ('%s') is not in the world" % at):
+			return false
+		if not _check(DialogData.has(at), "the NPC this quest ends at has nothing to say"):
+			return false
+
+		# 1. the server puts you on it, the way the tutorial does on graduating
+		Net.server_grant_quest(1, quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"the server should be able to hand out the follow-up quest"):
+			return false
+
+		# 2. handing it in from across the island does nothing: the conversation
+		# is local, so standing there is the half the server can check
+		_place(pawn, npc.global_position + Vector3(60, 0, 0))
+		await tree.physics_frame
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"a quest should not hand in from 60 m away"):
+			return false
+
+		# 3. and it does at his feet
+		_place(pawn, npc.global_position + Vector3(1.5, 0, 0))
+		await tree.physics_frame
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == "",
+				"talking to him at his feet should have finished the quest"):
+			return false
+
+		# 4. and handing in a quest you are not on changes nothing
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == "",
+				"finishing a quest you are not on should do nothing"):
+			return false
+
+		print("QUESTTEST king=", npc.global_position)
 		return true
+
+	func _npc_with(tree: SceneTree, dialog_id: String) -> Node3D:
+		for npc in tree.get_nodes_in_group("npc_interactable"):
+			if is_instance_valid(npc) and str(npc.dialog_id) == dialog_id:
+				return npc as Node3D
+		return null
 
 	## The server owns this pawn (we are the listen server), so moving its own
 	## copy is placing the player, not a client claiming a position.
@@ -177,11 +237,7 @@ class Runner:
 		pawn.set("net_pos", to)
 
 	func _quest_giver(tree: SceneTree) -> Node3D:
-		var want := QuestData.giver(QUEST)
-		for npc in tree.get_nodes_in_group("npc_interactable"):
-			if is_instance_valid(npc) and str(npc.dialog_id) == want:
-				return npc as Node3D
-		return null
+		return _npc_with(tree, QuestData.giver(QUEST))
 
 	func _tracker(tree: SceneTree) -> Node:
 		var found := tree.root.find_children("*", "QuestTracker", true, false)

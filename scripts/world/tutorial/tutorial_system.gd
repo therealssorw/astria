@@ -107,6 +107,11 @@ func server_end(id: int, graduate: bool) -> void:
 		set_process(false)
 	if graduate:
 		Net.server_place_on_island(id)
+		# and something to walk towards: the island is large and quiet, and the
+		# lesson used to end by putting you in the middle of it with no reason
+		# to go anywhere
+		if TutorialData.NEXT_QUEST != "":
+			Net.server_grant_quest(id, TutorialData.NEXT_QUEST)
 
 ## The client is in the world and can see it — from here the fight may move.
 func server_report_ready(id: int) -> void:

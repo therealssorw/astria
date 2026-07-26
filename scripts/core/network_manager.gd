@@ -406,6 +406,38 @@ func _server_start_quest(id: int, quest_id: String) -> void:
 		return # nobody hands this one out, or you are not standing at them
 	_set_quest(id, quest_id)
 
+## Client -> server: I am talking to the NPC this quest ends at, so I'd like to
+## hand it in. Refused unless you are actually on it and actually stood there.
+func request_finish_quest(quest_id: String) -> void:
+	if multiplayer.is_server():
+		_server_finish_quest(multiplayer.get_unique_id(), quest_id)
+	else:
+		rpc_id(1, "sv_finish_quest", quest_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_finish_quest(quest_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_finish_quest(multiplayer.get_remote_sender_id(), quest_id)
+
+func _server_finish_quest(id: int, quest_id: String) -> void:
+	if not players.has(id) or not QuestData.has(quest_id):
+		return
+	if str(players[id].get("quest", "")) != quest_id:
+		return # not on it: nothing to hand in
+	var at := QuestData.done_at(quest_id)
+	if at == "" or not _near_npc(id, at):
+		return
+	_set_quest(id, "")
+
+## Server-side code putting a player on a quest — the tutorial's hand-off. Not
+## a request: this is the server deciding, so there is nothing to validate.
+func server_grant_quest(id: int, quest_id: String) -> void:
+	if not QuestData.has(quest_id):
+		push_warning("Net: no quest named '%s'" % quest_id)
+		return
+	_set_quest(id, quest_id)
+
 ## Server: put a player on a quest ("" clears it) and push the change to them.
 func _set_quest(id: int, quest_id: String) -> void:
 	if not players.has(id):
