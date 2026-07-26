@@ -11,3 +11,7 @@
 # Discord webhook URL — a secret, and this repo is public. Read at runtime by
 # scripts/core/discord_notifier.gd; put one beside the server binary too.
 /discord_webhook.txt
+
+# Python bytecode from the asset pipeline scripts in tools/
+__pycache__/
+*.pyc
