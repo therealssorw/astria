@@ -17,21 +17,14 @@ func _ready() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(center)
 
-	panel = PanelContainer.new()
+	panel = UiTheme.panel(UiTheme.INK, 0.92, Vector4i(20, 20, 20, 20))
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.08, 0.1, 0.92)
-	style.border_color = Color(0.45, 0.45, 0.5)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(20)
-	panel.add_theme_stylebox_override("panel", style)
 	center.add_child(panel)
 
 	rows_box = VBoxContainer.new()
 	rows_box.custom_minimum_size = Vector2(460, 0)
 	rows_box.add_theme_constant_override("separation", 4)
-	panel.add_child(rows_box)
+	UiTheme.body(panel).add_child(rows_box)
 
 func _process(delta: float) -> void:
 	var show := Input.is_action_pressed("scoreboard")

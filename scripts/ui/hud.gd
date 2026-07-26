@@ -97,7 +97,7 @@ func _bar(parent: Control, pos: Vector2, color: Color) -> ColorRect:
 	var bg := ColorRect.new()
 	bg.position = pos
 	bg.size = Vector2(BAR_W, 20)
-	bg.color = Color(0, 0, 0, 0.55)
+	bg.color = UiTheme.tint(UiTheme.INK, 0.55)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(bg)
 	var fill := ColorRect.new()

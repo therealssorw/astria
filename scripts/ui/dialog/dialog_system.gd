@@ -300,7 +300,7 @@ func _build() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	_panel = PanelContainer.new()
+	_panel = UiTheme.panel(UiTheme.INK, 0.68)
 	_panel.anchor_left = 0.16
 	_panel.anchor_right = 0.84
 	_panel.anchor_top = 1.0
@@ -308,21 +308,11 @@ func _build() -> void:
 	_panel.offset_top = -44
 	_panel.offset_bottom = -44
 	_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.68)
-	style.border_color = Color(1, 1, 1, 0.22)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.content_margin_left = 24
-	style.content_margin_right = 24
-	style.content_margin_top = 18
-	style.content_margin_bottom = 16
-	_panel.add_theme_stylebox_override("panel", style)
 	_root.add_child(_panel)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 10)
-	_panel.add_child(vbox)
+	UiTheme.body(_panel).add_child(vbox)
 
 	_speaker = Label.new()
 	_speaker.add_theme_font_size_override("font_size", 21)
@@ -366,10 +356,11 @@ func _answer_button(text: String) -> Button:
 	b.add_theme_color_override("font_focus_color", Color(1, 1, 1))
 	b.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
 	b.add_theme_stylebox_override("normal", _answer_style(Color(0, 0, 0, 0), Color(0, 0, 0, 0)))
-	var hot := _answer_style(Color(1, 1, 1, 0.09), Color(0.95, 0.79, 0.42, 0.95))
+	var hot := _answer_style(UiTheme.row_fill(true), Color(0.95, 0.79, 0.42, 0.95))
 	b.add_theme_stylebox_override("hover", hot)
 	b.add_theme_stylebox_override("focus", hot)
-	b.add_theme_stylebox_override("pressed", _answer_style(Color(1, 1, 1, 0.16), Color(0.95, 0.79, 0.42, 1)))
+	b.add_theme_stylebox_override("pressed", _answer_style(UiTheme.tint(UiTheme.STONE, 1.0),
+			Color(0.95, 0.79, 0.42, 1)))
 	return b
 
 ## Flat row with a gold bar down the left edge when it is hovered/focused.

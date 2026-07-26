@@ -90,7 +90,9 @@ func _update_banner(step: Dictionary) -> void:
 	_banner.text = text
 
 func _build() -> void:
-	_gate = PanelContainer.new()
+	# gold edge, like the cheat menu: a lesson is not an ordinary panel
+	_gate = UiTheme.panel(UiTheme.INK, 0.72, Vector4i(26, 26, 12, 12),
+			Color(GOLD.r, GOLD.g, GOLD.b, 0.75))
 	# Anchored to the middle of the screen BY HAND, and every offset set: the
 	# PRESET_CENTER helper bakes absolute offsets out of whatever size the
 	# control happens to have when it is called (zero, here), which pinned the
@@ -108,22 +110,12 @@ func _build() -> void:
 	_gate.offset_top = 90 # below the reticle, out of the fight's way
 	_gate.offset_bottom = 90
 	_gate.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.72)
-	style.border_color = Color(GOLD.r, GOLD.g, GOLD.b, 0.75)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(10)
-	style.content_margin_left = 26
-	style.content_margin_right = 26
-	style.content_margin_top = 12
-	style.content_margin_bottom = 12
-	_gate.add_theme_stylebox_override("panel", style)
 	add_child(_gate)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 2)
 	vbox.custom_minimum_size.x = 460 # room for a sentence without it going thin
-	_gate.add_child(vbox)
+	UiTheme.body(_gate).add_child(vbox)
 
 	_title = Label.new()
 	_title.add_theme_font_size_override("font_size", 15)
@@ -145,15 +137,13 @@ func _build() -> void:
 	_hint.custom_minimum_size.x = 460
 	vbox.add_child(_hint)
 
-	# same corner and colour as the quest heading, one line below it — clear of
-	# the whole two-row block (QuestTracker.MARGIN.y + SIZE.y = 134), which the
-	# cheat menu's "Start tutorial" can put on screen at the same time as this
+	# same corner and colour as the quest heading, one line below it
 	_banner = Label.new()
 	_banner.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_banner.offset_left = -324
 	_banner.offset_right = -24
-	_banner.offset_top = 140
-	_banner.offset_bottom = 164
+	_banner.offset_top = 114
+	_banner.offset_bottom = 138
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_banner.add_theme_font_size_override("font_size", 16)
 	_banner.add_theme_color_override("font_color", Color(0.93, 0.93, 0.95))

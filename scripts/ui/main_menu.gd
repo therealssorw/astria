@@ -149,29 +149,20 @@ func _save_settings() -> void:
 # ---------------- construction ----------------
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.07, 0.08, 0.1)
-	add_child(bg)
+	# there is no world behind this one, so the sheet is the whole screen
+	add_child(UiTheme.backdrop(1.0))
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
-	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.13, 0.13, 0.15, 0.96)
-	style.border_color = Color(0.45, 0.45, 0.5)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(28)
-	panel.add_theme_stylebox_override("panel", style)
+	var panel := UiTheme.panel(UiTheme.INK, 0.96, Vector4i(28, 28, 28, 28))
 	center.add_child(panel)
 
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(360, 0)
 	box.add_theme_constant_override("separation", 10)
-	panel.add_child(box)
+	UiTheme.body(panel).add_child(box)
 
 	var title := Label.new()
 	title.text = "ASTRIA"

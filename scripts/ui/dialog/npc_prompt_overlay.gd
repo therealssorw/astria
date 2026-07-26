@@ -15,7 +15,9 @@ const ARC_SEGMENTS := 5
 const PULSE_SPEED := 3.2
 const PULSE_AMOUNT := 0.05
 
-const BG := Color(0, 0, 0, 0.72)
+## Drawn, not a panel — but it is still a UI surface, so it takes the palette's
+## darkest shade rather than a black of its own.
+const BG := Color(UiTheme.INK.r, UiTheme.INK.g, UiTheme.INK.b, 0.72)
 const ACCENT := Color(1.0, 0.85, 0.25) # same gold as the enemy telegraph star
 
 var _t := 0.0

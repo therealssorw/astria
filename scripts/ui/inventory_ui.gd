@@ -130,8 +130,8 @@ func _on_bar_pressed(slot: int) -> void:
 
 func _slot_style(selected := false) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.13, 0.13, 0.15, 0.92)
-	style.border_color = GOLD if selected else Color(0.45, 0.45, 0.5)
+	style.bg_color = UiTheme.tint(UiTheme.SLATE, 0.92)
+	style.border_color = GOLD if selected else UiTheme.STONE
 	style.set_border_width_all(3 if selected else 2)
 	style.set_corner_radius_all(3)
 	return style
@@ -298,31 +298,18 @@ func _build_panel() -> void:
 	panel_root.visible = false
 	add_child(panel_root)
 
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	panel_root.add_child(dim)
+	panel_root.add_child(UiTheme.backdrop())
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	panel_root.add_child(center)
 
-	var window := PanelContainer.new()
-	var wstyle := StyleBoxFlat.new()
-	wstyle.bg_color = Color(0.09, 0.09, 0.11, 0.97)
-	wstyle.border_color = Color(0.35, 0.35, 0.4)
-	wstyle.set_border_width_all(2)
-	wstyle.set_corner_radius_all(6)
-	wstyle.content_margin_left = 18
-	wstyle.content_margin_right = 18
-	wstyle.content_margin_top = 12
-	wstyle.content_margin_bottom = 18
-	window.add_theme_stylebox_override("panel", wstyle)
+	var window := UiTheme.panel(UiTheme.INK, 0.97, Vector4i(18, 18, 12, 18))
 	center.add_child(window)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
-	window.add_child(vbox)
+	UiTheme.body(window).add_child(vbox)
 
 	# tab buttons above the content
 	var tabs := HBoxContainer.new()

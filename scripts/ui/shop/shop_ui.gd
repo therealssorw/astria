@@ -198,11 +198,11 @@ func _add_row(id: String, name_text: String, price_text: String,
 	b.add_theme_color_override("font_color", DIM)
 	for state in ["font_hover_color", "font_focus_color", "font_pressed_color"]:
 		b.add_theme_color_override(state, Color(1, 1, 1))
-	b.add_theme_stylebox_override("normal", _row_style(Color(1, 1, 1, 0.03), Color(0, 0, 0, 0)))
-	var hot := _row_style(Color(1, 1, 1, 0.10), Color(0.95, 0.79, 0.42, 0.95))
+	b.add_theme_stylebox_override("normal", _row_style(UiTheme.row_fill(), Color(0, 0, 0, 0)))
+	var hot := _row_style(UiTheme.row_fill(true), Color(0.95, 0.79, 0.42, 0.95))
 	b.add_theme_stylebox_override("hover", hot)
 	b.add_theme_stylebox_override("focus", hot)
-	b.add_theme_stylebox_override("pressed", _row_style(Color(1, 1, 1, 0.16), GOLD))
+	b.add_theme_stylebox_override("pressed", _row_style(UiTheme.tint(UiTheme.STONE, 1.0), GOLD))
 	b.pressed.connect(on_press)
 	b.focus_entered.connect(func() -> void: _focus_row = b.get_index())
 
@@ -252,32 +252,19 @@ func _build() -> void:
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_root)
 
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_root.add_child(dim)
+	_root.add_child(UiTheme.backdrop())
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 
-	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.82)
-	style.border_color = Color(1, 1, 1, 0.22)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.content_margin_left = 24
-	style.content_margin_right = 24
-	style.content_margin_top = 18
-	style.content_margin_bottom = 16
-	panel.add_theme_stylebox_override("panel", style)
+	var panel := UiTheme.panel(UiTheme.INK, 0.82)
 	center.add_child(panel)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
 	vbox.custom_minimum_size = Vector2(PANEL_W, 0)
-	panel.add_child(vbox)
+	UiTheme.body(panel).add_child(vbox)
 
 	var header := HBoxContainer.new()
 	_title = Label.new()
@@ -335,11 +322,11 @@ func _tab_button(text: String) -> Button:
 	b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
 	for state in ["font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
 		b.add_theme_color_override(state, GOLD)
-	var idle := _tab_style(Color(1, 1, 1, 0.04), Color(0, 0, 0, 0))
-	var active := _tab_style(Color(1, 1, 1, 0.10), GOLD)
+	var idle := _tab_style(UiTheme.row_fill(), Color(0, 0, 0, 0))
+	var active := _tab_style(UiTheme.row_fill(true), GOLD)
 	b.add_theme_stylebox_override("normal", idle)
-	b.add_theme_stylebox_override("hover", _tab_style(Color(1, 1, 1, 0.08), Color(0, 0, 0, 0)))
-	b.add_theme_stylebox_override("focus", _tab_style(Color(1, 1, 1, 0.08), Color(1, 1, 1, 0.3)))
+	b.add_theme_stylebox_override("hover", _tab_style(UiTheme.row_fill(true), Color(0, 0, 0, 0)))
+	b.add_theme_stylebox_override("focus", _tab_style(UiTheme.row_fill(true), UiTheme.STONE))
 	b.add_theme_stylebox_override("pressed", active)
 	b.add_theme_stylebox_override("hover_pressed", active)
 	return b

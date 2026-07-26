@@ -239,11 +239,11 @@ func _add_row(text: String, right_text: String, on_press: Callable,
 	b.add_theme_color_override("font_color", DIM)
 	for state in ["font_hover_color", "font_focus_color", "font_pressed_color"]:
 		b.add_theme_color_override(state, Color(1, 1, 1))
-	b.add_theme_stylebox_override("normal", _row_style(Color(1, 1, 1, 0.03), Color(0, 0, 0, 0)))
-	var hot := _row_style(Color(1, 1, 1, 0.10), Color(0.95, 0.79, 0.42, 0.95))
+	b.add_theme_stylebox_override("normal", _row_style(UiTheme.row_fill(), Color(0, 0, 0, 0)))
+	var hot := _row_style(UiTheme.row_fill(true), Color(0.95, 0.79, 0.42, 0.95))
 	b.add_theme_stylebox_override("hover", hot)
 	b.add_theme_stylebox_override("focus", hot)
-	b.add_theme_stylebox_override("pressed", _row_style(Color(1, 1, 1, 0.16), GOLD))
+	b.add_theme_stylebox_override("pressed", _row_style(UiTheme.tint(UiTheme.STONE, 1.0), GOLD))
 	b.pressed.connect(on_press)
 
 	if right_text != "":
@@ -275,32 +275,21 @@ func _build() -> void:
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_root)
 
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.45)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_root.add_child(dim)
+	_root.add_child(UiTheme.backdrop())
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(center)
 
-	var panel := PanelContainer.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.85)
-	style.border_color = Color(0.95, 0.79, 0.42, 0.5) # gold edge: this isn't a normal screen
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.content_margin_left = 22
-	style.content_margin_right = 22
-	style.content_margin_top = 16
-	style.content_margin_bottom = 14
-	panel.add_theme_stylebox_override("panel", style)
+	# gold edge instead of the palette's stone one: this isn't a normal screen
+	var panel := UiTheme.panel(UiTheme.INK, 0.85, Vector4i(22, 22, 16, 14),
+			Color(0.95, 0.79, 0.42, 0.5))
 	center.add_child(panel)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
 	vbox.custom_minimum_size = Vector2(PANEL_W, 0)
-	panel.add_child(vbox)
+	UiTheme.body(panel).add_child(vbox)
 
 	_title = Label.new()
 	_title.add_theme_font_size_override("font_size", 22)

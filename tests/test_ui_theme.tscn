@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cuithemetest0astria"]
+
+[ext_resource type="Script" path="res://tests/test_ui_theme.gd" id="1_uitheme"]
+
+[node name="UiThemeTest" type="Node"]
+script = ExtResource("1_uitheme")

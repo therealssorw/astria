@@ -150,6 +150,10 @@ ui_accept={
 ]
 }
 
+[gui]
+
+theme/custom_font="res://Assets/Fonts/EBGaramond/EBGaramond-VariableFont_wght.ttf"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

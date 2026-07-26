@@ -45,14 +45,19 @@ Current structure to follow and extend:
   - `Models/` — `Entity/Humanoid/Human/` for characters, `World/Islands/...`
     for level geometry; skeleton bone maps live in `Models/Entity/Humanoid/`;
     NPC part models in `Entity/Humanoid/VoxelNpc/Parts/<Set>/<Slot>/`
-  - `Textures/` — mirrors the model grouping (e.g. `Humanoid/Human/Rouge/`)
+  - `Textures/` — mirrors the model grouping (e.g. `Humanoid/Human/Rouge/`);
+    `Textures/UI/` is screen furniture rather than anything in the world
+  - `Fonts/<Family>/` — a typeface and the licence it shipped with, kept
+    together (`EBGaramond/` holds the .ttf files and its OFL.txt)
   - `Data/Npcs/` — `NpcDefinition` resources written by the NPC Builder
 - `scenes/` — .tscn scene files; reusable building blocks go in subfolders
   (`scenes/entities/npc/`, `scenes/effects/`, `scenes/ui/`); built NPCs land
   in `scenes/entities/npc/built/`
 - `scripts/` — GDScript, grouped by domain: `entities/` (player, enemy,
-  character visuals, `npc/` interaction + rigging), `ui/` (HUD, `dialog/`),
-  `world/` (level/world logic), `core/` (autoloads)
+  character visuals, `npc/` interaction + rigging), `ui/` (HUD, `dialog/`,
+  `theme/` — the palette every screen is built from), `combat/` (the rules two
+  fighters meet under, e.g. levels), `world/` (level/world logic), `core/`
+  (autoloads)
 - `addons/` — editor plugins (`npc_builder/`, `grass_brush/`, ...)
 - `tools/` — command-line asset pipeline scripts, e.g. `voxel/gox_to_gltf.py`
 
@@ -91,6 +96,57 @@ mixed pile.
   relied on for a pad, check `InputMap.action_get_events()` for it rather than
   assuming the engine's default has a button on it — `ui_cancel` is still
   Escape only.
+
+## How every screen looks (IMPORTANT)
+
+- ONE file owns the look: `scripts/ui/theme/ui_theme.gd` (`UiTheme`). No screen
+  may mix a background colour of its own again — six screens each inventing
+  their own black is exactly how they drifted apart, and a palette that lives
+  in six files is not a palette. Adding a screen means calling
+  `UiTheme.panel()` / `UiTheme.backdrop()`, not writing a StyleBoxFlat.
+- Three greys, and they are a DEPTH ORDER, not a set of options — pick by how
+  far forward the thing sits: `INK` #232323 is the furthest back (backdrops and
+  panel bodies), `SLATE` #343434 is anything sitting ON a panel (rows, tabs,
+  slots), `STONE` #464646 is edges and whatever should read as raised (a
+  panel's border, the row under the pointer). `UiTheme.row_fill(hot)` is the
+  row/tab/slot fill so a list never invents its own two shades.
+- Gold (`0.95, 0.79, 0.42`) is deliberately NOT in the palette. It is the
+  game's "pay attention" accent — the wind-up star, the quest marker, an NPC
+  bubble — and it means something. The greys mean nothing, which is their job.
+  The cheat menu and the tutorial popup pass gold as their `edge` on purpose:
+  neither is an ordinary screen.
+- Behind and inside everything is one sheet of cracked paint,
+  `Assets/Textures/UI/panel_grunge.jpg` — full strength as the backdrop behind
+  an open panel (what used to be a flat black dim), and at `PANEL_GRAIN` over a
+  panel body, where text has to stay readable. A tint MULTIPLIES the texture,
+  so `UiTheme.sheet()` divides by the sheet's own average grey (`SHEET_MEAN`)
+  first: paint it with a shade straight and the result lands far under that
+  shade (0.14 * 0.56 is nearly black) instead of ON it.
+- A missing texture is survivable by design — `sheet()` falls back to a flat
+  rectangle of the shade. A screen must never fail to build over its wallpaper.
+- `UiTheme.panel()` returns the FRAME; content goes into `UiTheme.body(frame)`.
+  The padding lives in that inner MarginContainer rather than in the stylebox's
+  content margins, and that is not a style choice: a PanelContainer fits its
+  children to the rect MINUS those margins, so padding written the obvious way
+  insets the sheet too and leaves an untextured border ring around every panel.
+- The font is EB Garamond (`Assets/Fonts/EBGaramond/`, OFL licence kept beside
+  it), set ONCE as `gui/theme/custom_font` in `project.godot`. That is what
+  makes it reach both the panels and the vector HUD — the drawn overlays ask
+  for `get_theme_default_font()`, so there is nothing per-screen to update.
+  The variable font is used as shipped; Godot renders the weight it needs.
+- Cinematic's letterbox bars stay pure black on purpose: they are the edge of
+  the shot, not a surface with UI on it. They are the one exception the test
+  below skips.
+- Test: `--headless res://tests/test_ui_theme.tscn` (prints
+  `UITEST RESULT=PASS/FAIL`) — the three hexes, the sheet loading, the font
+  really reaching a Control, a panel's structure (paint behind the content,
+  padding out of the stylebox), and then a walk over every live screen that
+  FAILS on anything still painted black, naming the node. That last one is the
+  regression guard: it is what stops a new screen quietly going back to black.
+- Eyeballing it: `godot --path . res://tests/preview_ui.tscn` (NO `--headless`
+  — it renders) opens the REAL shop and dialog box over a stand-in world and
+  saves a PNG of each, plus a swatch sheet of the three shades and the font at
+  every size the game uses, into `user://ui_preview`.
 
 ## The mouse pointer
 
@@ -222,14 +278,11 @@ mixed pile.
   has its guard up). Keep new markers on that split rather than inventing a
   colour per feature.
 - Screen HUD layout: health and stamina bars in the top-left (x 24, y 24 and
-  52, 280x20 each), and the quest corner
+  52, 280x20 each), and the "Current Quest" heading
   (`scripts/ui/quest/quest_tracker.gd`) under them on the opposite side, pinned
-  24 px in from the right. It is TWO rows — "Current Quest:" at y 84 with the
-  star beside it, and what you are on at y 106 — because the objective by itself
-  read as a label of itself. Anything else in that corner goes below y 134 (the
-  tutorial's banner does); the star is a drawn polygon, the same one as the
-  wind-up star, because Godot's default font has NO U+2605 and a typed ★ renders
-  as tofu — any symbol in the HUD has to be drawn, which is the rule above.
+  24 px in from the right. Its star is a drawn polygon, the same one as the
+  wind-up star: Godot's default font has NO U+2605, so a typed ★ renders as
+  tofu — any symbol in the HUD has to be drawn, which is the rule above anyway.
 - Anchored HUD pieces set `offset_*`, never `position`: `position` is
   parent-relative, so on a right-anchored control it lands off the left edge.
 - `set_anchors_preset()` KEEPS THE CONTROL'S CURRENT RECT, baking offsets to
@@ -413,11 +466,7 @@ mixed pile.
 - Test: `--headless res://tests/test_dialog.tscn` (prints
   `DIALOGTEST RESULT=PASS/FAIL`) — needs no server, since a conversation is
   local. It walks down a branch and back out of it, which is the loop-back rule
-  above, and checks reopening still says everything. It walks the KING, because
-  he is the one with branches: the blacksmith is two lines ("buy" and
-  "goodbye") and gets a smoke test instead. Page breaks matter to a test as
-  much as to a player — `_skip_typing` steps a line page by page, so what is on
-  screen when a line is done is its LAST page, not its whole text.
+  above, and checks reopening still says everything.
 - `DialogSystem` (autoload) owns the box: semi-transparent black panel,
   typewriter reveal with the looping keyboard clatter in
   `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
@@ -471,12 +520,6 @@ mixed pile.
   you are standing at to hand it in; `from` is the one it insists you are
   standing at to start it, and an empty `from` means only the SERVER hands that
   quest out.
-- A quest pays out with `reward_buys`: the id of an item, and finishing hands
-  you ItemDb's price for it. The reward is named as a THING you can now afford
-  ("a first sword"), never a number — a number in the table quietly stops being
-  a sword the moment the price moves, and prices live in ItemDb alone. Paying
-  happens in `_server_finish_quest`, once, because handing in is what clears the
-  quest: come back and you are no longer on it.
 - Finishing the tutorial puts you straight on `TutorialData.NEXT_QUEST`
   ("Speak to the King") as it puts you ashore, through
   `Net.server_grant_quest` — the server deciding, so there is nothing to
@@ -543,21 +586,6 @@ mixed pile.
 - `GameStats.coins` / `.items` are read-only MIRRORS that `cl_purse` fills, so
   UI code reads them instead of the network layer. Writing to them changes
   nothing real.
-- THE COUNTER IS WHERE THE NpcInteractable IS, not where the shopkeeper is
-  drawn. That node decides the bubble, the conversation and the server's
-  `_near_npc` check, and it draws NOTHING — so dragging it off its own NPC in
-  the editor is invisible everywhere except that the shop can no longer be
-  reached. The blacksmith's spent a while 54 m from the man at the anvil, out
-  in an empty field: he could not be talked to, so nothing could be bought from
-  him. Place a new NPC's interactable ON its model (the King's way — a child at
-  the parent's origin — makes that automatic).
-- Test: `--headless res://tests/test_shop.tscn` (prints
-  `SHOPTEST RESULT=PASS/FAIL`) — that every shop's NPC has a conversation, an
-  answer carrying `open_shop` and stock that exists in `ItemDb`; that EVERY
-  talkable NPC in the world stands within its own `interact_range` of its own
-  geometry (the rule above); and the trade itself: refused from 80 m, sold at
-  the counter for ItemDb's price, refused when unstocked or unaffordable, and
-  the sale back again.
 
 ## Hotbar
 
