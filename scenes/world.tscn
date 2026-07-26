@@ -11,9 +11,12 @@
 [ext_resource type="PackedScene" uid="uid://7oxdq6vuqnge" path="res://scenes/effects/furnace_fire.tscn" id="13_fire"]
 [ext_resource type="PackedScene" uid="uid://dq5dyh6t0ckww" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/TownHall.gltf" id="14_o8fc1"]
 [ext_resource type="Script" uid="uid://b284dsxxph6j3" path="res://scripts/world/bandit_spawner.gd" id="14_spawner"]
+[ext_resource type="PackedScene" uid="uid://d1601w4a3jcmn" path="res://scenes/entities/npc/built/kingnpc.tscn" id="15_7t5mc"]
 [ext_resource type="Script" uid="uid://dpvp3gxdge66j" path="res://scripts/ui/inventory_ui.gd" id="15_inv"]
 [ext_resource type="PackedScene" uid="uid://dtl3bj1h5w1wi" path="res://newBlacksmith_1.gltf" id="15_xo05s"]
+[ext_resource type="PackedScene" uid="uid://c8qxtclp3r7fn" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/House1.gltf" id="16_lakw3"]
 [ext_resource type="PackedScene" path="res://scenes/entities/npc/npc_interactable.tscn" id="16_npc"]
+[ext_resource type="PackedScene" uid="uid://b51pr1sajq0e6" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/WheatPatch.gltf" id="17_pm21f"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_57qmd"]
 panorama = ExtResource("3_i7141")
@@ -66,7 +69,7 @@ script = ExtResource("7_ocean")
 subdivisions = 50
 editor_wave_phase = 17.55
 
-[node name="BanditSpawner" type="Node3D" parent="." groups=["quest_bandit_camp"] unique_id=638839087]
+[node name="BanditSpawner" type="Node3D" parent="." unique_id=638839087 groups=["quest_bandit_camp"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 160.25618, 95, -110)
 script = ExtResource("14_spawner")
 
@@ -115,3 +118,36 @@ transform = Transform3D(0.13797796, 0, 0.058839448, 0, 0.14999999, 0, -0.0588394
 
 [node name="TownHall" parent="." unique_id=1205970313 instance=ExtResource("14_o8fc1")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 157.31122, 91.836174, -156.51982)
+
+[node name="Kingnpc" parent="." unique_id=1967818918 instance=ExtResource("15_7t5mc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 149.93307, 92.836174, -155.87569)
+
+[node name="House1" parent="." unique_id=367744375 instance=ExtResource("16_lakw3")]
+transform = Transform3D(-0.8748799, 0, 0.48433992, 0, 1, 0, -0.48433992, 0, -0.8748799, 165.65933, 92.13936, -181.15128)
+
+[node name="WheatPatch" parent="." unique_id=2023984436 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 191.52388, 92.331696, -142.19923)
+
+[node name="WheatPatch5" parent="." unique_id=882388359 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 183.68198, 92.331696, -142.19923)
+
+[node name="WheatPatch2" parent="." unique_id=466153964 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 191.52388, 92.331696, -148.28728)
+
+[node name="WheatPatch6" parent="." unique_id=288708882 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 184.06009, 92.331696, -148.28728)
+
+[node name="WheatPatch3" parent="." unique_id=361659843 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 197.86626, 92.331696, -148.28728)
+
+[node name="WheatPatch7" parent="." unique_id=803637214 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 191.52388, 92.331696, -155.27951)
+
+[node name="WheatPatch8" parent="." unique_id=1198044078 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 184.06009, 92.331696, -155.27951)
+
+[node name="WheatPatch9" parent="." unique_id=1965514215 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 197.86626, 92.331696, -155.27951)
+
+[node name="WheatPatch4" parent="." unique_id=457166055 instance=ExtResource("17_pm21f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 197.86626, 92.331696, -142.90712)

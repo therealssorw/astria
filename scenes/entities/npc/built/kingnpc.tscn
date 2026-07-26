@@ -3,6 +3,6 @@
 [ext_resource type="Script" uid="uid://bdghot0bj7ino" path="res://scripts/entities/npc/npc_character.gd" id="1_38br1"]
 [ext_resource type="Resource" uid="uid://i1ng0jqlpbl6" path="res://Assets/Data/Npcs/kingnpc.tres" id="2_vwvkr"]
 
-[node name="Kingnpc" type="Node3D" unique_id=25296087]
+[node name="Kingnpc" type="Node3D" unique_id=467426789]
 script = ExtResource("1_38br1")
 definition = ExtResource("2_vwvkr")
