@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ArmorDefinition" format=3 uid="uid://s0wmvme2vbi2"]
+
+[ext_resource type="Script" uid="uid://d3re5nb76kyc8" path="res://scripts/entities/npc/npc_part.gd" id="1_igs10"]
+[ext_resource type="Script" uid="uid://b8jfuom4hoodq" path="res://scripts/items/armor/armor_definition.gd" id="2_sqal8"]
+
+[sub_resource type="Resource" id="Resource_tj1gv"]
+script = ExtResource("1_igs10")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Arms/arms_armor1.gltf"
+colors = PackedColorArray(0.7294118, 0.7176471, 0.7137255, 1, 0, 0, 0, 1, 1, 1, 1, 1)
+
+[sub_resource type="Resource" id="Resource_b2joi"]
+script = ExtResource("1_igs10")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Body/body_armor1.gltf"
+colors = PackedColorArray(0.7294118, 0.7176471, 0.7137255, 1)
+
+[sub_resource type="Resource" id="Resource_1ccy6"]
+script = ExtResource("1_igs10")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Feet/feet_armor1.gltf"
+colors = PackedColorArray(0.7291666, 0.71705, 0.71397567, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0.9372549, 0.92941177, 0.9372549, 1)
+
+[sub_resource type="Resource" id="Resource_wx3lq"]
+script = ExtResource("1_igs10")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Head/head_armor1.gltf"
+colors = PackedColorArray(0.7294118, 0.7176471, 0.7137255, 1, 1, 1, 1, 1)
+
+[resource]
+script = ExtResource("2_sqal8")
+display_name = "Flimsy Armor"
+feet = SubResource("Resource_1ccy6")
+body = SubResource("Resource_b2joi")
+arms = SubResource("Resource_tj1gv")
+head = SubResource("Resource_wx3lq")

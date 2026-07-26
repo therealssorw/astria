@@ -11,6 +11,9 @@ extends Node
 const Screen := preload("res://addons/item_builder/ui/item_builder_screen.gd")
 const NpcScreen := preload("res://addons/npc_builder/ui/npc_builder_screen.gd")
 const TEST_SUIT_NAME := "Zz Suit Test"
+## A second suit, saved while an NPC Builder tab is already open — see
+## `_check_a_suit_made_next_door_turns_up`.
+const LATE_SUIT_NAME := "Zz Suit Test Late"
 
 var _failures: PackedStringArray = []
 var _checks := 0
@@ -22,6 +25,7 @@ func _ready() -> void:
 	_check_library_is_picky()
 	_check_items_tab_builds()
 	_check_npc_builder_wears_a_saved_suit()
+	_check_a_suit_made_next_door_turns_up()
 	_cleanup()
 
 	print("ARMORTEST ran %d assertions" % _checks)
@@ -44,9 +48,10 @@ func _suit_path() -> String:
 	return ArmorLibrary.path_for(TEST_SUIT_NAME)
 
 func _cleanup() -> void:
-	var path := _suit_path()
-	if ResourceLoader.exists(path):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	for name in [TEST_SUIT_NAME, LATE_SUIT_NAME]:
+		var path := ArmorLibrary.path_for(name)
+		if ResourceLoader.exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 ## A suit made of the first armor set, every piece painted one colour.
 func _painted_suit(colour: Color) -> ArmorDefinition:
@@ -223,3 +228,56 @@ func _check_npc_builder_wears_a_saved_suit() -> void:
 			"the armor switch did not take the suit off")
 	remove_child(screen)
 	screen.free()
+
+## The half of "made next door, worn here" that a test building the screen AFTER
+## the save can never see: an NPC Builder tab is built ONCE, when the plugin
+## loads, so its list of suits used to be a snapshot of the folder as it stood at
+## editor startup. Everything the user made afterwards was simply absent, and the
+## only way in was knowing that "Rescan parts" rescans suits too.
+##
+## So: open the tab FIRST, save a suit, then show the tab — the way switching
+## from Items back to NPC Builder does — and it has to be wearable. The picked
+## suit has to survive that rebuild as well, or coming back to the tab would swap
+## the suit under the character you left half-dressed.
+func _check_a_suit_made_next_door_turns_up() -> void:
+	var screen: Control = NpcScreen.new()
+	add_child(screen)
+	screen.visible = false
+	var picker: OptionButton = screen._suit_picker
+	var late_path := ArmorLibrary.path_for(LATE_SUIT_NAME)
+	_expect(_offered_at(picker, late_path) < 0,
+			"a suit that does not exist yet is already in the menu")
+
+	# what pressing Save in the Items tab does
+	var late := _painted_suit(Color(0.9, 0.3, 0.1))
+	late.display_name = LATE_SUIT_NAME
+	var saved: Dictionary = ArmorLibrary.save(late)
+	if not _expect(bool(saved["ok"]), "saving the late suit failed: %s" % saved["message"]):
+		remove_child(screen)
+		screen.free()
+		return
+
+	# ...and what switching back to the NPC Builder tab does
+	var kept := _offered_at(picker, _suit_path())
+	if kept >= 0:
+		picker.select(kept)
+	screen.visible = true
+	var at := _offered_at(picker, late_path)
+	if _expect(at >= 0, "a suit saved while the tab was open never turns up in it"):
+		if kept >= 0:
+			_expect(str(picker.get_item_metadata(picker.selected)) == _suit_path(),
+					"reopening the tab changed which suit was picked")
+		picker.select(at)
+		screen._on_apply_suit()
+		var worn: PackedColorArray = (screen._definition as NpcDefinition).get_part("body_armor").colors
+		_expect(worn.size() > 0 and worn[0].is_equal_approx(Color(0.9, 0.3, 0.1)),
+				"the late suit went on in the wrong colours")
+	remove_child(screen)
+	screen.free()
+
+## Where a suit sits in the picker, by the path/set name in its metadata, or -1.
+func _offered_at(picker: OptionButton, path: String) -> int:
+	for i in picker.item_count:
+		if not picker.is_item_separator(i) and str(picker.get_item_metadata(i)) == path:
+			return i
+	return -1

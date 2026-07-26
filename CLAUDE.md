@@ -1177,6 +1177,15 @@ mixed pile.
   overridden, tinted, named. The NPC Builder's picker offers both, under
   "Saved suits" and "Armor sets", and the metadata says which so applying one
   never has to guess from the label.
+- BOTH HALVES ARE ONE EDITOR SESSION, and the NPC Builder tab is built ONCE when
+  the plugin loads. So its suit list has to be REBUILT on the way into the tab
+  (`_notification(NOTIFICATION_VISIBILITY_CHANGED)`) or it is a snapshot of
+  `ArmorLibrary.DIR` as it stood at editor startup: every suit made afterwards is
+  simply absent, and the only way to reach your own armor is knowing that a
+  button called "Rescan parts" rescans suits too. Whatever is picked survives
+  that rebuild, or returning to the tab would swap the suit under the character
+  you left half-dressed. Anything else that lists files made by the OTHER tab
+  needs the same treatment.
 - `ArmorDefinition.wear()` hands the character COPIES of its pieces. If it
   handed references, recolouring one guard in the NPC Builder would rewrite the
   suit file and every other guard wearing it. `take_from()` is the other
@@ -1202,7 +1211,9 @@ mixed pile.
   rigs in its own colours, the library refuses an NPC definition, the Items tab
   builds and its Create armor button produces something, and the NPC Builder
   offers the saved suit and puts it on in the colours it was authored in while a
-  raw set still arrives as drawn.
+  raw set still arrives as drawn. The tab is also opened BEFORE a suit is saved
+  and shown afterwards, which is the only way to catch the stale-list case above
+  — a test that builds the screen after the save passes either way.
 
 ## Armor on a built NPC
 
