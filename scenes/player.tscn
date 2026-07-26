@@ -1,7 +1,7 @@
 [gd_scene load_steps=5 format=3 uid="uid://bplayer0astria"]
 
 [ext_resource type="Script" path="res://scripts/entities/player.gd" id="1_player"]
-[ext_resource type="Script" path="res://scripts/entities/rouge_visual.gd" id="2_visual"]
+[ext_resource type="Script" path="res://scripts/entities/player_visual.gd" id="2_visual"]
 [ext_resource type="AudioStreamRandomizer" path="res://Assets/Audio/SFX/Grunts/Pair2/grunt_pair_2.tres" id="3_grunts"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]

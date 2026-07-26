@@ -185,6 +185,13 @@ static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 		mi.name = mesh_name(slot)
 		mi.skin = skin
 		skeleton.add_child(mi)
+		# A skin on its own animates nothing: the mesh also has to POINT at the
+		# skeleton, and a code-made MeshInstance3D starts with that path empty --
+		# being a child of the Skeleton3D is not enough. Without it every part
+		# draws at its bind pose while the bones underneath animate perfectly,
+		# which reads as a character frozen mid T-pose rather than as one missing
+		# NodePath.
+		mi.skeleton = NodePath("..")
 	return layout
 
 

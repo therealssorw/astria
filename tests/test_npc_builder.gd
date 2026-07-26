@@ -35,6 +35,7 @@ func _ready() -> void:
 	_check_save_roundtrip()
 	_check_definition_scripts_run_in_the_editor()
 	_check_rouge_still_builds()
+	_check_player_visual()
 
 	# Reported so an assertion loop that silently found nothing to do cannot
 	# pass by default.
@@ -112,6 +113,13 @@ func _check_set(category: String) -> void:
 		for mi: MeshInstance3D in meshes:
 			var slot := String(mi.name).to_lower()
 			_expect(mi.skin != null, "%s #%d %s is not skinned" % [category, index, slot])
+			# A skin is only half of it: the mesh must also POINT at the skeleton,
+			# and a code-made MeshInstance3D starts with that path empty. Miss
+			# that and the bones animate perfectly under a part frozen in its
+			# bind pose -- which every bone-level check below sails straight past.
+			_expect(mi.get_node_or_null(mi.skeleton) == visual.skeleton,
+					"%s #%d %s does not point at the skeleton, so it draws its bind pose"
+							% [category, index, slot])
 			var arrays := mi.mesh.surface_get_arrays(0)
 			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 			var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
@@ -615,6 +623,49 @@ func _check_rouge_still_builds() -> void:
 	_check_long_idle(rouge)
 	remove_child(rouge)
 	rouge.free()
+
+## The player wears a built NPC too — same rig, same clips, same auto-fitting —
+## so it is checked here rather than in a test of its own. What is different is
+## the clip list: a villager stands around, a player fights.
+func _check_player_visual() -> void:
+	var vis := PlayerVisual.new()
+	add_child(vis)
+	_rigged += 1
+	if not _expect(vis.definition != null,
+			"the player visual loaded no definition from %s" % PlayerVisual.DEFINITION):
+		_drop(vis)
+		return
+	if not _expect(vis.skeleton != null, "the player visual built no skeleton"):
+		_drop(vis)
+		return
+
+	var meshes := vis.skeleton.find_children("*", "MeshInstance3D", false, false)
+	_expect(meshes.size() >= NpcDefinition.SLOTS.size(),
+			"the player rigged %d parts, expected at least %d"
+					% [meshes.size(), NpcDefinition.SLOTS.size()])
+	for mi: MeshInstance3D in meshes:
+		_expect(mi.get_node_or_null(mi.skeleton) == vis.skeleton,
+				"the player's %s does not point at the skeleton, so it draws its bind pose"
+						% String(mi.name).to_lower())
+
+	# Everything a player does and a villager never does.
+	var expected: int = HumanoidVisual.CLIPS.size() + HumanoidVisual.BLOCK_MOVE.size()
+	_expect(vis.clip_lengths.size() == expected,
+			"the player built %d clips, expected the full %d"
+					% [vis.clip_lengths.size(), expected])
+	for key in ["block", "slide", "jump", "heavy", "light_0"]:
+		_expect(vis.clip_lengths.has(key), "the player has no '%s' clip" % key)
+	_expect(float(vis.get_attack_info(false, 0)["duration"]) > 0.0,
+			"the player reports no attack duration")
+
+	# The hand a weapon hangs off has to survive being reproportioned onto voxel
+	# arms, or the sword is carried by nothing.
+	vis.set_held_item("iron_sword")
+	_expect(vis.skeleton.find_children("*", "BoneAttachment3D", false, false).size() == 1,
+			"the player's held sword found no hand bone to hang off")
+
+	_check_animation_drives(vis, "player")
+	_drop(vis)
 
 ## Standing still for IDLE_LONG_AFTER drops the character into the second idle
 ## pose, and ANY movement puts them back to the first. Driven through tick()

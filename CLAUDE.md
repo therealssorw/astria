@@ -294,7 +294,7 @@ mixed pile.
   `@export` vars on `scripts/entities/player.gd` and `enemy.gd` — tune in the
   editor, not by hardcoding.
 - Attack swing timings derive from the actual clip lengths at montage rates
-  (light 1.35x, heavy 1.15x) via `rouge_visual.get_attack_info()`; a punch
+  (light 1.35x, heavy 1.15x) via `HumanoidVisual.get_attack_info()`; a punch
   must finish before the next combo punch starts (queued input chains at
   swing end).
 - Headless validation: run the Steam Godot binary with `--headless --import`
@@ -905,6 +905,12 @@ mixed pile.
 - `NpcVisual._adapt_hips` rebases the clips' Hips position track per NPC — it
   was authored around a human pelvis and would otherwise yank a short-legged
   voxel NPC up to Rouge's hip height.
+- A rigged part is BOTH skinned and POINTED at the skeleton
+  (`mi.skeleton = NodePath("..")`). A code-made `MeshInstance3D` starts with
+  that path empty and being a child of the `Skeleton3D` does not fill it in, so
+  without the line every part drew its bind pose while the bones underneath
+  animated perfectly — every built NPC in the game was a T-posed statue, and no
+  bone-level assertion could see it. The test now checks the path itself.
 - A visual builds itself when it enters the tree, and never twice. `_ready`
   fires in the editor too: `HumanoidVisual` has no `@tool`, but that only
   governs scripts the editor loads with a scene — tool code that says
@@ -931,7 +937,30 @@ mixed pile.
   the bind sets, that animation still moves the reshaped bones, that re-rigging
   is idempotent, that building twice still leaves one of everything, that
   colours reach the mesh, and that a saved NPC reloads as a talkable scene —
-  plus that Rouge still builds his own rig and full clip set.
+  plus that Rouge still builds his own rig and full clip set, and that the
+  player's own body builds, animates and can hold a sword.
+
+## The player's body
+
+- The player IS a built NPC: `scripts/entities/player_visual.gd` (`PlayerVisual`
+  on the `Visual` node of `scenes/player.tscn`) is an `NpcVisual` fixed to
+  `Assets/Data/Npcs/player.tres`, the "Player" character saved out of the NPC
+  Builder. So the player is rigged, proportioned and animated by exactly the
+  machinery every villager uses, and recolouring "Player" in the builder
+  redresses every pawn in the game — local and remote alike, since all of them
+  are `scenes/player.tscn`.
+- The definition is a const in the script, not an export on the node: which body
+  a player wears is not a level-editing decision, and one file is what keeps
+  every pawn identical.
+- The one thing it overrides is the clip list — `_clip_keys()` returns the WHOLE
+  of `CLIPS`. `NpcVisual` trims it to idle/walk/run because a villager stands
+  around; a player blocks, slides, jumps and swings.
+- Rouge (`rouge_visual.gd`) is still the ENEMIES' model and still the source of
+  the skeleton every voxel character is rigged onto — `NpcVisual` instances
+  rouge.fbx for its bones. Deleting him is not an option.
+- Fitting a weapon is previewed on the player's hand now
+  (`tests/preview_held_item.gd`), because the player is the only thing in the
+  game that carries anything and a voxel fist is not the shape Rouge's was.
 
 ## Armor on a built NPC
 

@@ -1,6 +1,8 @@
 extends Node3D
-## Fitting aid, not a pass/fail test: renders Rouge holding an item and saves a
-## PNG, so a new weapon's grip can be lined up without launching the game.
+## Fitting aid, not a pass/fail test: renders the PLAYER holding an item and
+## saves a PNG, so a new weapon's grip can be lined up without launching the
+## game. It is the player's own hand on purpose — nothing else in the game
+## carries anything, and a voxel fist is not the shape Rouge's was.
 ## Tweak ItemDb's "hold" entry (or HOLD_DEFAULTS), run this, look at the file:
 ##   godot --path . res://tests/preview_held_item.tscn
 ## It needs a real window — do NOT pass --headless, there is nothing to draw
@@ -28,7 +30,7 @@ func _ready() -> void:
 	env.environment = e
 	add_child(env)
 
-	var vis: Node3D = (load("res://scripts/entities/rouge_visual.gd") as Script).new()
+	var vis: Node3D = (load("res://scripts/entities/player_visual.gd") as Script).new()
 	add_child(vis)
 	vis.set_held_item(ITEM)
 
