@@ -44,6 +44,19 @@ const VIEW_PITCH_DEG := -22.0
 ## Air around the art, so nothing touches the edge of its slot.
 const MARGIN := 1.1
 
+## THE LIGHT IS NEUTRAL AND IT IS METERED, and both halves matter: the picture
+## has to be of the item's OWN colour. A coloured ambient tints everything
+## towards itself, and light totalling over 1.0 clips — between them a grey suit
+## photographed as white and a copper one as pale pink, which is a picture of the
+## studio rather than of the item.
+##
+## So: white ambient, one white key, and the two adding to about 1.0 on the face
+## turned towards the light. The shading that is left is what stops a voxel block
+## reading as a flat silhouette, and `test_item_icons` measures the result
+## against the colour the item was actually painted.
+const AMBIENT := 0.62
+const KEY_ENERGY := 0.55
+
 ## How much taller than wide a thing has to be before it is laid over
 ## diagonally, and how far it is laid.
 const LEAN_RATIO := 1.6
@@ -110,8 +123,8 @@ func _build_studio() -> void:
 	# transparency alone, so an icon is the item and nothing else.
 	e.background_mode = Environment.BG_CLEAR_COLOR
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.62, 0.64, 0.72)
-	e.ambient_light_energy = 1.0
+	e.ambient_light_color = Color.WHITE
+	e.ambient_light_energy = AMBIENT
 	env.environment = e
 	_viewport.add_child(env)
 
@@ -119,7 +132,7 @@ func _build_studio() -> void:
 	# and the shadowed sides are what make a voxel block read as a solid.
 	var key := DirectionalLight3D.new()
 	key.rotation_degrees = Vector3(-38.0, VIEW_YAW_DEG + 25.0, 0.0)
-	key.light_energy = 1.5
+	key.light_energy = KEY_ENERGY
 	_viewport.add_child(key)
 
 	_stage = Node3D.new()

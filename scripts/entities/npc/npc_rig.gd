@@ -189,6 +189,12 @@ static func preview_mesh(spec: NpcPart) -> MeshInstance3D:
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
+	# A part's colours are sRGB — they come out of a Goxel palette PNG or a Godot
+	# colour picker, both of which are display values — so they have to be decoded
+	# before they are shaded, or every one of them renders about a tenth too
+	# bright: an authored 0.73 grey photographs at 0.82 and the copper suit washes
+	# out to pink. This is what makes the picture the item's OWN colour.
+	mat.vertex_color_is_srgb = true
 	mat.roughness = 0.85
 	mat.metallic = 0.0
 	mesh.surface_set_material(0, mat)

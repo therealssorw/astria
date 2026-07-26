@@ -62,4 +62,43 @@ func _ready() -> void:
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(OUT)
 	print("PREVIEW saved=", ProjectSettings.globalize_path(OUT))
+	_report_colours()
 	get_tree().quit()
+
+## Does the picture come out the colour the item was PAINTED? Printed rather
+## than eyeballed because a wash is hard to see and easy to measure: the studio
+## used to over-light everything, and a grey suit photographed as white.
+##
+## Only armor, and only its plate: a suit says in so many words what colour it
+## is, where a sword's colour is buried in an imported FBX texture.
+func _report_colours() -> void:
+	print("COLOUR (a plate against the colour its suit paints it)")
+	for id: String in ItemDb.ITEMS:
+		var piece := ItemDb.armor_piece(id)
+		if piece == null or piece.colors.is_empty():
+			continue
+		var shot := ItemDb.icon(id) as ImageTexture
+		if shot == null:
+			continue
+		var got := _average(shot.get_image())
+		var want: Color = piece.colors[0] * piece.tint
+		var off := maxf(maxf(absf(got.r - want.r), absf(got.g - want.g)),
+				absf(got.b - want.b))
+		# A piece painted in several colours averages to a blend of them, so the
+		# bar is loose; it is a wash detector, not a colour picker.
+		print("  %-18s shot %.3f,%.3f,%.3f  painted %.3f,%.3f,%.3f  off %.3f  %s" % [
+				id, got.r, got.g, got.b, want.r, want.g, want.b, off,
+				"ok" if off <= 0.12 else "WASHED"])
+
+func _average(img: Image) -> Color:
+	var sum := Color(0, 0, 0, 0)
+	var n := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var px := img.get_pixel(x, y)
+			# Only the solid middle of a face: the edge pixels are part sky after
+			# the shot is shrunk, and they drag every average towards nothing.
+			if px.a > 0.9:
+				sum += px
+				n += 1
+	return sum / maxf(n, 1)

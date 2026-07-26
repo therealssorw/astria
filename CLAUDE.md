@@ -873,6 +873,24 @@ mixed pile.
   stage is reset to upright before each shot is measured — measuring the next
   item while the last one's lean is still on it decides the angle off the wrong
   shape, which came out as two of three identical swords at different angles.
+- THE STUDIO LIGHT IS NEUTRAL AND METERED, because the picture has to be of the
+  ITEM's colour and not of the lighting. A coloured ambient tints everything
+  towards itself and light totalling over 1.0 clips: the first version lit with a
+  blue-ish ambient at full strength plus a 1.5 key, and a grey suit photographed
+  as white while the copper one washed out to pale pink. White ambient
+  (`AMBIENT`) plus one white key (`KEY_ENERGY`) adding to about 1.0 on the lit
+  face is what makes an authored 0.729 grey come out at 0.729.
+- The other half of that is `vertex_color_is_srgb` on the preview material. A
+  part's colours are sRGB — a Goxel palette PNG and a Godot colour picker are
+  both display values — so without decoding them every part renders about a
+  tenth too bright no matter how the lights are set. NOTE: the RIGGED path
+  (`_build_mesh`) does not set it, so voxel characters in the world are still
+  drawn that tenth bright; making them match is a one-line change that would
+  visibly darken every villager, so it is deliberately not bundled in here.
+- A suit that photographs colourless IS colourless: the shipped `Armor1` art is
+  red and white, and the flimsy/copper/iron suits repaint the plate grey, copper
+  and white respectively. Recolour a suit in the Items tab and its four items
+  follow — that is the point of the icons being renders.
 - Rendered at 256 and shrunk to 64 with a filter rather than rendered at 64:
   cheaper than MSAA and the voxel edges come out cleaner. 64 is also what the
   old placeholders were, so no screen's layout changed.
@@ -906,6 +924,10 @@ mixed pile.
   `--headless` — an icon IS a render) lays every item's real icon out on a sheet
   with its name and saves `user://item_icons_preview.png`. Framing, the angle
   and whether a boot is recognisable at 64 pixels are invisible headless.
+  It also PRINTS a colour report — each plate's photographed colour against the
+  colour its suit paints it, flagged `WASHED` past 0.12 — because a wash is hard
+  to see and easy to measure, and that is the one thing about an icon a headless
+  test cannot check.
 
 ## Hotbar
 
