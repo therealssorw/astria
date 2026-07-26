@@ -787,7 +787,9 @@ mixed pile.
   <Slot>/`. `<Set>` is a character family (`Base`, `Undead`, `King`) and becomes
   its own section in the builder's menus; `<Slot>` is Head/Body/Arms/Feet. Drop a
   Goxel glTF export in the right folder and press "Rescan parts" — there is no
-  metadata to register. A set needs all four slots: `test_npc_builder` builds
+  metadata to register. Armor is the same idea in a SEPARATE library,
+  `VoxelNpc/Armor/<Suit>/<Slot>/` — see "Armor" below for why it is not just
+  another set. A set needs all four slots: `test_npc_builder` builds
   one NPC per set out of that set alone and fails if a slot is empty.
 - Keep the `.gox` next to the `.gltf` it was exported from (as
   `king_head.gox` / `king_head.gltf`), so the source of a part is never a
@@ -872,6 +874,52 @@ mixed pile.
   is idempotent, that building twice still leaves one of everything, that
   colours reach the mesh, and that a saved NPC reloads as a talkable scene —
   plus that Rouge still builds his own rig and full clip set.
+
+## Armor on a built NPC
+
+- Armor is a LAYER over a character, never a character set of its own. The
+  builder's "Wears armor" switch reveals four more slots — `feet_armor`,
+  `body_armor`, `arms_armor`, `head_armor` in `NpcDefinition.ARMOR_SLOTS` — each
+  worn over the slot it names, each with its own palette and tint. Switching it
+  on puts the first suit straight on (a switch that visibly does nothing reads
+  as broken); switching it off calls `clear_armor()` and the character
+  underneath is untouched.
+- Suits live in their own library, `VoxelNpc/Armor/<Suit>/<Slot>/`, NOT under
+  `Parts/`. Filed as a character set, a suit would appear in the set picker and
+  "use whole set" would build a walking empty suit with no head, no hands and
+  nobody inside it. `NpcRig.categories_for(slot)` is what keeps the two menus
+  apart, so a helmet can never be picked as a head.
+- A plate is drawn IN PLACE around the part it covers — same Goxel grid, one
+  voxel out on each side — so the rig takes the covered part's centre wholesale
+  instead of re-centring the plate on its own bounding box, which would slide a
+  breastplate off the chest it was drawn around. It is the same trick the arms
+  already use to sit in the torso's frame. Draw armor over the body it is for,
+  delete the body, export: the fit is then whatever you drew.
+- NOTHING on the armor layer feeds the height stack, so a helmet cannot make an
+  NPC taller and no plate moves a single bone. Armor rides the bones of the slot
+  it covers (`BIND_SETS[covers(slot)]`) — there is no such thing as an armor
+  bone — and an armor part's `scale` is RELATIVE to what it covers, so scaling a
+  body carries its plate with it.
+- Armor is rigged LAST (`NpcDefinition.ALL_SLOTS` is skin then armor), which is
+  also the order voxels are claimed: a suit exported with part of the reference
+  body still in it loses that copy rather than z-fighting the real one.
+- Recolouring is per piece: each armor slot gets the same swatch-per-palette-
+  entry treatment as any part, so a suit is recoloured without touching the
+  character wearing it. Keep an armor model's Goxel palette at or under
+  `SlotEditor.SWATCH_LIMIT` (8) entries or the builder can only offer the tint —
+  the test asserts this, because a suit you can only tint is not a suit you can
+  recolour.
+- Shipped: `Armor1`, all four pieces, in `Armor/Armor1/`, with the `.gox`
+  sources beside the exports as everywhere else.
+- Test: the armor sections of `--headless res://tests/test_npc_builder.tscn` —
+  the library is complete and separate, a suit adds four meshes and changes no
+  landmark and no bone, each plate is concentric with and wraps what it covers
+  (the check that catches a helmet re-centred off the head), armour and skin
+  never paint the same voxel, colours and tint reach the plate and nothing
+  leaks onto the body, and taking the suit off leaves no meshes behind.
+- Eyeballing it: `godot --path . res://tests/preview_npc_armor.tscn` (NO
+  `--headless`) stands the same villager bare, in the suit, and in a recoloured
+  suit, and writes `user://npc_armor_preview.png`.
 
 ## Dungeons
 

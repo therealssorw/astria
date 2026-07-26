@@ -20,6 +20,9 @@ var _dialog_field: LineEdit
 var _height: SpinBox
 var _range: SpinBox
 var _set_picker: OptionButton
+var _suit_picker: OptionButton
+var _armor_switch: CheckButton
+var _armor_box: VBoxContainer
 var _status: Label
 var _target: Label
 var _slots := {}
@@ -173,6 +176,39 @@ func _build_side_pane() -> Control:
 		editor.changed.connect(_queue_preview)
 		_slots[slot] = editor
 
+	column.add_child(_heading("Armor"))
+	_armor_switch = CheckButton.new()
+	_armor_switch.text = "Wears armor"
+	_armor_switch.tooltip_text = "A suit worn OVER the parts above — the character keeps its own head, hands and height"
+	_armor_switch.toggled.connect(_on_armor_toggled)
+	column.add_child(_armor_switch)
+
+	# Everything armor lives under the switch, so an unarmoured villager is not
+	# scrolling past four slots it will never fill.
+	_armor_box = VBoxContainer.new()
+	_armor_box.add_theme_constant_override("separation", 8)
+	_armor_box.visible = false
+	column.add_child(_armor_box)
+
+	var suit_row := HBoxContainer.new()
+	_suit_picker = OptionButton.new()
+	_suit_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	suit_row.add_child(_suit_picker)
+	var apply_suit := Button.new()
+	apply_suit.text = "Wear whole suit"
+	apply_suit.tooltip_text = "Fill every armor slot from this suit"
+	apply_suit.pressed.connect(_on_apply_suit)
+	suit_row.add_child(apply_suit)
+	_armor_box.add_child(suit_row)
+
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var editor := SlotEditor.new()
+		_armor_box.add_child(editor)
+		editor.setup(slot)
+		editor.changed.connect(_queue_preview)
+		_slots[slot] = editor
+	_refresh_suits()
+
 	_target = Label.new()
 	_target.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_target.modulate = Color(1, 1, 1, 0.6)
@@ -222,11 +258,15 @@ func _set_definition(def: NpcDefinition) -> void:
 	_height.set_value_no_signal(def.height)
 	_range.set_value_no_signal(def.interact_range)
 	_rebind_slots()
+	# A loaded NPC arrives already wearing (or not wearing) a suit, so the switch
+	# follows the definition rather than the other way round.
+	_armor_switch.set_pressed_no_signal(def.wears_armor())
+	_armor_box.visible = def.wears_armor()
 	_update_target_label()
 	_apply_to_preview()
 
 func _rebind_slots() -> void:
-	for slot: String in NpcDefinition.SLOTS:
+	for slot: String in NpcDefinition.ALL_SLOTS:
 		_slots[slot].bind(_definition.get_part(slot))
 
 func _refresh_sets() -> void:
@@ -236,10 +276,26 @@ func _refresh_sets() -> void:
 	if _set_picker.item_count > 0:
 		_set_picker.select(0)
 
+func _refresh_suits() -> void:
+	_suit_picker.clear()
+	for suit in NpcRig.list_categories(true):
+		_suit_picker.add_item(suit)
+	if _suit_picker.item_count == 0:
+		_suit_picker.add_item("(no suits in %s)" % NpcRig.ARMOR_ROOT.get_file())
+		_suit_picker.disabled = true
+	else:
+		_suit_picker.disabled = false
+		_suit_picker.select(0)
+
 func _selected_set() -> String:
 	if _set_picker.selected < 0:
 		return ""
 	return _set_picker.get_item_text(_set_picker.selected)
+
+func _selected_suit() -> String:
+	if _suit_picker.disabled or _suit_picker.selected < 0:
+		return ""
+	return _suit_picker.get_item_text(_suit_picker.selected)
 
 func _queue_preview() -> void:
 	_repaint.start()
@@ -273,10 +329,43 @@ func _on_apply_set() -> void:
 	_rebind_slots()
 	_apply_to_preview()
 
+## Turning armor ON puts the first suit on straight away rather than showing
+## four empty slots: the switch is meant to answer "what does he look like in
+## armor", and nothing happening reads as a broken checkbox.
+func _on_armor_toggled(on: bool) -> void:
+	_armor_box.visible = on
+	if on:
+		if not _definition.wears_armor():
+			_fill_armor(_definition, _selected_suit())
+	else:
+		_definition.clear_armor()
+	_rebind_slots()
+	_apply_to_preview()
+
+func _on_apply_suit() -> void:
+	var suit := _selected_suit()
+	if suit.is_empty():
+		return
+	_fill_armor(_definition, suit)
+	_rebind_slots()
+	_apply_to_preview()
+
+## Every armor slot from one suit. An empty suit name strips the layer, which is
+## what the switch going off means.
+func _fill_armor(def: NpcDefinition, suit: String) -> void:
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var part := def.get_part(slot)
+		var models := NpcRig.list_parts(slot, suit) if not suit.is_empty() else PackedStringArray()
+		part.model_path = models[0] if not models.is_empty() else ""
+		part.colors = PackedColorArray()
+		part.tint = Color.WHITE
+
 func _on_randomise() -> void:
 	var category := _selected_set()
 	_fill_from_set(_definition, category, true)
-	for slot: String in NpcDefinition.SLOTS:
+	# Armor is left ON or OFF as it was — the dice pick a character, not whether
+	# he is a soldier — but a suit he IS wearing gets recoloured with the rest.
+	for slot: String in NpcDefinition.ALL_SLOTS:
 		var part := _definition.get_part(slot)
 		if part.model_path.is_empty():
 			continue
@@ -298,7 +387,8 @@ func _on_randomise() -> void:
 func _on_rescan() -> void:
 	NpcRig.clear_cache()
 	_refresh_sets()
-	for slot: String in NpcDefinition.SLOTS:
+	_refresh_suits()
+	for slot: String in NpcDefinition.ALL_SLOTS:
 		_slots[slot].refresh_parts()
 	_rebind_slots()
 	_apply_to_preview()

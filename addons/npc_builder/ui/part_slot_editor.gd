@@ -28,6 +28,8 @@ func setup(for_slot: String) -> void:
 
 	var title := Label.new()
 	title.text = for_slot.capitalize()
+	if NpcDefinition.is_armor(for_slot):
+		title.tooltip_text = "Worn over the %s" % NpcDefinition.covers(for_slot)
 	title.add_theme_font_size_override("font_size", 15)
 	add_child(title)
 
@@ -97,7 +99,9 @@ func refresh_parts() -> void:
 	_picker.clear()
 	_picker.add_item("(none)")
 	_picker.set_item_metadata(0, "")
-	for category in NpcRig.list_categories():
+	# An armor slot lists SUITS, a skin slot lists character sets — the two
+	# libraries never mix, so a helmet can't be picked as a head.
+	for category in NpcRig.categories_for(slot):
 		var models := NpcRig.list_parts(slot, category)
 		if models.is_empty():
 			continue

@@ -21,6 +21,11 @@ extends RefCounted
 ## Assets/Models/Entity/Humanoid/VoxelNpc/Parts/<Slot>/ works with no metadata.
 
 const PARTS_ROOT := "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/"
+## Armor lives in its OWN library rather than as another character set. A suit
+## is not a family of villager: filed under Parts/ it would show up in the set
+## picker, and "use whole set" would build a walking empty suit with no head,
+## no hands and no one inside it.
+const ARMOR_ROOT := "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/"
 const MODEL_EXTS := ["gltf", "glb", "obj", "res", "scn", "tscn"]
 
 ## Which bones each slot is allowed to bind to. Restricting per slot is what
@@ -61,23 +66,33 @@ static func clear_cache() -> void:
 ## Part models are filed Parts/<Category>/<Slot>/, so a whole character family
 ## ("Base", "Undead", ...) is one folder and shows up in the builder as its own
 ## section. Slots can still be mixed across categories.
-static func list_categories() -> PackedStringArray:
+static func list_categories(armor := false) -> PackedStringArray:
 	var out := PackedStringArray()
-	if DirAccess.dir_exists_absolute(PARTS_ROOT):
-		for d in DirAccess.get_directories_at(PARTS_ROOT):
+	var root := ARMOR_ROOT if armor else PARTS_ROOT
+	if DirAccess.dir_exists_absolute(root):
+		for d in DirAccess.get_directories_at(root):
 			out.append(d)
 	out.sort()
 	return out
 
+## The sets a given slot can be filled from: armor suits for an armor slot,
+## character families for a skin one. Menus ask this instead of choosing a
+## library themselves.
+static func categories_for(slot: String) -> PackedStringArray:
+	return list_categories(NpcDefinition.is_armor(slot))
+
+## An armor slot's models sit in its OWN library under the folder of the slot
+## they cover — Armor/<Suit>/Head/ holds what goes over Parts/<Set>/Head/.
 static func slot_dir(category: String, slot: String) -> String:
-	return "%s%s/%s/" % [PARTS_ROOT, category, slot.capitalize()]
+	var root := ARMOR_ROOT if NpcDefinition.is_armor(slot) else PARTS_ROOT
+	return "%s%s/%s/" % [root, category, NpcDefinition.covers(slot).capitalize()]
 
 ## Every model available for a slot, as res:// paths; all categories unless one
 ## is named. Editor-side only -- a built NPC stores the path it chose and loads
 ## that directly.
 static func list_parts(slot: String, category := "") -> PackedStringArray:
 	var out := PackedStringArray()
-	var categories := PackedStringArray([category]) if category != "" else list_categories()
+	var categories := PackedStringArray([category]) if category != "" else categories_for(slot)
 	for cat in categories:
 		var dir := slot_dir(cat, slot)
 		if not DirAccess.dir_exists_absolute(dir):
@@ -89,9 +104,21 @@ static func list_parts(slot: String, category := "") -> PackedStringArray:
 	return out
 
 static func category_of(model_path: String) -> String:
-	if not model_path.begins_with(PARTS_ROOT):
-		return ""
-	return model_path.trim_prefix(PARTS_ROOT).get_slice("/", 0)
+	for root in [PARTS_ROOT, ARMOR_ROOT]:
+		if model_path.begins_with(root):
+			return model_path.trim_prefix(root).get_slice("/", 0)
+	return ""
+
+## What a slot's mesh is called under the skeleton: "feet" -> "Feet",
+## "feet_armor" -> "FeetArmor". NOT String.capitalize(), which turns the second
+## one into "Feet Armor" — a name with a space in it no longer says which slot
+## it came from, and finding a part by its slot is how everything downstream
+## (the tests, anything reaching for a piece) does it.
+static func mesh_name(slot: String) -> String:
+	var out := ""
+	for chunk in slot.split("_", false):
+		out += chunk.substr(0, 1).to_upper() + chunk.substr(1)
+	return out
 
 ## "skeleton_head.gltf" -> "Skeleton Head", for menus.
 static func part_title(model_path: String) -> String:
@@ -113,7 +140,7 @@ static func palette_of(model_path: String) -> PackedColorArray:
 static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 	var parts := {}
 	var asked := 0
-	for slot: String in NpcDefinition.SLOTS:
+	for slot: String in NpcDefinition.ALL_SLOTS:
 		var spec: NpcPart = def.get_part(slot)
 		var path := spec.model_path if spec else ""
 		if not path.is_empty():
@@ -147,7 +174,7 @@ static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 	# painting the same cell means two coincident surfaces fighting over every
 	# pixel. Slot order decides who wins: the torso beats the arms laid over it.
 	var claimed := {}
-	for slot: String in NpcDefinition.SLOTS:
+	for slot: String in NpcDefinition.ALL_SLOTS:
 		if not parts.has(slot):
 			continue
 		var mi := _build_mesh(slot, parts[slot], def.get_part(slot),
@@ -155,7 +182,7 @@ static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 				layout["voxel_scale"], claimed)
 		if mi == null:
 			continue
-		mi.name = slot.capitalize()
+		mi.name = mesh_name(slot)
 		mi.skin = skin
 		skeleton.add_child(mi)
 	return layout
@@ -305,6 +332,16 @@ static func _layout(def: NpcDefinition, parts: Dictionary) -> Dictionary:
 		var arms_centre: Vector3 = metrics["arms"]["centre"]
 		arms_centre.y = (metrics["body"]["centre"] as Vector3).y
 		metrics["arms"]["centre"] = arms_centre
+	# Armor is the same idea taken all the way: a plate is drawn IN PLACE over
+	# the part it covers -- same Goxel grid, a voxel out on each side -- so it
+	# takes that part's centre wholesale instead of being re-centred on its own
+	# bounding box, which would slide a breastplate off the chest it was drawn
+	# around. The fit is then exactly what the artist drew, not something the rig
+	# has second-guessed. Arms armor inherits the torso rebase above with it.
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var under := NpcDefinition.covers(slot)
+		if metrics.has(slot) and metrics.has(under):
+			metrics[slot]["centre"] = metrics[under]["centre"]
 
 	var feet_h: float = metrics["feet"]["size"].y if metrics.has("feet") else 0.0
 	var body_h: float = metrics["body"]["size"].y if metrics.has("body") else 0.0
@@ -314,13 +351,26 @@ static func _layout(def: NpcDefinition, parts: Dictionary) -> Dictionary:
 	# Arms share the body's base: the T-bar model overlaps the torso instead of
 	# stacking on it.
 	var stack := {"feet": 0.0, "body": feet_h, "arms": feet_h, "head": feet_h + body_h}
+	# Armor stands on the same step as what it covers -- and note that NOTHING
+	# on the armor layer reached feet_h/body_h/head_h above, which is what keeps
+	# a helmet from making the character two voxels taller.
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		stack[slot] = stack[NpcDefinition.covers(slot)]
 
 	var part_xf := {}
 	for slot: String in parts:
 		var spec: NpcPart = def.get_part(slot)
 		var m: Dictionary = metrics[slot]
+		# An armor piece's own scale is RELATIVE to the part it covers, so
+		# scaling a body carries its plate with it instead of leaving the suit
+		# behind at its original size.
+		var part_scale := spec.scale
+		if NpcDefinition.is_armor(slot):
+			var under: NpcPart = def.get_part(NpcDefinition.covers(slot))
+			if under != null:
+				part_scale *= under.scale
 		var xf := Transform3D(Basis.IDENTITY, -(m["centre"] as Vector3))
-		xf = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * spec.scale), Vector3.ZERO) * xf
+		xf = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * part_scale), Vector3.ZERO) * xf
 		xf = Transform3D(yaw, Vector3.ZERO) * xf
 		xf = Transform3D(Basis.IDENTITY, spec.offset + Vector3.UP * stack[slot]) * xf
 		part_xf[slot] = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * voxel_scale), Vector3.ZERO) * xf
@@ -614,7 +664,9 @@ static func _build_mesh(slot: String, data: Dictionary, spec: NpcPart, xf: Trans
 		skeleton: Skeleton3D, segments: Dictionary, voxel_scale: float,
 		claimed: Dictionary) -> MeshInstance3D:
 	var candidates: Array[int] = []
-	for bone: String in BIND_SETS[slot]:
+	# Armor binds to the bones of the part it covers: a pauldron rides the arm
+	# it is strapped to, and there is no such thing as an armor bone.
+	for bone: String in BIND_SETS[NpcDefinition.covers(slot)]:
 		var i := skeleton.find_bone(bone)
 		if i >= 0 and segments.has(i):
 			candidates.append(i)

@@ -10,6 +10,7 @@ extends Node
 ## Prints NPCTEST RESULT=PASS/FAIL and exits with the matching code.
 
 const Writer := preload("res://addons/npc_builder/io/npc_writer.gd")
+const SlotEditor := preload("res://addons/npc_builder/ui/part_slot_editor.gd")
 const TEST_NPC_NAME := "Zz Builder Test Npc"
 
 var _failures: PackedStringArray = []
@@ -22,6 +23,10 @@ func _ready() -> void:
 		_check_set(category)
 	for category in NpcRig.list_categories():
 		_check_no_coincident_surfaces(category)
+	_check_armor_library()
+	_check_armor_is_a_layer()
+	_check_armor_fits_what_it_covers()
+	_check_armor_recolours()
 	_check_reproportioning()
 	_check_rebuild_is_stable()
 	_check_parts_line_up_in_depth()
@@ -115,7 +120,7 @@ func _check_set(category: String) -> void:
 			_expect(verts.size() > 0, "%s #%d %s is empty" % [category, index, slot])
 			_expect(colours.size() == verts.size(),
 					"%s #%d %s has no per-vertex colour" % [category, index, slot])
-			var allowed: Array = NpcRig.BIND_SETS[slot]
+			var allowed: Array = NpcRig.BIND_SETS[NpcDefinition.covers(slot)]
 			var stray := ""
 			var bad_weight := false
 			for i in verts.size():
@@ -158,6 +163,16 @@ func _check_no_coincident_surfaces(category: String) -> void:
 	if not _expect(visual.skeleton != null, "%s overlap test built no skeleton" % category):
 		_drop(visual)
 		return
+	var found := _coincident_voxels(visual)
+	_expect(int(found["count"]) == 0,
+			"%s has %d voxels drawn by two parts at once (%s) -- they will z-fight"
+					% [category, found["count"], found["example"]])
+	_drop(visual)
+
+## How many voxels of a rigged NPC are painted by two parts at once, and one
+## example of it. Shared so the armoured case is measured exactly the same way
+## as the bare one.
+func _coincident_voxels(visual: NpcVisual) -> Dictionary:
 	var scale: float = visual.layout["voxel_scale"]
 	var owner_of := {}
 	var clashes := 0
@@ -176,9 +191,207 @@ func _check_no_coincident_surfaces(category: String) -> void:
 				example = "%s over %s" % [mi.name, owner_of[cell]]
 			else:
 				owner_of[cell] = mi.name
-	_expect(clashes == 0,
-			"%s has %d voxels drawn by two parts at once (%s) -- they will z-fight"
-					% [category, clashes, example])
+	return {"count": clashes, "example": example}
+
+## Puts a whole suit on a definition, exactly as the builder's switch does.
+func _wear(def: NpcDefinition, suit: String) -> void:
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var models := NpcRig.list_parts(slot, suit)
+		if not models.is_empty():
+			def.get_part(slot).model_path = models[0]
+
+## Every armor mesh on a rigged NPC, keyed by its slot.
+func _armor_meshes(visual: NpcVisual) -> Dictionary:
+	var out := {}
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var mi := _mesh_named(visual, slot)
+		if mi != null:
+			out[slot] = mi
+	return out
+
+## A part by the slot it came from — the mesh is named for its slot, which is
+## the only reason this can be asked at all.
+func _mesh_named(visual: NpcVisual, slot: String) -> MeshInstance3D:
+	return visual.skeleton.get_node_or_null(NpcRig.mesh_name(slot)) as MeshInstance3D
+
+## Vertex colours come back out of an ArrayMesh quantised to 8 bits a channel,
+## so a colour that did survive the trip is still a step or two off what went
+## in. Anything inside half a step is the same colour.
+func _same_colour(a: Color, b: Color) -> bool:
+	return absf(a.r - b.r) < 0.004 and absf(a.g - b.g) < 0.004 \
+			and absf(a.b - b.b) < 0.004 and absf(a.a - b.a) < 0.004
+
+## The armor library is its own thing, filed apart from the character sets so a
+## suit can never turn up in the set picker as a family of villager.
+func _check_armor_library() -> void:
+	var suits := NpcRig.list_categories(true)
+	_expect(suits.has("Armor1"), "the Armor1 suit is missing from the armor library")
+	_expect(not NpcRig.list_categories().has("Armor1"),
+			"Armor1 is showing up as a CHARACTER set — it would build an empty walking suit")
+	for suit in suits:
+		for slot: String in NpcDefinition.ARMOR_SLOTS:
+			var models := NpcRig.list_parts(slot, suit)
+			if not _expect(not models.is_empty(), "the %s suit has no %s models" % [suit, slot]):
+				continue
+			for path in models:
+				var palette := NpcRig.palette_of(path)
+				_expect(not palette.is_empty(), "%s has no readable palette" % path)
+				# The point of the limit: at or under it the builder draws one
+				# colour picker per palette entry, so the suit can be recoloured
+				# piece by piece instead of only being tinted as a whole.
+				_expect(palette.size() <= SlotEditor.SWATCH_LIMIT,
+						"%s has %d palette entries, over the %d swatches the builder shows — it could only be tinted"
+								% [path, palette.size(), SlotEditor.SWATCH_LIMIT])
+		# a suit has to be complete, for the same reason a character set does
+		_expect(NpcRig.list_parts("head_armor", suit).size() > 0
+				and NpcRig.list_parts("body_armor", suit).size() > 0
+				and NpcRig.list_parts("arms_armor", suit).size() > 0
+				and NpcRig.list_parts("feet_armor", suit).size() > 0,
+				"the %s suit is missing a piece" % suit)
+
+## Armor is worn OVER a character, so putting a suit on must add meshes and
+## change NOTHING about the character underneath. A helmet that makes an NPC
+## two voxels taller is the failure this exists to catch: every part's height
+## feeds the stack the skeleton is fitted to, and armor must stay out of it.
+func _check_armor_is_a_layer() -> void:
+	var bare := _spawn(_definition_for("Base"))
+	var armoured_def := _definition_for("Base")
+	_wear(armoured_def, "Armor1")
+	var armoured := _spawn(armoured_def)
+	if not _expect(bare.skeleton != null and armoured.skeleton != null,
+			"the armor layer test built no skeleton"):
+		_drop(bare)
+		_drop(armoured)
+		return
+
+	_expect(armoured_def.wears_armor(), "a definition wearing a suit says it is unarmoured")
+	var meshes := armoured.skeleton.find_children("*", "MeshInstance3D", false, false)
+	_expect(meshes.size() == NpcDefinition.ALL_SLOTS.size(),
+			"an armoured NPC rigged %d parts, expected %d"
+					% [meshes.size(), NpcDefinition.ALL_SLOTS.size()])
+
+	for key in ["crown", "hip_y", "neck_y", "arm_y", "voxel_scale"]:
+		_expect(is_equal_approx(float(bare.layout[key]), float(armoured.layout[key])),
+				"putting armor on moved %s from %.4f to %.4f — the suit is feeding the height stack"
+						% [key, bare.layout[key], armoured.layout[key]])
+	var drift := 0.0
+	for i in bare.skeleton.get_bone_count():
+		drift = maxf(drift, bare.skeleton.get_bone_global_rest(i).origin.distance_to(
+				armoured.skeleton.get_bone_global_rest(i).origin))
+	_expect(drift < 0.0001, "armor reproportioned the skeleton by %.4fm" % drift)
+
+	# and it rides the bones of what it covers: a pauldron follows the arm
+	var plates := _armor_meshes(armoured)
+	_expect(plates.size() == NpcDefinition.ARMOR_SLOTS.size(),
+			"only %d of %d armor pieces rigged" % [plates.size(), NpcDefinition.ARMOR_SLOTS.size()])
+	for slot: String in plates:
+		var mi: MeshInstance3D = plates[slot]
+		var allowed: Array = NpcRig.BIND_SETS[NpcDefinition.covers(slot)]
+		var arrays := mi.mesh.surface_get_arrays(0)
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var stray := ""
+		for i in (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size():
+			var bone := armoured.skeleton.get_bone_name(bones[i * 4])
+			if not allowed.has(bone):
+				stray = bone
+		_expect(stray.is_empty(), "%s is bound to %s, which is not in the %s bind set"
+				% [slot, stray, NpcDefinition.covers(slot)])
+	_check_animation_drives(armoured, "armoured Base")
+
+	# A plate and the skin under it must not both paint the same voxel — armor is
+	# the likeliest place for it, since a suit is drawn against the body it goes
+	# over and can easily be exported with part of that body still in it.
+	var found := _coincident_voxels(armoured)
+	_expect(int(found["count"]) == 0,
+			"an armoured NPC draws %d voxels twice (%s) -- they will z-fight"
+					% [found["count"], found["example"]])
+
+	# taking the suit off leaves the character exactly as it was
+	armoured_def.clear_armor()
+	_expect(not armoured_def.wears_armor(), "clear_armor left something on")
+	armoured.rebuild(armoured_def)
+	_expect(armoured.skeleton.find_children("*", "MeshInstance3D", false, false).size()
+			== NpcDefinition.SLOTS.size(), "taking the armor off left its meshes behind")
+	_drop(bare)
+	_drop(armoured)
+
+## A plate is drawn in place around the part it covers, so once rigged it has to
+## still be AROUND it: concentric, and wrapping it left-to-right and
+## front-to-back. This is what catches a helmet that has been re-centred onto
+## its own bounding box and slid off the head.
+func _check_armor_fits_what_it_covers() -> void:
+	var def := _definition_for("Base")
+	_wear(def, "Armor1")
+	var visual := _spawn(def)
+	if not _expect(visual.skeleton != null, "the armor fit test built no skeleton"):
+		_drop(visual)
+		return
+	var voxel: float = visual.layout["voxel_scale"]
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var plate := _mesh_named(visual, slot)
+		var skin := _mesh_named(visual, NpcDefinition.covers(slot))
+		if not _expect(plate != null and skin != null, "%s or what it covers did not rig" % slot):
+			continue
+		var pa: AABB = plate.mesh.get_aabb()
+		var sa: AABB = skin.mesh.get_aabb()
+		var offset := (pa.get_center() - sa.get_center()).length() / voxel
+		_expect(offset < 1.5,
+				"%s sits %.1f voxels off the centre of the %s it is worn over"
+						% [slot, offset, NpcDefinition.covers(slot)])
+		# it wraps horizontally — a shell is wider than what is inside it
+		_expect(pa.size.x >= sa.size.x - 0.001 and pa.size.z >= sa.size.z - 0.001,
+				"%s (%.2f x %.2f) is narrower than the %s inside it (%.2f x %.2f)"
+						% [slot, pa.size.x, pa.size.z, NpcDefinition.covers(slot),
+								sa.size.x, sa.size.z])
+		_expect(pa.intersects(sa), "%s does not overlap the %s at all — it is floating"
+				% [slot, NpcDefinition.covers(slot)])
+	_drop(visual)
+
+## Recolouring the suit is the whole point of it being data: every armor slot
+## carries its own palette overrides and its own tint, and neither may leak into
+## the character wearing it.
+func _check_armor_recolours() -> void:
+	var def := _definition_for("Base")
+	_wear(def, "Armor1")
+	var plate_red := Color(0.85, 0.1, 0.12)
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var part := def.get_part(slot)
+		var colours := PackedColorArray()
+		for _i in NpcRig.palette_of(part.model_path).size():
+			colours.append(plate_red)
+		part.colors = colours
+	var visual := _spawn(def)
+	if not _expect(visual.skeleton != null, "the armor colour test built no skeleton"):
+		_drop(visual)
+		return
+	for slot: String in NpcDefinition.ARMOR_SLOTS:
+		var mi := _mesh_named(visual, slot)
+		if not _expect(mi != null, "%s did not rig" % slot):
+			continue
+		var painted := true
+		for c: Color in (mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray):
+			if not _same_colour(c, plate_red):
+				painted = false
+		_expect(painted, "%s ignored its colour overrides" % slot)
+	# the character underneath kept its own colours
+	var body := _mesh_named(visual, "body")
+	var leaked := false
+	for c: Color in (body.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray):
+		if _same_colour(c, plate_red):
+			leaked = true
+	_expect(not leaked, "recolouring the armor also repainted the body under it")
+
+	# ...and a tint on top of that reaches the mesh too, which is what a
+	# hand-shaded suit would have to use
+	def.get_part("body_armor").tint = Color(0.2, 0.4, 1.0)
+	visual.rebuild(def)
+	var tinted := _mesh_named(visual, "body_armor")
+	var expected := plate_red * Color(0.2, 0.4, 1.0)
+	var ok := true
+	for c: Color in (tinted.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray):
+		if not _same_colour(c, expected):
+			ok = false
+	_expect(ok, "the armor tint did not reach the mesh")
 	_drop(visual)
 
 ## The skeleton must end up shaped like the voxel art, not like Rouge.
@@ -399,8 +612,60 @@ func _check_rouge_still_builds() -> void:
 	var info := rouge.get_attack_info(false, 0)
 	_expect(float(info["duration"]) > 0.0, "RougeVisual reports no attack duration")
 	_check_sword_clips(rouge)
+	_check_long_idle(rouge)
 	remove_child(rouge)
 	rouge.free()
+
+## Standing still for IDLE_LONG_AFTER drops the character into the second idle
+## pose, and ANY movement puts them back to the first. Driven through tick()
+## with the deltas a frame would bring, because the clock lives inside it —
+## reading the constant back would test nothing.
+func _check_long_idle(vis: HumanoidVisual) -> void:
+	var wait: float = HumanoidVisual.IDLE_LONG_AFTER
+	_expect(vis.clip_lengths.has("idle_long"), "the long idle clip was never built")
+
+	# 1. it is the short idle right up to the moment, not before it
+	vis.tick(0.0, "idle")
+	_expect(vis._current_key == "idle", "standing still should start on 'idle'")
+	_tick_for(vis, "idle", wait - 1.0)
+	_expect(vis._current_key == "idle",
+			"'idle_long' came up after %.0fs, before the %.0fs it waits for"
+					% [wait - 1.0, wait])
+
+	# 2. and the long one once the wait is up
+	_tick_for(vis, "idle", 1.5)
+	_expect(vis._current_key == "idle_long",
+			"still on '%s' after %.0fs stood still" % [vis._current_key, wait + 0.5])
+
+	# 3. one step resets it — the clock is time spent doing nothing, not time
+	# since the character last idled
+	vis.tick(0.1, "run", 0.0, 1.0)
+	_tick_for(vis, "idle", 1.0)
+	_expect(vis._current_key == "idle",
+			"moving did not put the character back on the short idle")
+
+	# 4. with a blade in hand there is one standing pose, so the swap is
+	# invisible rather than yanking the sword idle away
+	vis.set_held_item("iron_sword")
+	_tick_for(vis, "idle", wait + 1.5)
+	_expect(vis._current_key == "sword_idle",
+			"a sword in hand should stay on 'sword_idle', got '%s'" % vis._current_key)
+	vis.set_held_item("")
+
+	# 5. and a character built without the clip (a villager: idle/walk/run) just
+	# keeps standing there instead of erroring on a clip it never loaded
+	_expect(not HumanoidVisual.CLIPS.keys().is_empty(), "the clip table is empty")
+	_expect(not NpcVisual.NPC_CLIPS.has("idle_long"),
+			"villagers now load the fighting idle — they have no business in it")
+
+	vis.tick(0.1, "run", 0.0, 1.0) # leave it as it was found
+
+func _tick_for(vis: HumanoidVisual, anim: String, seconds: float) -> void:
+	var step := 1.0 / 60.0
+	var left := seconds
+	while left > 0.0:
+		vis.tick(minf(step, left), anim)
+		left -= step
 
 ## A sword in hand swaps the clip set. The sliced swings come out of one long
 ## combo take, so a bad slice shows up as a zero-length clip rather than an

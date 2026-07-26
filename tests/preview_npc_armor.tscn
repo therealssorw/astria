@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cnpcarmorprev0astria"]
+
+[ext_resource type="Script" path="res://tests/preview_npc_armor.gd" id="1_armorprev"]
+
+[node name="NpcArmorPreview" type="Node3D"]
+script = ExtResource("1_armorprev")
