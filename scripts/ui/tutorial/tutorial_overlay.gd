@@ -144,13 +144,16 @@ func _build() -> void:
 	_hint.custom_minimum_size.x = POPUP_WIDTH
 	vbox.add_child(_hint)
 
-	# same corner and colour as the quest heading, one line below it
+	# same corner and colour as the quest heading, one line below it. Measured
+	# off the tracker rather than typed: the heading is a PANEL now, and a
+	# banner at a hardcoded y would sit on top of it the moment that panel's
+	# height changed.
 	_banner = Label.new()
 	_banner.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_banner.offset_left = -324
-	_banner.offset_right = -24
-	_banner.offset_top = 114
-	_banner.offset_bottom = 138
+	_banner.offset_right = -QuestTracker.MARGIN.x
+	_banner.offset_top = QuestTracker.MARGIN.y + QuestTracker.SIZE.y + 8.0
+	_banner.offset_bottom = _banner.offset_top + 24.0
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_banner.add_theme_font_size_override("font_size", 16)
 	_banner.add_theme_color_override("font_color", Color(0.93, 0.93, 0.95))

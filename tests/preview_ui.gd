@@ -57,6 +57,20 @@ func _ready() -> void:
 	await _shot("tutorial_popup")
 	tut.queue_free()
 
+	# The quest corner, on the harder of its two shapes: a counting quest, which
+	# is the longest line the panel ever has to hold. It reads the mirror, so
+	# setting it here is the whole setup — nothing is claimed to the server.
+	var tracker := QuestTracker.new()
+	add_child(tracker)
+	GameStats.quest = "kill_bandits"
+	GameStats.quest_kills = 7
+	GameStats.changed.emit()
+	await _shot("quest_tracker")
+	GameStats.quest = ""
+	GameStats.quest_kills = 0
+	GameStats.changed.emit()
+	tracker.queue_free()
+
 	print("PREVIEW saved=", ProjectSettings.globalize_path(OUT_DIR))
 	get_tree().quit()
 
