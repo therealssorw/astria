@@ -17,6 +17,11 @@ extends Node3D
 @export var spawn_radius := 3.5
 ## A spot is only used if nothing living is within this of it (metres).
 @export var spawn_clearance := 1.6
+## How far above the camp the ground ray starts. It has to clear a rise in the
+## terrain across `spawn_radius`, but stay UNDER anything the camp is pitched
+## beneath: the half-tent imports with collision, so a ray dropped from high
+## above finds its canvas before the floor and stands the bandit on the roof.
+@export var head_room := 1.5
 
 ## How many ring positions to try before settling for the roomiest of them.
 const PLACEMENT_TRIES := 8
@@ -83,18 +88,26 @@ func _nearest_body_distance(spot: Vector3) -> float:
 		nearest = minf(nearest, away.length())
 	return nearest
 
-## Drops a ray to put the bandit on the terrain surface. Characters are excluded
-## from the ray, or a spot with someone under it lands the bandit on their head.
+## Drops a ray to put the bandit on the ground under `pos`. It starts just over
+## the camp rather than high above it (see `head_room`), so a roof over the camp
+## is never mistaken for its floor. Characters are excluded from the ray too, or
+## a spot with someone under it lands the bandit on their head.
 func _ground_at(pos: Vector3) -> Vector3:
-	var space := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.create(
-		pos + Vector3.UP * 25.0, pos + Vector3.DOWN * 50.0)
 	var skip: Array[RID] = []
 	for node in get_tree().get_nodes_in_group("enemies") + get_tree().get_nodes_in_group("player"):
 		if node is CollisionObject3D:
 			skip.append((node as CollisionObject3D).get_rid())
-	query.exclude = skip
-	var hit := space.intersect_ray(query)
+	var hit := _ray_down(pos + Vector3.UP * head_room, skip)
+	if hit.is_empty():
+		# A camp sitting below the surface starts its ray inside the terrain and
+		# hits nothing, so fall back to dropping in from well above: back to the
+		# old behaviour, and a roof is the lesser problem when there is no floor.
+		hit = _ray_down(pos + Vector3.UP * 25.0, skip)
 	if hit.is_empty():
 		return pos
 	return hit.position + Vector3.UP * 0.2
+
+func _ray_down(from: Vector3, skip: Array[RID]) -> Dictionary:
+	var query := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 50.0)
+	query.exclude = skip
+	return get_world_3d().direct_space_state.intersect_ray(query)

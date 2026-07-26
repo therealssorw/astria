@@ -794,6 +794,17 @@ mixed pile.
   drifts living bandits out of each other's `separation_radius` every tick,
   idle or fighting. Anything that spawns or parks an NPC-shaped body should do
   the same rather than trusting collision alone.
+- The camp is pitched UNDER the half-tent, and buildings import with
+  `generate/physics`, so the ground ray starts `head_room` (1.5 m) over the
+  spawner instead of high above it — dropped from above it finds the canvas
+  first and stands the bandit on the roof. It falls back to the old high ray
+  when the near one hits nothing, which is a camp sunk below the surface.
+  Anything else that drops a body onto "the ground" indoors needs the same care.
+  Test: `--headless res://tests/test_bandit_spawner.tscn` (prints
+  `SPAWNTEST RESULT=PASS/FAIL`).
+- The spawner node itself wears the `quest_bandit_camp` group, so it IS the
+  "Drive off the bandits" target: move the camp in the editor and the HUD star
+  moves with it. Nothing in `QuestData` needs touching when the camp is moved.
 - Dedicated server: separate export preset "Windows Server" (custom feature
   `server`) -> `build/AstriaServer.exe`; it auto-hosts headlessly (see
   `build/run_server.bat`). Any build also accepts `--server [--port=N]`,
