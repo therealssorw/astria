@@ -325,9 +325,8 @@ mixed pile.
 - The gates are driven with REAL input events (`Input.parse_input_event`), not
   by setting `attacking`/`blocking` behind the game's back. That is the only
   reason the heavy-gate stall was caught — every flag-level test of it passed.
-- It hosts on its own port (27140, not `Net.DEFAULT_PORT`), so running it while
-  a game is up from the editor does not fail with "pawn never spawned" because
-  ENet could not bind.
+- Hosting and waiting for the pawn is `tests/helpers/test_host.gd`, shared by
+  every integration test that needs a world — see "Integration tests" below.
 
 ## Cinematic framing
 
@@ -702,6 +701,21 @@ mixed pile.
 - Integration tests live in `tests/` — plain scenes run headless, e.g.
   `--headless res://tests/test_gold_drops.tscn` (prints RESULT=PASS/FAIL
   and sets the exit code).
+- Any test that needs a world boots through `tests/helpers/test_host.gd`
+  (`TEST_HOST.new().boot(tree, "<band>")` -> the pawn, or null with the reason
+  in `.error`). Never hand-roll that loop again, and never host a test on
+  `Net.DEFAULT_PORT`:
+  - Each test gets its own BAND of ports (`PORTS` in that file) and the helper
+	walks it, retrying, until one binds. `Net.host_game` returns an Error and
+	does not change scene when ENet cannot bind, and a port stays held for a
+	moment after the previous run's process exits — which made roughly one run
+	in four of the back-to-back tests fail, always passing on the rerun.
+  - It waits on WALL CLOCK, not a frame count. Physics falls behind real time
+	while the island loads and grows its collision, so a frame budget measures
+	the load rather than the wait.
+  - It waits for each step of the boot separately — the bind, the scene swap,
+	the `Players` container, the pawn — so a failure names the step that never
+	happened instead of always saying "pawn never spawned".
 - Exports: presets in `export_presets.cfg`; templates installed under
   `%APPDATA%\Godot\export_templates\4.7.1.stable.steam`. Export with
   `--headless --export-release "Windows Client|Windows Server" <path>`.

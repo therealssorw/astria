@@ -18,6 +18,10 @@ func _ready() -> void:
 class Runner:
 	extends Node
 
+	## Hosting and waiting for the pawn is shared with the other integration
+	## tests, private band of ports and all.
+	const TEST_HOST := preload("res://tests/helpers/test_host.gd")
+
 	var _last_message := ""
 	var _last_ok := false
 
@@ -40,19 +44,10 @@ class Runner:
 		var tree := get_tree()
 		await tree.physics_frame
 		Net.trade_result.connect(_on_result)
-		Net.host_game("Tester")
-
-		var pawn: Node3D = null
-		for i in 900:
-			await tree.physics_frame
-			var world := tree.current_scene
-			if world and String(world.name) == "World":
-				var pn := world.get_node_or_null("Players")
-				if pn and pn.get_child_count() > 0:
-					pawn = pn.get_child(0)
-					break
+		var host := TEST_HOST.new()
+		var pawn: Node3D = await host.boot(tree, "teleport")
 		if pawn == null:
-			_fail("pawn never spawned")
+			_fail(host.error)
 			return
 
 		# 1. the destination is listed, but nothing in the level anchors it yet

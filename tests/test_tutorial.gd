@@ -31,10 +31,11 @@ class Runner:
 	extends Node
 
 	const ME := 1 # a listen server's own player is peer 1
-	## Not Net.DEFAULT_PORT: the test must not fight a game running from the
-	## editor for the port, or it fails with "pawn never spawned" and blames
-	## the tutorial for someone else playing.
-	const TEST_PORT := 27140
+	## Hosting and waiting for the pawn is shared with the other integration
+	## tests — including the private band of ports, which must not be
+	## Net.DEFAULT_PORT or the test fights a game running from the editor and
+	## then blames the tutorial for someone else playing.
+	const TEST_HOST := preload("res://tests/helpers/test_host.gd")
 
 	func _ready() -> void:
 		_run()
@@ -162,19 +163,10 @@ class Runner:
 	func _run() -> void:
 		var tree := get_tree()
 		await tree.physics_frame
-		Net.host_game("Tester", false, TEST_PORT)
-
-		var pawn: Node3D = null
-		for i in 900:
-			await tree.physics_frame
-			var world := tree.current_scene
-			if world and String(world.name) == "World":
-				var pn := world.get_node_or_null("Players")
-				if pn and pn.get_child_count() > 0:
-					pawn = pn.get_child(0)
-					break
+		var host := TEST_HOST.new()
+		var pawn: Node3D = await host.boot(tree, "tutorial")
 		if pawn == null:
-			_fail("pawn never spawned")
+			_fail(host.error)
 			return
 
 		# 1. joining lands in a private COPY OF THE ISLAND, not on the real one

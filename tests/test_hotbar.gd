@@ -17,6 +17,11 @@ func _ready() -> void:
 class Runner:
 	extends Node
 
+	## Hosting and waiting for the pawn is shared with the other integration
+	## tests, private band of ports and all — hosting on Net.DEFAULT_PORT is
+	## what made this test fight a game running from the editor.
+	const TEST_HOST := preload("res://tests/helpers/test_host.gd")
+
 	var _used: Array = [] # [item_id, message] from the server's use replies
 
 	func _ready() -> void:
@@ -32,19 +37,10 @@ class Runner:
 	func _run() -> void:
 		var tree := get_tree()
 		await tree.physics_frame
-		Net.host_game("Tester")
-
-		var pawn: Node3D = null
-		for i in 900:
-			await tree.physics_frame
-			var world := tree.current_scene
-			if world and String(world.name) == "World":
-				var pn := world.get_node_or_null("Players")
-				if pn and pn.get_child_count() > 0:
-					pawn = pn.get_child(0)
-					break
+		var host := TEST_HOST.new()
+		var pawn: Node3D = await host.boot(tree, "hotbar")
 		if pawn == null:
-			_fail("pawn never spawned")
+			_fail(host.error)
 			return
 		Net.item_used.connect(func(id: String, msg: String) -> void: _used.append([id, msg]))
 
