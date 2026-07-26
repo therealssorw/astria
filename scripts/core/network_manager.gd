@@ -38,6 +38,12 @@ const SHOP_RANGE_SLACK := 2.5
 ## gameplay, not a screen decoration.
 const HOTBAR_SLOTS := 9
 
+## How far a voice carries. The server relays a speech packet only to the peers
+## whose pawns are inside this of the speaker's — measured on its OWN copies of
+## both — and the listener's audio fades to nothing at exactly the same distance,
+## so the cut-off is never audible as a pop.
+const VOICE_RANGE := 24.0
+
 ## peer_id -> {"name", "kills", "deaths", "gold", "items", "hotbar", "hot_slot"}.
 ## Server-owned. "gold"/"items"/"hotbar"/"hot_slot" are private to their owner:
 ## they are stripped before the registry is broadcast, and each owner gets
@@ -70,6 +76,8 @@ var _player_bcast_accum := 0.0
 var _enemy_bcast_accum := 0.0
 var _vitals_accum := 0.0
 var _gold_accum := 0.0
+## Voice flood control, server-side: peer -> [window start msec, bytes spent].
+var _voice_spend := {}
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -124,6 +132,8 @@ func return_to_menu(message := "") -> void:
 	active = false
 	is_dedicated = false
 	players.clear()
+	_voice_spend.clear()
+	Voice.reset()
 	_remove_upnp_mapping(false) # the server is gone, close the router port
 	upnp_status = "inactive"
 	public_ip = ""
@@ -149,6 +159,8 @@ func _on_peer_disconnected(id: int) -> void:
 	if players.has(id):
 		print("[Net] %s left" % players[id]["name"])
 		players.erase(id)
+	_voice_spend.erase(id)
+	Voice.forget(id)
 	Tutorial.server_end(id, false) # their copy of the city goes with them
 	var pawn := _pawn(id)
 	if pawn:
@@ -274,6 +286,7 @@ func cl_remove_player(id: int) -> void:
 	var pawn := _pawn(id)
 	if pawn:
 		pawn.queue_free()
+	Voice.forget(id) # their voice hung on that pawn, and their name on the HUD
 
 ## Registry broadcast — the ONLY source of usernames/kills/deaths anywhere.
 ## Gold and items are stripped out (see _public_players); your own reach you
@@ -1015,6 +1028,96 @@ func _check_fell_off_world(pn: Node) -> void:
 		for e in en.get_children():
 			if not e.dead and e.global_position.y < KILL_Y:
 				e.take_damage(1e9, Vector3.ZERO, 0)
+
+# ---------------- voice chat ----------------
+
+## Owner -> server: a mouthful of speech (see VoiceCodec for the format).
+##
+## Unreliable on purpose. A packet is 50 ms of audio and stands alone, so a lost
+## one is a hole nobody can hear over the next word; sending voice reliably would
+## trade that for a stall on every retransmit, and speech that arrives late is
+## worse than speech that arrives with a gap in it.
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func sv_voice(packet: PackedByteArray) -> void:
+	if not multiplayer.is_server():
+		return
+	_relay_voice(multiplayer.get_remote_sender_id(), packet)
+
+## Server -> the peers standing close enough. `from_id` comes from the SERVER's
+## own view of who sent it, never from inside the packet, so a client cannot put
+## words in somebody else's mouth.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func cl_voice(from_id: int, packet: PackedByteArray) -> void:
+	Voice.on_voice(from_id, packet)
+
+## Called by Voice on the talker's machine. A listen server is its own relay, so
+## it goes through exactly the same routing rather than a shortcut of its own.
+func send_voice(packet: PackedByteArray) -> void:
+	if not active:
+		return
+	if multiplayer.is_server():
+		_relay_voice(multiplayer.get_unique_id(), packet)
+	else:
+		rpc_id(1, "sv_voice", packet)
+
+func _relay_voice(from_id: int, packet: PackedByteArray) -> void:
+	if not voice_accepts(from_id, packet):
+		return
+	for peer: int in voice_targets(from_id):
+		if peer == multiplayer.get_unique_id():
+			Voice.on_voice(from_id, packet) # the host hears it in-process
+		else:
+			rpc_id(peer, "cl_voice", from_id, packet)
+
+## SERVER: is this packet one the relay will carry at all? Size, and then a
+## budget per talker per second (VoiceCodec.MAX_BYTES_PER_SECOND).
+##
+## Voice itself cannot be validated — there is no way to tell speech from noise,
+## and it does not matter, because nothing in the game changes when somebody
+## talks. What CAN be abused is the relay: one patched client sending at ten
+## times the rate would cost the server bandwidth for every listener near it.
+## Overspend counts even though it is dropped, so a flooder stays cut off for the
+## rest of its second instead of getting a free packet whenever the window turns.
+func voice_accepts(from_id: int, packet: PackedByteArray) -> bool:
+	if not multiplayer.is_server():
+		return false
+	var n := packet.size()
+	if n == 0 or n > VoiceCodec.MAX_PACKET:
+		return false
+	var now := Time.get_ticks_msec()
+	var row: Array = _voice_spend.get(from_id, [now, 0])
+	if now - int(row[0]) >= 1000:
+		row = [now, 0]
+	var spent := int(row[1]) + n
+	_voice_spend[from_id] = [row[0], spent]
+	return spent <= VoiceCodec.MAX_BYTES_PER_SECOND
+
+## SERVER: who is near enough to hear peer `from_id` right now.
+##
+## Read off the server's own copy of every pawn (server_body_pos — the last
+## position it ACCEPTED, already speed-validated), never off anything a client
+## claims: who can hear you is not the speaker's decision to make, and a client
+## that could name its own audience could listen to a conversation across the
+## island. Players inside the tutorial need no special case — their copy of the
+## city is kilometres away, so the distance rules them out by itself.
+func voice_targets(from_id: int) -> Array[int]:
+	var out: Array[int] = []
+	if not multiplayer.is_server():
+		return out
+	var speaker := _pawn(from_id)
+	if speaker == null:
+		return out
+	var origin: Vector3 = speaker.server_body_pos()
+	var reach := VOICE_RANGE * VOICE_RANGE
+	for id: int in players:
+		if id == from_id:
+			continue # you never hear yourself
+		var pawn := _pawn(id)
+		if pawn == null:
+			continue
+		if origin.distance_squared_to(pawn.server_body_pos()) <= reach:
+			out.append(id)
+	return out
 
 # ---------------- combat protocol ----------------
 

@@ -113,4 +113,11 @@ func action_label(action: String) -> String:
 				Kind.XBOX: return "RT"
 				Kind.PLAYSTATION: return "R2"
 				_: return "F"
+		"voice_talk":
+			match kind:
+				Kind.XBOX: return "LS"
+				Kind.PLAYSTATION: return "L3"
+				_: return "V"
+		"voice_mode":
+			return "M" # keyboard only for now, like sprint
 	return action

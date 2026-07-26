@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cvo1cehatt3sv"]
+
+[ext_resource type="Script" path="res://tests/test_voice_chat.gd" id="1_test"]
+
+[node name="VoiceTest" type="Node3D"]
+script = ExtResource("1_test")
+
+[node name="Players" type="Node3D" parent="."]

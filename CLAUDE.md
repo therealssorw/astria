@@ -55,9 +55,9 @@ Current structure to follow and extend:
   in `scenes/entities/npc/built/`
 - `scripts/` — GDScript, grouped by domain: `entities/` (player, enemy,
   character visuals, `npc/` interaction + rigging), `ui/` (HUD, `dialog/`,
-  `theme/` — the palette every screen is built from), `combat/` (the rules two
-  fighters meet under, e.g. levels), `world/` (level/world logic), `core/`
-  (autoloads)
+  `voice/`, `theme/` — the palette every screen is built from), `combat/` (the
+  rules two fighters meet under, e.g. levels), `world/` (level/world logic),
+  `core/` (autoloads, plus `voice/` for the microphone and the wire format)
 - `addons/` — editor plugins (`npc_builder/`, `item_builder/`, `grass_brush/`,
   ...)
 - `tools/` — command-line asset pipeline scripts, e.g. `voxel/gox_to_gltf.py`
@@ -81,7 +81,8 @@ mixed pile.
   `hotbar_next` / `hotbar_prev` = ] and [ / R1 and L1, `use_item` = F / R2 —
   the SAME trigger as attack, so a swing is also a use (which is why the
   server's use replies carry no message yet), `cheat_menu` = Z / Options
-  (Menu).
+  (Menu), `voice_talk` = V / L3 (click the left stick), `voice_mode` = M, with
+  no pad button yet — like sprint and the scoreboard.
 - Picking an entry in any menu (dialog answers, shop rows, cheat rows, bag and
   hotbar slots) is `ui_accept`: on a pad strictly the bottom face button — PS5
   Cross, Xbox A, the same physical place — and E or Enter on a keyboard. The
@@ -549,6 +550,76 @@ mixed pile.
   Tab used to be a `lock_on` binding — it was removed there, so lock-on is
   middle-mouse / pad R3 only. D-pad up is also Godot's built-in `ui_up`;
   that only ever moves focus inside an open panel, so the two coexist.
+
+## Proximity voice chat
+
+- Hold V (L3 on a pad) and the players standing near you hear you. Their voices
+  come out of their bodies, so walking away from a conversation is how you leave
+  it. M switches between push-to-talk and an open mic, and the choice is
+  remembered in `user://settings.cfg` next to the username — the main menu has
+  the same switch, which is where it can be set BEFORE walking into a world with
+  a hot mic.
+- WHO HEARS YOU IS THE SERVER'S DECISION, and that is the whole security story.
+  A packet is sent to the server and nowhere else; the server measures the
+  distance on its OWN copy of both pawns (`Player.server_body_pos` — the last
+  position it accepted, already speed-validated) and relays only to the peers
+  inside `Net.VOICE_RANGE`. So a patched client can shout, but it cannot pick an
+  audience, and it cannot listen in on a conversation across the island: those
+  packets are never sent to it. `Net.voice_targets` is that decision and it is
+  the only place it is made.
+- Nothing about a voice is validated, because there is nothing to validate — no
+  amount of talking changes a single thing in the game. What CAN be abused is
+  the RELAY, so `Net.voice_accepts` caps a packet's size and gives each talker a
+  budget of bytes a second (`VoiceCodec.MAX_BYTES_PER_SECOND`). Overspend still
+  counts against the budget even though it is dropped, or a flooder would get a
+  free packet every time the window turned.
+- Players inside the tutorial need no special case at all: their copy of the
+  city is kilometres east, so the distance rules them out by itself.
+- `scripts/core/voice/voice_codec.gd` is the wire format: mono at
+  `VoiceCodec.RATE` (11025), one companded byte a sample — µ-law's curve in
+  floats, since both ends are this file and G.711's tables buy nothing. EVERY
+  PACKET STANDS ALONE, which is why a predictive codec is not used despite being
+  half the bandwidth: voice rides an unreliable channel, and one lost packet
+  would poison a predictor for as long as somebody kept talking. RATE is the
+  bandwidth dial — one byte a sample means RATE bytes a second per talker.
+- The same file owns the resampler, and its phase is kept ACROSS calls: the mic
+  hands over blocks at whatever the machine mixes at (44100 here, 48000 on
+  plenty of others, and not the game's choice), so a resampler that restarted at
+  each block would click on every seam.
+- `Voice` (autoload, `scripts/core/voice/voice_chat.gd`) owns the microphone and
+  the playback. The mic is an `AudioStreamMicrophone` on a bus of its own turned
+  down to -80 dB rather than MUTED — a capture is an EFFECT, and an inaudible
+  bus certainly still runs its effects. It needs `audio/driver/enable_input` in
+  `project.godot`, which is read ONCE at startup: with it off every other part
+  of voice chat works and nobody can talk.
+- The capture is drained every frame whether or not the mic is open. That is not
+  wasted work: a buffer left to fill up hands back the room's noise from a
+  minute ago the moment the button goes down, and then overflows.
+- A voice is played by an `AudioStreamGenerator` on an `AudioStreamPlayer3D`
+  parented to the SPEAKER'S PAWN (named `Voice` in their tree), so the 3D mix
+  does the proximity falloff for free and it follows them as they move. It fades
+  to nothing at exactly `Net.VOICE_RANGE`, which is where the server stops
+  relaying, so the cut-off is never audible as a pop. The node is rebuilt when
+  the pawn it hung on goes.
+- The HUD is `scripts/ui/voice/voice_overlay.gd`: a drawn microphone in the
+  bottom-left for your own mic (with a level meter, and struck through in red
+  when there is no microphone to talk into), and the SAME glyph over the head of
+  anybody being heard. Gold, because somebody talking is "pay attention". An
+  open mic draws its glyph even when quiet, on purpose — a hot mic the player
+  has forgotten about is the thing to avoid.
+- Test: `--headless res://tests/test_voice_chat.tscn` (prints
+  `VOICETEST RESULT=PASS/FAIL`) — the format, the resampler at three mix rates,
+  and then the routing end to end through the real listen-server relay: a
+  neighbour is heard, the same words from across the island are not, height
+  counts, a listener is placed by the SERVER's copy of its pawn and not its own
+  claim, nobody hears themselves, and a flooder is cut off. What it cannot
+  cover is the two-process RPC hop and whether any of it SOUNDS right — that
+  needs two machines and two microphones.
+- Eyeballing the HUD: `godot --path . res://tests/preview_voice.tscn` (NO
+  `--headless` — it renders, and a `_draw()` never runs without a window) saves
+  a shot of each state into `user://voice_preview`, and prints whether the
+  playback generator really built on a speaker's body. It is also the only
+  check that the overlay's drawing code runs at all.
 
 ## Quests
 
