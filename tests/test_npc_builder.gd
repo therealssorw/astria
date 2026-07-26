@@ -23,6 +23,8 @@ func _ready() -> void:
 		_check_set(category)
 	for category in NpcRig.list_categories():
 		_check_no_coincident_surfaces(category)
+	for category in NpcRig.list_categories():
+		_check_joins_are_capped(category)
 	_check_armor_library()
 	_check_armor_is_a_layer()
 	_check_armor_fits_what_it_covers()
@@ -201,6 +203,69 @@ func _coincident_voxels(visual: NpcVisual) -> Dictionary:
 				owner_of[cell] = mi.name
 	return {"count": clashes, "example": example}
 
+## Every join between two voxels on DIFFERENT bones has to carry a face.
+##
+## Voxel art has none where two voxels touch: Goxel culls it, and nothing needs
+## it while the pair cannot move apart. Rigid skinning moves them apart -- the
+## moment a joint bends there is no geometry on either side of the join and you
+## are looking straight through the character, which is the row of dark wedges
+## that used to open across the chest and down the arms of every built NPC. The
+## rig puts those faces back (NpcRig._add_seam_caps); this is what says it did.
+##
+## Checked on the REST pose on purpose: a join with no face is a hole whether or
+## not the clip happens to be pulling it open this frame, and rest is the one
+## pose every character is guaranteed to have.
+func _check_joins_are_capped(category: String) -> void:
+	var visual := _spawn(_definition_for(category))
+	if not _expect(visual.skeleton != null, "%s join test built no skeleton" % category):
+		_drop(visual)
+		return
+	var found := _open_joins(visual)
+	_expect(int(found["count"]) == 0,
+			"%s leaves %d joins between two bones with no face on them (e.g. %s) -- each one opens into the model as soon as it animates"
+					% [category, found["count"], found["example"]])
+	_drop(visual)
+
+## Joins between differently-boned neighbours that carry no face, and one
+## example. Shared so the armoured case is measured exactly as the bare one.
+##
+## Assumes parts at their default scale, so one voxel is two steps of the cell
+## grid -- which is what every definition in this file builds.
+func _open_joins(visual: NpcVisual) -> Dictionary:
+	var scale: float = visual.layout["voxel_scale"]
+	var bone_of := {}
+	var faces := {}
+	for mi: MeshInstance3D in visual.skeleton.find_children("*", "MeshInstance3D", false, false):
+		var arrays := mi.mesh.surface_get_arrays(0)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		for t in range(0, verts.size() - 2, 3):
+			# the square's own centre, not the triangle's -- either triangle of a
+			# square still spans the whole of it
+			var lo := verts[t].min(verts[t + 1]).min(verts[t + 2])
+			var hi := verts[t].max(verts[t + 1]).max(verts[t + 2])
+			var dir := norms[t].round()
+			var cell := Vector3i((((lo + hi) * 0.5 - dir * scale * 0.5) / scale * 2.0).round())
+			bone_of[cell] = bones[t * 4]
+			faces["%s|%s" % [cell, Vector3i(dir)]] = true
+
+	var open := 0
+	var example := ""
+	for cell: Vector3i in bone_of:
+		for axis in 3:
+			for step in [-1, 1]:
+				var dir := Vector3i.ZERO
+				dir[axis] = step
+				var beside: Vector3i = cell + dir * 2
+				if not bone_of.has(beside) or bone_of[beside] == bone_of[cell]:
+					continue
+				if faces.has("%s|%s" % [cell, dir]):
+					continue
+				open += 1
+				example = "%s facing %s" % [cell, dir]
+	return {"count": open, "example": example}
+
 ## Puts a whole suit on a definition, exactly as the builder's switch does.
 func _wear(def: NpcDefinition, suit: String) -> void:
 	for slot: String in NpcDefinition.ARMOR_SLOTS:
@@ -313,6 +378,15 @@ func _check_armor_is_a_layer() -> void:
 	_expect(int(found["count"]) == 0,
 			"an armoured NPC draws %d voxels twice (%s) -- they will z-fight"
 					% [found["count"], found["example"]])
+
+	# ...and every join across a bone still has to carry a face. Armor is where
+	# that bites hardest: a plate rides the bones of the part it covers from a
+	# voxel further out, so the same joint swings it further and any join left
+	# open gapes wider than it would on bare skin.
+	var open := _open_joins(armoured)
+	_expect(int(open["count"]) == 0,
+			"an armoured NPC leaves %d joins between two bones with no face on them (e.g. %s)"
+					% [open["count"], open["example"]])
 
 	# taking the suit off leaves the character exactly as it was
 	armoured_def.clear_armor()
