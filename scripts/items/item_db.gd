@@ -106,35 +106,35 @@ const ITEMS := {
 		"desc": "Scuffed through to the metal at the toe.",
 	},
 	"copper_helmet": {
-		"name": "Copper Helmet", "armor": "head", "level": 2, "price": 50,
+		"name": "Copper Helmet", "armor": "head", "level": 2, "price": 125,
 		"desc": "Soft, but it turns an edge once.",
 	},
 	"copper_chestplate": {
-		"name": "Copper Chestplate", "armor": "body", "level": 2, "price": 50,
+		"name": "Copper Chestplate", "armor": "body", "level": 2, "price": 125,
 		"desc": "Beaten from one sheet, and heavy for it.",
 	},
 	"copper_gauntlets": {
-		"name": "Copper Gauntlets", "armor": "arms", "level": 2, "price": 50,
+		"name": "Copper Gauntlets", "armor": "arms", "level": 2, "price": 125,
 		"desc": "Green at the knuckles already.",
 	},
 	"copper_boots": {
-		"name": "Copper Boots", "armor": "feet", "level": 2, "price": 50,
+		"name": "Copper Boots", "armor": "feet", "level": 2, "price": 125,
 		"desc": "Loud on stone, but they hold.",
 	},
 	"iron_helmet": {
-		"name": "Iron Helmet", "armor": "head", "level": 3, "price": 100,
+		"name": "Iron Helmet", "armor": "head", "level": 3, "price": 250,
 		"desc": "Forge-work worth wearing.",
 	},
 	"iron_chestplate": {
-		"name": "Iron Chestplate", "armor": "body", "level": 3, "price": 100,
+		"name": "Iron Chestplate", "armor": "body", "level": 3, "price": 250,
 		"desc": "Plate thick enough to argue with a sword.",
 	},
 	"iron_gauntlets": {
-		"name": "Iron Gauntlets", "armor": "arms", "level": 3, "price": 100,
+		"name": "Iron Gauntlets", "armor": "arms", "level": 3, "price": 250,
 		"desc": "Articulated, and barely worn in.",
 	},
 	"iron_boots": {
-		"name": "Iron Boots", "armor": "feet", "level": 3, "price": 100,
+		"name": "Iron Boots", "armor": "feet", "level": 3, "price": 250,
 		"desc": "You feel every step, and so does the ground.",
 	},
 }

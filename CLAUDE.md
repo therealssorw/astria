@@ -792,6 +792,45 @@ mixed pile.
 - Giving an NPC a shop is two steps: add a `ShopData.SHOPS` entry under its
   `dialog_id`, and give one dialog answer `"action": "open_shop"`. `ShopSystem`
   listens to `DialogSystem.action_triggered` and opens itself — no per-NPC code.
+- Armor is in the catalogue a PIECE at a time, and an armor item carries
+  `"armor"`: the slot it covers (`head`/`body`/`arms`/`feet`, the same four an
+  NPC's armor layer holds). `ItemDb.ARMOR_SETS` names the four that make each
+  suit, so "a full set" is one list rather than four ids written out wherever a
+  set is handed over or stocked — the forge's stock is built from it. What a
+  piece is WORTH is in "Levels" below.
+
+## Gifts
+
+- A gift is something an NPC hands over ONCE: nothing is asked for and nothing
+  is paid. `scripts/world/gift/gift_data.gd` is the catalogue — id ->
+  `{from, items}` — and giving an NPC one is that entry plus one dialog answer
+  carrying `"action": "take_gift:<id>"`. `GiftSystem` (autoload `Gifts`) turns
+  it into a request, exactly the way `QuestSystem` does for a quest. No NPC
+  needs code of its own.
+- Server-owned like anything else you could gain by cheating.
+  `Net.players[id]["gifts"]` is the record of what has been handed over; it
+  rides the private purse slice into `GameStats.gifts`, a read-only mirror.
+  `Net.server_grant_gift` marks it taken BEFORE the items go in, which is the
+  only thing between a client that asks twice in one frame and two suits of
+  armor. `from` is what the server checks — the conversation is local, so it
+  cannot see the offer was made, only whether your pawn is really standing at
+  that NPC. A gift with no `from` can only be handed over by the server itself.
+- WHAT "THE FIRST TIME YOU TALK TO SOMEBODY" MEANS. A conversation may carry
+  `"first_time": {"line": ..., "until_gift": ...}` — it opens on that line until
+  that gift has been taken, and on its ordinary `start` afterwards. The
+  condition is the SERVER's record, not anything the dialog box remembers, so it
+  survives a reconnect and a patched client that clears its mirror gets the line
+  back and no second suit. Bram the blacksmith is the one today: he hands over a
+  full flimsy suit the first time you speak to him.
+- It is per CONNECTION, not per character: nothing about a player is saved to
+  disk yet (`Net.players` is built fresh in `_make_entry` when you join), so
+  rejoining the server is a new first time. When saving arrives, `gifts` is one
+  of the fields that has to go in it.
+- Test: `--headless res://tests/test_gift.tscn` (prints
+  `GIFTTEST RESULT=PASS/FAIL`) — the catalogue, then the gift end to end on a
+  real listen server: refused from 80 m away, handed over at Bram's feet, all
+  four pieces arriving, asking twice getting nothing, and the conversation
+  opening on the gift line before and the greeting after.
 - `DialogSystem._on_answer` emits the action AFTER changing line, so an answer
   can both end the conversation and open something without `close()` undoing it.
 - Trading is server-authoritative (see "Server authority"). Gold and the bag
@@ -888,18 +927,54 @@ mixed pile.
 
 ## Levels
 
-- EVERY item has a `"level"` in `ItemDb.ITEMS` — it is the item's rank, and for
-  anything you swing it is also its damage. Today: wooden sword 1, copper 2,
-  iron 3. FISTS ARE LEVEL 0 (`ItemDb.FIST_LEVEL`), which is also what an empty
-  hand, an unknown id and an item that forgot the key all come out as, so a
-  missing level is never a free upgrade. Every enemy has a `level` too (an
-  `@export` on `enemy.gd`) and every bandit in the game is level 1.
+- EVERY item has a `"level"` in `ItemDb.ITEMS` — it is the item's rank. On
+  anything you swing it is the damage it deals; on armor it is the damage it
+  stops. Today: wooden sword and the flimsy suit 1, copper 2, iron 3, each suit
+  matched to the blade it is named for in BOTH level and price (20 / 125 / 250
+  a piece, so a full suit costs four blades). FISTS ARE LEVEL 0
+  (`ItemDb.FIST_LEVEL`), which is also what an empty hand, an unknown id and an
+  item that forgot the key all come out as, so a missing level is never a free
+  upgrade. Every enemy has a `level` too (an `@export` on `enemy.gd`) and every
+  bandit in the game is level 1.
 - The maths lives in exactly ONE file, `scripts/combat/combat_levels.gd`, and
   nothing else may invent a curve of its own or two weapons will disagree about
-  what a level is worth. It is two ladders that never have to know about each
+  what a level is worth. Three ladders that never have to know about each
   other: `weapon_power(level)` (fists = 1.0, +35% a level) over
-  `enemy_toughness(level)` (an ordinary level 1 enemy = 1.0, +35% a level
-  above), multiplied into the swing's damage.
+  `enemy_toughness(level)` (an ordinary level 1 enemy = 1.0, ±35% a level),
+  multiplied into the swing's damage; and `armor_protection(total)` dividing
+  what a blow takes off YOU.
+- An enemy's level moves what it SHRUGS OFF and what it HITS FOR, by the same
+  factor (`enemy_scale`, floored at `MIN_ENEMY_SCALE`). Level 1 is still exactly
+  the exported numbers, so nothing in the game changed — but a level 0 bandit
+  now dies quicker AND punches softer, which is what makes it a weaker enemy
+  rather than just a squishier one. Before this it only died quicker.
+- ARMOR IS THE DEFENSIVE HALF, and it is protection, never health: your 100 hp
+  is your 100 hp, a plate only makes each blow take less of it. Levels add up
+  across the four slots — `Net.armor_levels(peer_id)`, the BEST piece per slot,
+  so four helmets in a bag are not a suit — and `armor_protection(total)`
+  divides what lands by `1 + 0.09 * total`. A full flimsy suit (4) is about a
+  quarter less taken, copper (8) about two fifths, iron (12) roughly half.
+  Applied in `Player.server_take_damage` to the HEALTH only, AFTER the guard has
+  taken its cut and been charged for it: a plate stops a blow reaching you, it
+  does not make holding a shield up cheaper.
+- CARRIED IS WORN, for now. Nothing equips yet (the inventory's equipment slots
+  are still decoration), so picking a piece up is what puts it on.
+  `Net.armor_levels` is the ONE function that has to change when equipping
+  arrives — everything downstream asks it rather than looking in a bag itself.
+- WHAT THE LADDERS ARE TUNED TO, so a change to any number above can be checked
+  against something: carrying a full level 1 set — wooden sword and all four
+  flimsy pieces — you should be able to take on SIX level 0 enemies, or THREE
+  level 1 enemies, and finish almost dead either way. Twice as many of the
+  weaker ones for the same trip to the edge is what falling one level below the
+  baseline is worth: a level 0 enemy both dies quicker and hits softer, so it
+  costs about `0.65 * 0.65 = 0.42` of a level 1, and six of them come to about
+  three. Where that lands today: a level 1 bandit takes 8 light swings to put
+  down and costs you 14.7 a hit, so you can afford about 2 hits from each of
+  three; a level 0 takes 5 swings and costs 9.6, about 1.6 hits from each of
+  six. It is a TARGET, not a promise the code can keep — how much you actually
+  take depends on how well you block and dodge, and on the health you regen
+  between fights, neither of which a formula here can know. Play it, don't
+  assert it.
 - Both baselines are 1.0 today ON PURPOSE. Fists against a bandit scale
   *nothing*, so the exported numbers on `player.gd` and `enemy.gd` are still
   literally what happens — "base the stats off fists" and "the bandits are
@@ -925,7 +1000,12 @@ mixed pile.
   — every catalogue item declaring one, the curve's shape, and then real swings
   through `_do_attack_trace` with the server's bar loaded: bare hands dealing
   precisely `light_damage`, each blade beating the last, a level 3 enemy eating
-  part of a level 3 blade, and a levelled jab still not staggering.
+  part of a level 3 blade, and a levelled jab still not staggering. The
+  defensive half is in `--headless res://tests/test_gift.tscn`: each suit
+  letting less through than the last, every suit matching its blade in level and
+  price, a level 0 enemy costing roughly half a level 1, and the same blow
+  measured through the real `Player.server_take_damage` with the suit on and
+  with it gone.
 
 ## Discord join notifications
 
