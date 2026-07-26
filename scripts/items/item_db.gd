@@ -62,7 +62,7 @@ const ITEMS := {
 	"copper_sword": {
 		"name": "Copper Sword",
 		"level": 2,
-		"price": 50,
+		"price": 125,
 		"desc": "Soft metal, but it holds an edge.",
 		"icon": "res://Assets/Textures/Items/Weapons/copper_sword.png",
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.9, 1.08, 2.7),
@@ -71,7 +71,7 @@ const ITEMS := {
 	"iron_sword": {
 		"name": "Iron Sword",
 		"level": 3,
-		"price": 100,
+		"price": 250,
 		"desc": "Forge-work worth carrying.",
 		"icon": "res://Assets/Textures/Items/Weapons/iron_sword.png",
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(3.2, 1.15, 3.0),

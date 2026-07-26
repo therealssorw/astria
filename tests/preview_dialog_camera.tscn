@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://bqk3n8yv2rlx4"]
+
+[ext_resource type="Script" path="res://tests/preview_dialog_camera.gd" id="1_prev"]
+
+[node name="DialogCameraPreview" type="Node3D"]
+script = ExtResource("1_prev")
+
+[node name="Players" type="Node3D" parent="."]
+
+[node name="Light" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7, 0.7, 0, -0.7, 0.7, 0, 6, 0)

@@ -15,6 +15,7 @@ extends Control
 ## screen left open photobombs the next one.
 
 const OUT_DIR := "user://ui_preview"
+const TUTORIAL_OVERLAY := preload("res://scripts/ui/tutorial/tutorial_overlay.gd")
 ## Frames to let a screen settle before the shot — the dialog box types itself
 ## in, so a shot on frame one catches an empty panel.
 const SETTLE := 45
@@ -43,6 +44,18 @@ func _ready() -> void:
 	DialogSystem.start("blacksmith")
 	await _shot("dialog")
 	DialogSystem.close()
+
+	# The tutorial's control popup, POSED: it reads the live step off Tutorial and
+	# there is no tutorial running here, so its own tick is stopped and one step
+	# handed to it. This is the only way to judge "smaller, and further down".
+	var tut: Control = TUTORIAL_OVERLAY.new()
+	add_child(tut)
+	await get_tree().process_frame
+	tut.set_process(false)
+	tut._update_gate({"kind": "gate", "action": "block", "popup":
+			{"title": "GUARD", "body": "Hold it up and their punches cost you stamina instead of health."}})
+	await _shot("tutorial_popup")
+	tut.queue_free()
 
 	print("PREVIEW saved=", ProjectSettings.globalize_path(OUT_DIR))
 	get_tree().quit()
