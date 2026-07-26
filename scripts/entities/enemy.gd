@@ -103,11 +103,17 @@ var puppet := false   # true on clients: no AI, just replicated state
 ## belonging to that peer's private copy of the city: it only ever fights that
 ## player, and only that player is told it exists (see Net).
 var owner_peer := 0
-## Server-side hold, used by the tutorial's freeze gates: the bandit keeps its
-## pose and its footing but stops deciding, moving and swinging until it is let
-## go. Nothing extra is replicated for it — a frozen bandit simply stops
-## sending new positions, so every screen sees the same still fight.
+## Server-side hold, used by the tutorial's gates: the bandit stops DECIDING —
+## no chasing, no strafing, no circling — so the fight stays where it is while
+## one button is taught. It is not a statue: it still turns to face you, so it
+## reads as a bandit sizing you up rather than a prop.
 var frozen := false
+## ...and with this set it also finishes the walk into reach and swings, star
+## and all. A held bandit that cannot hit you teaches nothing — "block this"
+## needs a punch actually coming at you.
+var frozen_attacks := false
+## How fast a held bandit closes that last step: a menacing walk, not a charge.
+@export var held_step_mult := 0.45
 
 var health: float
 var dead := false
@@ -214,17 +220,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	# held by a tutorial gate: still solid, still hittable, just not thinking.
-	# The swing in progress is dropped rather than paused, so the player is
-	# never let go into a hit they could not have seen coming.
+	# held by a tutorial gate: still solid, still hittable, just not deciding
 	if frozen:
-		attacking = false
-		velocity.x = 0.0
-		velocity.z = 0.0
-		if not is_on_floor():
-			velocity.y -= _gravity() * delta
-		move_and_slide()
-		_animate(delta)
+		_tick_held(delta)
 		return
 
 	# staggered: no decisions, no guard, no swing — just stumble it out
@@ -403,6 +401,47 @@ func net_die() -> void:
 
 # ---------------- combat states ----------------
 
+## A bandit held by a tutorial gate. It keeps its ground and makes no
+## decisions, but it is awake: it watches you, and if the gate wants a punch to
+## block it takes the last step in and swings — wind-up star, damage and all,
+## on the same timings as a real one. Everything the state machine would do
+## (strafing, circling, chasing you across the island) stays switched off.
+func _tick_held(delta: float) -> void:
+	cooldown_left = maxf(0.0, cooldown_left - delta)
+	if not is_instance_valid(player) or player.get("dead"):
+		_acquire_player()
+	velocity.x = move_toward(velocity.x, 0.0, 25.0 * delta)
+	velocity.z = move_toward(velocity.z, 0.0, 25.0 * delta)
+	# rocked back or parried: wide open, exactly as it would be in a real fight
+	if stagger_left > 0.0:
+		stagger_left -= delta
+		attacking = false
+		if not is_on_floor():
+			velocity.y -= _gravity() * delta
+		move_and_slide()
+		_animate(delta)
+		return
+	if is_instance_valid(player):
+		aggroed = true # it has seen you: that is what being held in a fight is
+		_face_player(delta)
+		if attacking:
+			_tick_attack(delta)
+		elif frozen_attacks:
+			var dist := global_position.distance_to(player.global_position)
+			if dist > attack_range:
+				var dir := player.global_position - global_position
+				dir.y = 0.0
+				dir = dir.normalized() * move_speed * held_step_mult
+				velocity.x = dir.x
+				velocity.z = dir.z
+			elif cooldown_left <= 0.0:
+				_start_swing()
+	if not is_on_floor():
+		velocity.y -= _gravity() * delta
+	_separate() # two held bandits must still not stand inside each other
+	move_and_slide()
+	_animate(delta)
+
 func _enter(next: CombatState, duration: float) -> void:
 	state = next
 	state_time = 0.0
@@ -538,6 +577,17 @@ func _idle(delta: float) -> void:
 	_separate() # a camp standing around is exactly where they pile up
 	move_and_slide()
 	_animate(delta)
+
+## Turn to something NOW rather than at turn_speed — for a bandit dropped into
+## a fight that is already happening. A bandit only wakes when the player walks
+## into its vision cone, so one spawned facing the other way would stand there
+## until it was hit, which is not what a raider does.
+func face_toward(pos: Vector3) -> void:
+	var to := pos - global_position
+	to.y = 0.0
+	if to.length_squared() < 0.001:
+		return
+	body_visual.rotation.y = atan2(-to.x, -to.z) + PI
 
 func _face_player(delta: float) -> void:
 	var to_p := player.global_position - global_position

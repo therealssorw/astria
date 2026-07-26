@@ -1,21 +1,24 @@
 class_name TutorialData
 extends RefCounted
-## The tutorial script, and where the per-player copies of the tutorial city
-## live. Changing the lesson is changing this table — `tutorial_system.gd` only
-## walks it, and nothing else in the game knows what step 3 is.
+## The tutorial script, and where the per-player copies of the island live.
+## Changing the lesson is changing this table — `tutorial_system.gd` only walks
+## it, and nothing else in the game knows what step 3 is.
 ##
 ## Every step is one dictionary with a "kind":
 ##
 ##   "wait_ready" — hold until that player's client says the intro cutscene is
 ##                  over. Nothing moves before the player can see.
-##   "wave"       — spawn `count` bandits at the arena's spawn markers.
-##                  `frozen: true` drops them in mid-charge and holds them
-##                  there, which is what a freeze gate is standing on.
-##   "gate"       — freeze the fight and teach ONE button. Its `dialog` plays
-##                  first (write those lines in DialogData), then the prompt
-##                  goes up and the world stays still until the player really
-##                  does it. `action` is the input map name; the server watches
-##                  for the real thing (a swing request, a raised guard) rather
+##   "wave"       — spawn `count` bandits around the spawn. `frozen: true`
+##                  holds them where they are (they still watch you), and
+##                  `attacks: true` lets a held one walk into reach and swing.
+##   "gate"       — hold the fight and teach ONE button. `hold: false` leaves
+##                  the fight running instead, which is right when the lesson
+##                  IS the fight (the first swing, the heavy in the last wave),
+##                  and `attacks: true` is what makes a block gate blockable.
+##                  Its `dialog` plays first (write those lines in DialogData),
+##                  then the prompt goes up and the step waits until the player
+##                  really does it. `action` is the input map name; the server
+##                  watches for the real thing (a swing, a raised guard) rather
 ##                  than believing a "I pressed it" message, except where it
 ##                  cannot see it — those carry `client_gate: true`, and the
 ##                  worst a patched client wins there is skipping its own
@@ -24,11 +27,11 @@ extends RefCounted
 ##                  so far is dead.
 ##   "talk"       — a villager walks over and talks (the mayor hand-off). Ends
 ##                  when the conversation closes.
-##   "end"        — out of the city and onto the island; the copy is torn down.
+##   "end"        — out of the copy and onto the real island; it is torn down.
 ##
-## The pacing rule the table follows: a pause only ever buys a NEW button, and
-## the fight starts moving again the moment it is pressed. Four gates, and the
-## last wave is fought without a single interruption.
+## The pacing rules the table follows: a pause only ever buys a NEW button, the
+## fight starts moving again the moment it is pressed, and a bandit is never
+## inert — held means "stays where it is", not "stops being a bandit".
 
 ## Scene instanced once per player in the tutorial: a copy of the starter
 ## island, spawn marker and all.
@@ -57,18 +60,25 @@ static var GATE_PATIENCE := 25.0
 
 const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
-	# one bandit already swinging at you when the world starts moving
-	{"id": "first_bandit", "kind": "wave", "count": 1, "frozen": true},
-	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack"},
+	# a bandit comes at you the moment you can see: the first thing the game
+	# teaches is that this is a fight, not a slideshow
+	{"id": "first_bandit", "kind": "wave", "count": 1},
+	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack",
+			"hold": false},
 	{"id": "kill_first", "kind": "clear", "banner": "Put him down."},
-	{"id": "pair", "kind": "wave", "count": 2, "frozen": true},
-	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block"},
+	# two more, HELD but swinging: they walk into reach and punch, which is the
+	# only way "block this" can be taught — a frozen statue teaches nothing
+	{"id": "pair", "kind": "wave", "count": 2, "frozen": true, "attacks": true},
+	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block",
+			"attacks": true},
 	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "dialog": "tut_lock_on",
-			"client_gate": true},
+			"client_gate": true, "attacks": true},
 	{"id": "kill_pair", "kind": "clear", "banner": "Two of them. Keep your guard up."},
-	{"id": "last_wave", "kind": "wave", "count": 3, "frozen": true},
-	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "dialog": "tut_heavy"},
-	# no gates left on purpose — the lesson ends and the fight is just a fight
+	# no holding from here on: the last wave is a real fight, and the heavy is
+	# taught inside it
+	{"id": "last_wave", "kind": "wave", "count": 3},
+	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "dialog": "tut_heavy",
+			"hold": false},
 	{"id": "clear_city", "kind": "clear", "banner": "Drive them out."},
 	{"id": "mayor", "kind": "talk", "dialog": "tut_mayor"},
 	{"id": "leave", "kind": "end"},

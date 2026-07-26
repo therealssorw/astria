@@ -195,22 +195,24 @@ func _enter_step(id: int, index: int) -> void:
 				_advance(id)
 				return
 		"wave":
-			_spawn_wave(id, int(step.get("count", 1)), bool(step.get("frozen", false)))
+			_spawn_wave(id, int(step.get("count", 1)), bool(step.get("frozen", false)),
+					bool(step.get("attacks", false)))
 			Net.tutorial_step(id, str(step["id"]))
 			_advance(id) # a wave is a beat, not a wait: the gate after it holds
 			return
 		"gate":
-			_freeze_wave(id, true)
+			# `hold: false` means the lesson IS the fight — leave it running
+			_freeze_wave(id, bool(step.get("hold", true)), bool(step.get("attacks", false)))
 		"clear":
-			_freeze_wave(id, false)
+			_freeze_wave(id, false, false)
 		"talk":
-			_freeze_wave(id, false)
+			_freeze_wave(id, false, false)
 		"end":
 			server_end(id, true)
 			return
 	Net.tutorial_step(id, str(step["id"]))
 
-func _spawn_wave(id: int, count: int, frozen: bool) -> void:
+func _spawn_wave(id: int, count: int, frozen: bool, attacks: bool) -> void:
 	var run: Dictionary = _runs.get(id, {})
 	if run.is_empty():
 		return
@@ -218,18 +220,21 @@ func _spawn_wave(id: int, count: int, frozen: bool) -> void:
 	var spawned: int = int(run.get("spawned", 0))
 	for i in count:
 		var bandit := Net.server_spawn_tutorial_bandit(id,
-				arena.bandit_spawn(spawned + i), frozen)
+				arena.bandit_spawn(spawned + i), frozen, attacks)
 		if bandit:
 			run["bandits"].append(bandit)
 	run["spawned"] = spawned + count
 
-func _freeze_wave(id: int, frozen: bool) -> void:
+## `frozen` holds the bandits where they are; `attacks` lets a held one still
+## step in and swing, which is the whole point of the block lesson.
+func _freeze_wave(id: int, frozen: bool, attacks: bool) -> void:
 	var run: Dictionary = _runs.get(id, {})
 	if run.is_empty():
 		return
 	for b in run["bandits"]:
 		if is_instance_valid(b) and not b.dead:
 			b.frozen = frozen
+			b.frozen_attacks = attacks
 
 func _wave_cleared(id: int) -> bool:
 	var run: Dictionary = _runs.get(id, {})

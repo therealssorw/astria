@@ -98,12 +98,18 @@ class Runner:
 	func _pass_gate(step_id: String, action: String, client_gate := false) -> String:
 		if not await _until(func() -> bool: return _step_id() == step_id):
 			return "%s never came up (stuck on '%s')" % [step_id, _step_id()]
+		var step := TutorialData.step(TutorialData.index_of(step_id))
 		var held := _my_bandits()
 		if held.is_empty():
 			return "%s has nothing to fight" % step_id
 		for b in held:
-			if not b.frozen:
-				return "%s did not freeze the fight" % step_id
+			# a gate holds the fight unless the lesson IS the fight, and a held
+			# bandit is never inert — it watches you, and on an "attacks" gate
+			# it walks in and swings so there is something to block
+			if b.frozen != bool(step.get("hold", true)):
+				return "%s did not hold the fight as its step asks" % step_id
+			if b.frozen and b.frozen_attacks != bool(step.get("attacks", false)):
+				return "%s did not set the held bandits swinging" % step_id
 		# a gate must not open on its own
 		await get_tree().physics_frame
 		if _step_id() != step_id:

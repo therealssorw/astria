@@ -213,16 +213,29 @@ mixed pile.
   that player, and can only hit that player. `owner_peer == 0` means an
   ordinary bandit of the shared world.
 - The lesson is a table: `TutorialData.STEPS`. `wave` spawns bandits, `gate`
-  freezes them and teaches one button, `clear` is just a fight and ends when
-  the wave is dead, `talk` is the villager, `end` sends you to the island.
-  Reordering the lesson is reordering that array.
-- A freeze gate stops the BANDITS (`Enemy.frozen` — still solid, still
-  hittable, not thinking), never the player: you can walk and look around while
-  the fight holds. It opens on the real action, read off the server's own copy
-  of the pawn (`attacking` / `attack_is_heavy` / `blocking`), so the lesson
-  cannot be clicked past without doing it. Lock-on lives entirely in the
-  client's camera, so that one step carries `client_gate: true` and is taken on
-  trust — the most a patched client wins is skipping its own lesson.
+  teaches one button, `clear` is just a fight and ends when the wave is dead,
+  `talk` is the villager, `end` sends you to the island. Reordering the lesson
+  is reordering that array.
+- A gate holds the BANDITS (`Enemy.frozen`), never the player: you can walk and
+  look around while the fight stays where it is. It opens on the real action,
+  read off the server's own copy of the pawn (`attacking` / `attack_is_heavy` /
+  `blocking`), so the lesson cannot be clicked past without doing it. Lock-on
+  lives entirely in the client's camera, so that one step carries
+  `client_gate: true` and is taken on trust — the most a patched client wins is
+  skipping its own lesson.
+- HELD IS NOT INERT, and this is the rule to keep. A held bandit stops
+  DECIDING (no chasing, circling or strafing) but still turns to face you, and
+  with `attacks: true` it walks the last step into reach and swings — wind-up
+  star, damage and all (`Enemy._tick_held`). That is the only way a block gate
+  can be taught: there has to be a punch actually coming at you. Gates that
+  ARE the fight (the first swing, the heavy in the last wave) carry
+  `hold: false` and never stop anything.
+- Tutorial bandits are spawned facing the player and already awake
+  (`Enemy.face_toward` + `aggroed`, in `Net.server_spawn_tutorial_bandit`).
+  An ordinary bandit only wakes when the player walks into its vision cone, so
+  one dropped in facing the other way would stand there until it was punched —
+  which is exactly how the first lesson used to read: nothing happened until
+  you hit it.
 - Pacing rule to keep: a pause only ever buys a NEW button, the fight resumes
   the instant it is pressed, and the last wave is fought without a single
   interruption. Steps that are just a fight get a `banner` line instead — no

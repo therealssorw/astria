@@ -1038,7 +1038,8 @@ func server_remove_enemy(enemy_name: String) -> void:
 # else's world.
 
 ## SERVER: spawn one bandit into `id`'s copy of the city and tell only them.
-func server_spawn_tutorial_bandit(id: int, pos: Vector3, frozen: bool) -> Node:
+func server_spawn_tutorial_bandit(id: int, pos: Vector3, frozen: bool,
+		attacks := false) -> Node:
 	if not multiplayer.is_server():
 		return null
 	var en := _enemies_node()
@@ -1050,6 +1051,14 @@ func server_spawn_tutorial_bandit(id: int, pos: Vector3, frozen: bool) -> Node:
 	en.add_child(bandit)
 	bandit.global_position = pos
 	bandit.frozen = frozen
+	bandit.frozen_attacks = attacks
+	# these are raiders in the middle of a raid, not sentries waiting to notice
+	# you: point them at the player and wake them up, or one that happens to
+	# land facing the other way stands there until it is punched
+	var target := _pawn(id)
+	if target:
+		bandit.face_toward(target.global_position)
+		bandit.aggroed = true
 	if id != 1:
 		rpc_id(id, "cl_spawn_enemy", String(bandit.name), pos)
 	return bandit
