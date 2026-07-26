@@ -1181,10 +1181,21 @@ mixed pile.
 - The maths lives in exactly ONE file, `scripts/combat/combat_levels.gd`, and
   nothing else may invent a curve of its own or two weapons will disagree about
   what a level is worth. Three ladders that never have to know about each
-  other: `weapon_power(level)` (fists = 1.0, +35% a level) over
+  other: `weapon_power(level)` (fists = 1.0, +21% a level) over
   `enemy_toughness(level)` (an ordinary level 1 enemy = 1.0, ±35% a level),
   multiplied into the swing's damage; and `armor_protection(total)` dividing
   what a blow takes off YOU.
+- EVERYTHING HITS 40% SOFTER THAN THE LADDERS FIRST SAID, and it is done at BOTH
+  ends of a blow rather than by cutting the exported damage numbers: a weapon
+  level is worth 40% less than it was (0.35 -> 0.21) and an armor level 40% more
+  (0.09 -> 0.126). Fists against an ordinary bandit are therefore still EXACTLY
+  the exported numbers — the one line everything else here is measured against
+  never moves — and only what your gear does to that baseline changed. The
+  weapon ladder is now deliberately SHALLOWER than the enemy one, so a level 3
+  blade no longer fully makes up for three levels of enemy: what is promised is
+  that a blade beats bare hands against the SAME enemy, not that it out-damages
+  a punch thrown at something far weaker. `test_combat`'s tough-enemy check
+  measures both halves at the same enemy level for exactly that reason.
 - An enemy's level moves what it SHRUGS OFF and what it HITS FOR, by the same
   factor (`enemy_scale`, floored at `MIN_ENEMY_SCALE`). Level 1 is still exactly
   the exported numbers, so nothing in the game changed — but a level 0 bandit
@@ -1194,8 +1205,9 @@ mixed pile.
   is your 100 hp, a plate only makes each blow take less of it. Levels add up
   across the four slots — `Net.armor_levels(peer_id)`, the BEST piece per slot,
   so four helmets in a bag are not a suit — and `armor_protection(total)`
-  divides what lands by `1 + 0.09 * total`. A full flimsy suit (4) is about a
-  quarter less taken, copper (8) about two fifths, iron (12) roughly half.
+  divides what lands by `1 + 0.126 * total`. A full flimsy suit (4) is about a
+  third less taken, copper (8) about half, iron (12) leaves about two fifths of
+  a blow getting through.
   Applied in `Player.server_take_damage` to the HEALTH only, AFTER the guard has
   taken its cut and been charged for it: a plate stops a blow reaching you, it
   does not make holding a shield up cheaper.
@@ -1210,10 +1222,11 @@ mixed pile.
   weaker ones for the same trip to the edge is what falling one level below the
   baseline is worth: a level 0 enemy both dies quicker and hits softer, so it
   costs about `0.65 * 0.65 = 0.42` of a level 1, and six of them come to about
-  three. Where that lands today: a level 1 bandit takes 8 light swings to put
-  down and costs you 14.7 a hit, so you can afford about 2 hits from each of
-  three; a level 0 takes 5 swings and costs 9.6, about 1.6 hits from each of
-  six. It is a TARGET, not a promise the code can keep — how much you actually
+  three. Where that lands today, with everything 40% softer: a level 1 bandit
+  takes 9 light swings to put down and costs you 13.3 a hit, so you can afford
+  about 2.5 hits from each of three; a level 0 takes 6 swings and costs 8.6,
+  about 1.9 hits from each of six. Fights are longer and more forgiving than the
+  original tuning, which is the point of the change. It is a TARGET, not a promise the code can keep — how much you actually
   take depends on how well you block and dodge, and on the health you regen
   between fights, neither of which a formula here can know. Play it, don't
   assert it.

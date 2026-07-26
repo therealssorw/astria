@@ -46,6 +46,18 @@ extends RefCounted
 ## know — so it is the thing to play against when retuning, not something a
 ## test can assert.
 ##
+## EVERYTHING HITS 40% SOFTER THAN THE LADDERS FIRST SAID, and it is done at
+## BOTH ends of a blow rather than by cutting the exported damage numbers: a
+## weapon level is worth 40% less than it was (0.35 -> 0.21) and an armor level
+## is worth 40% more (0.09 -> 0.126). So fists against an ordinary bandit are
+## still EXACTLY the exported numbers — the one line every other number here is
+## measured against is untouched — and it is only what your gear does to that
+## baseline that moved. Note the deliberate asymmetry it leaves behind: the
+## weapon ladder is now shallower than the enemy one, so a level 3 blade no
+## longer fully makes up for three levels of enemy. A blade always beats bare
+## hands against the SAME enemy, which is the property that matters; it does not
+## also out-damage a punch thrown at something far weaker.
+##
 ## Only DAMAGE is scaled. Knockback is deliberately left alone: the flinch and
 ## stagger thresholds (Enemy.flinch_knockback, the combo ender's
 ## combo_finisher_mult) are a readability contract about which hits rock an
@@ -57,7 +69,10 @@ extends RefCounted
 const BASE_ENEMY_LEVEL := 1
 
 ## What one level of weapon is worth, as a fraction of bare-handed damage.
-const DAMAGE_PER_WEAPON_LEVEL := 0.35
+## Deliberately SHALLOWER than TOUGHNESS_PER_ENEMY_LEVEL: a fight is meant to
+## be softer than the levels on either side of it would make it, so a blade
+## adds less than an enemy level takes away (see "40% softer" below).
+const DAMAGE_PER_WEAPON_LEVEL := 0.21
 
 ## What one enemy level away from BASE_ENEMY_LEVEL is worth, as a fraction of
 ## the damage it would otherwise take — and of the damage it deals.
@@ -65,9 +80,9 @@ const TOUGHNESS_PER_ENEMY_LEVEL := 0.35
 
 ## What one level of ARMOR is worth, as a fraction of the damage it would
 ## otherwise let through. Levels add up across the four pieces, so a full
-## level 1 suit is 4 of these — about a quarter less taken — and a full iron
-## one is 12, which roughly halves everything that lands.
-const PROTECTION_PER_ARMOR_LEVEL := 0.09
+## level 1 suit is 4 of these — about a third less taken — and a full iron
+## one is 12, which cuts what lands to about two fifths.
+const PROTECTION_PER_ARMOR_LEVEL := 0.126
 
 ## Nothing goes below this fraction of its written numbers however far under
 ## the baseline it is, so a level 0 enemy is weak, not harmless.
