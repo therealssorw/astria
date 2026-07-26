@@ -336,12 +336,15 @@ mixed pile.
   HELD, so tapping it only ever jabbed and the gate never opened. Hence also
   `gate_is_hold()`, which makes the prompt read "HOLD <button>" instead of the
   button alone.
-- Rewriting a lesson is rewriting its `popup` in `TutorialData.STEPS`. The
-  banners (`banner`) are the other text: one line under the quest heading
-  during the parts that are just a fight.
-- There is no hand-off at the end and no quest: the last bandit going down IS
-  the end, and you are put on the real island. The villager who used to walk
-  over was removed with it.
+- Rewriting a lesson is rewriting its `popup` in `TutorialData.STEPS`;
+  rewriting the story is rewriting its `tut_*` entry in DialogData. Keep the
+  `auto` beats and the ids. The banners (`banner`) are the third kind of text:
+  one line under the quest heading during the parts that are just a fight.
+- The villager walks over once the raid is beaten and hands you to the mayor,
+  and the tutorial ends when that conversation closes. She is placeholder art
+  (a capsule with a nametag) — drop a built NPC in her place in
+  `scenes/world/tutorial/tutorial_arena.tscn`. The mayor himself does not exist
+  yet: her line is the hand-off and the step after it is "go to the island".
 - Test: `--headless res://tests/test_tutorial.tscn` (prints
   `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
   lesson: joining lands on a copy and not the real island, the copy has the

@@ -68,6 +68,115 @@ const DIALOGS := {
 			},
 		},
 	},
+	# --- tutorial ---
+	# The step table in scripts/world/tutorial/tutorial_data.gd names these and
+	# nothing else does, so rewriting a "text" below rewrites the tutorial
+	# without touching a line of code. Keep the "auto" beats (they are what
+	# makes a line play by itself while the lesson waits) and keep each id, or
+	# the step that asks for it will find nothing to say.
+	#
+	# The four teaching lines are the player's own head — no speaker — and name
+	# their buttons in the text. The popup drawn under them names the same
+	# button for whichever device is in use, so a pad player is never left
+	# reading about a mouse.
+	"tut_block": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "I think I remember how to block (Right Click or L2 on controller)",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	"tut_attack": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "He's punching me. Let me fight back (Left Click or R2 on controller)",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	"tut_heavy": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "Let me give him a real hard hit (Hold Attack for Heavy)",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	"tut_lock_on": {
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "My eyes are getting better, let me focus on him (Middle Mouse button or R3 to lock target)",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	# The first thing anyone says to you, straight after "where even am I?" —
+	# and the answer to it: this is who put you on the ground.
+	"tut_taunt": {
+		"speaker": "Bandit",
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "Still not down, huh?",
+				"auto": 1.5,
+				"goto": END,
+			},
+		},
+	},
+	# ...and its friends arriving once it is beaten.
+	"tut_reinforcements": {
+		"speaker": "Bandit",
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "This one's a fighter.\nDon't worry, we'll put you down.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	# The villager who walks over once the raid is beaten. This is the hand-off
+	# to the mayor — the mayor's own conversation is not written yet.
+	"tut_mayor": {
+		"speaker": "Villager",
+		"start": "alright",
+		"lines": {
+			"alright": {
+				"text": "Are you alright?",
+				"answers": [
+					{"text": "Yes, it's just my head.", "goto": "standing"},
+				],
+			},
+			"standing": {
+				"text": "You look way better than you should be after taking out those thugs.",
+				"answers": [
+					{"text": "Who even were they?", "goto": "thugs"},
+					{"text": "What should I do now?", "goto": "mayor"},
+				],
+			},
+			# back to the question it was asked from, so the other one is still
+			# there to ask
+			"thugs": {
+				"text": "They're thugs who keep raiding our village.\nSadly, I'm sure they'll come back.",
+				"goto": "standing",
+			},
+			"mayor": {
+				"text": "Head to the Mayor's office. I'm sure he'll reward you for this fight.",
+				"answers": [
+					{"text": "Sounds good!", "goto": END},
+				],
+			},
+		},
+	},
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",
