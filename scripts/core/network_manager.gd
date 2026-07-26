@@ -825,11 +825,28 @@ func _server_cheat_teleport(id: int, dest_id: String) -> void:
 	if pawn == null or pawn.dead:
 		_trade_reply(id, "Not while you are down.", false)
 		return
+	server_teleport_to(id, dest_id)
+	_trade_reply(id, "Teleported to %s." % TeleportData.label(dest_id), true)
+
+## Put a player on a named `TeleportData` destination. The server moves its OWN
+## copy of the pawn and then tells the owner where it now is — doing it the
+## other way round is a client teleport, which the position validator exists to
+## reject. Shared by the cheat above and by `Portal`, so there is one place that
+## knows how a pawn is moved across the level.
+func server_teleport_to(id: int, dest_id: String) -> bool:
+	if not multiplayer.is_server() or not players.has(id):
+		return false
+	var anchor := TeleportData.anchor(get_tree(), dest_id)
+	if anchor == null:
+		return false
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		return false
 	var pos: Vector3 = anchor.global_position
 	pawn.net_teleport(pos)
 	if id != 1:
 		rpc_id(id, "cl_force_position", pos)
-	_trade_reply(id, "Teleported to %s." % TeleportData.label(dest_id), true)
+	return true
 
 # ---------------- hotbar (server-owned) ----------------
 #

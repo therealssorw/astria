@@ -933,11 +933,13 @@ mixed pile.
   from the Knight, against his 7.5 m reach). `test_quest` asserts that sum
   rather than trusting it — move either of them apart and taking the quest
   would otherwise silently do nothing.
-- THE CATACOMBS ARE NOT IN THE LEVEL YET. `clear_catacombs` has no anchor, so
-  it has no star and no way to finish, and that is deliberate rather than
-  half-done: it hands out no reward for walking nowhere. When the place is
-  built, drop a `QuestAnchor` with `target_id = "catacombs"` at its door and
-  give the entry a `kills` count or a `done_at`.
+- THE CATACOMBS ARE A PLACE NOW: `scenes/world/catacombs_entrance.tscn` is the
+  door on the island (it carries the `QuestAnchor`, so `clear_catacombs` has a
+  star at last) and `Catacombs` in `world.tscn` is the dungeon itself, parked
+  3 km west. Walking into the door puts you inside — see "Dungeons" for the
+  portal. It still has no `kills` count and no `done_at`, so there is nothing
+  to finish yet; give the entry one when the place has something in it to
+  fight.
 - The HUD: `quest_tracker.gd` is the heading (the quest's name, and nothing at
   all when you are on none — it used to read "Current Quest ★" whether or not
   there was one), and `quest_marker_overlay.gd` is the star out in the world
@@ -1884,6 +1886,36 @@ mixed pile.
   no error and built no walls. Hence the grid lives in members and the
   triangles are collected into a plain `Array`. Anything new that accumulates
   into a Packed array through a function call has the same trap.
+- YOU GET IN BY WALKING INTO THE DOOR. `scripts/world/portal/portal.gd` is a
+  `Portal`: stand within its `radius` and you come out at whatever
+  `TeleportAnchor` wears its `destination_id`. Both ends are NAMES, so moving
+  either in the editor moves it — the same trick as `TeleportAnchor`,
+  `QuestAnchor` and `spawn_point.gd`. Today: `catacombs_entrance.tscn` on the
+  island sends you to `catacombs`, and the `ExitPortal` inside the dungeon
+  sends you back to `catacombs_exit` beside the door.
+- Server-authoritative like every other way a pawn moves. The portal is polled
+  on the SERVER against its own speed-validated copy of each pawn, and moves it
+  through `Net.server_teleport_to` — the same call the teleport cheat uses, so
+  there is one place that knows how a pawn crosses the level. Deliberately NOT
+  an Area3D: a trigger volume answers "is a body touching my shape", which
+  needs the pawn on the right collision layer and reports on the CLIENT too,
+  where the answer means nothing.
+- A portal does NOT fire on somebody who ARRIVED inside it (`_seen_outside`), and
+  that is load-bearing rather than tidy: a return portal and the anchor players
+  land on are near each other by nature, so without it the two ends bounce a
+  player between them forever. Walking up to a portal is always seen from
+  outside first, so the ordinary case is unaffected. Any new portal pair
+  inherits this; do not "simplify" it away.
+- The dungeon is parked at `-3000, 0, 0` — far enough that the two ends of the
+  portal cannot sit in each other's radius, which `test_catacombs` asserts. It
+  is at its natural height rather than buried, because the shell has no ceiling
+  and being under the sea would look worse than having sky over it. Where it
+  actually belongs is a level-editing decision: drag the `Catacombs` node.
+- Test: `--headless res://tests/test_catacombs.tscn` (prints
+  `CATATEST RESULT=PASS/FAIL`) — the round trip on a real listen server: the
+  door really lands you in the dungeon, the dungeon really is somewhere else,
+  standing where you arrived does not throw you back out, and the way home
+  comes out beside the door. Plus that the quest finally has a star.
 - Test: `--headless res://tests/test_dungeon_walls.tscn` (prints
   `DUNGEONTEST RESULT=PASS/FAIL`). It re-measures the floor ITSELF off the mesh
   rather than reading the builder's grid back, then checks that no wall stands

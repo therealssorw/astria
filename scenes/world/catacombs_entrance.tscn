@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/portal/portal.gd" id="1_portal"]
+[ext_resource type="PackedScene" path="res://scenes/world/quest_anchor.tscn" id="2_quest"]
+[ext_resource type="PackedScene" path="res://scenes/world/teleport_anchor.tscn" id="3_tp"]
+
+[node name="CatacombsEntrance" type="Node3D"]
+script = ExtResource("1_portal")
+destination_id = "catacombs"
+
+[node name="QuestAnchor" parent="." instance=ExtResource("2_quest")]
+target_id = "catacombs"
+
+[node name="ExitAnchor" parent="." instance=ExtResource("3_tp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6)
+destination_id = "catacombs_exit"

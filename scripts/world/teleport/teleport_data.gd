@@ -11,6 +11,14 @@ extends RefCounted
 
 const DESTINATIONS := {
 	"mini_dungeon": {"name": "Mini dungeon"},
+	## Inside the catacombs, a few steps in from the door. What the entrance
+	## `Portal` on the island sends you to, and listed here so the cheat menu
+	## can get there without the walk.
+	"catacombs": {"name": "Catacombs"},
+	## Back out on the island, beside the catacombs door. The return `Portal`
+	## down in the dungeon points at this, which is what stops the place being
+	## a hole you cannot climb out of.
+	"catacombs_exit": {"name": "Catacombs entrance"},
 }
 
 static func has(id: String) -> bool:

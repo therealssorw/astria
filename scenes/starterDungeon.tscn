@@ -1,7 +1,9 @@
-[gd_scene format=3 uid="uid://1h1ve1kcpl4y"]
+[gd_scene load_steps=6 format=3 uid="uid://1h1ve1kcpl4y"]
 
 [ext_resource type="PackedScene" uid="uid://dd0ph0lvtmq1j" path="res://Assets/Models/World/Dungeons/StarterDungeon/dungeon1.glb" id="1_riy51"]
 [ext_resource type="Script" uid="uid://dhbirv8p7t666" path="res://scripts/world/dungeon/dungeon_walls.gd" id="2_walls"]
+[ext_resource type="PackedScene" path="res://scenes/world/teleport_anchor.tscn" id="3_tp"]
+[ext_resource type="Script" path="res://scripts/world/portal/portal.gd" id="4_portal"]
 
 [node name="Minidungeon" type="Node3D" unique_id=967743086]
 
@@ -10,3 +12,13 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.690286, 77.70784, -62.6668
 
 [node name="Walls" type="Node3D" parent="dungeon1" unique_id=884210077]
 script = ExtResource("2_walls")
+
+[node name="ArrivalAnchor" parent="dungeon1" instance=ExtResource("3_tp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 2, -40)
+destination_id = "catacombs"
+
+[node name="ExitPortal" type="Node3D" parent="dungeon1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 2, -28)
+script = ExtResource("4_portal")
+destination_id = "catacombs_exit"
+radius = 2.5
