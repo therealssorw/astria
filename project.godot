@@ -15,6 +15,10 @@ run/main_scene="res://scenes/ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[audio]
+
+driver/enable_input=true
+
 [autoload]
 
 GameStats="*res://scripts/core/game_stats.gd"
@@ -29,13 +33,6 @@ Cinematic="*res://scripts/ui/cutscene/cinematic.gd"
 Tutorial="*res://scripts/world/tutorial/tutorial_system.gd"
 IntroCutscene="*res://scripts/ui/cutscene/intro_cutscene.gd"
 Voice="*res://scripts/core/voice/voice_chat.gd"
-
-[audio]
-
-; proximity voice chat captures the microphone, and this is read ONCE at
-; startup -- turning it off leaves every other part of voice chat working and
-; nobody able to talk.
-driver/enable_input=true
 
 [display]
 

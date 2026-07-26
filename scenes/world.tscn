@@ -88,7 +88,7 @@ dialog_id = "blacksmith"
 prompt_offset = Vector3(0, 2.75, 0)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="BlacksmithNPC" unique_id=1573503354]
-transform = Transform3D(0.008352024, 0, 0.099650614, 0, 0.1, 0, -0.099650614, 0, 0.008352024, 39.588081, -0.030403137, -15.048447)
+transform = Transform3D(0.008352024, 0, 0.099650614, 0, 0.1, 0, -0.099650614, 0, 0.008352024, 39.58808, -0.030403137, -15.048447)
 
 [node name="RigidBody3D" type="RigidBody3D" parent="BlacksmithNPC/MeshInstance3D" unique_id=2097015641]
 
@@ -162,13 +162,13 @@ transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 197.86626, 92.331696, -
 transform = Transform3D(-0.33481658, 0, -0.94228333, 0, 1, 0, 0.94228333, 0, -0.33481658, 21.016354, 92.566734, -138.98691)
 
 [node name="crate" parent="." unique_id=1602888097 instance=ExtResource("19_2lf6f")]
-transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 21.67864, 91.719734, -132.63132)
+transform = Transform3D(0.2, 0, 0, 0, 0.219, 0, 0, 0, 0.2, 22.498346, 91.719734, -132.63132)
 
 [node name="crate4" parent="." unique_id=1886911432 instance=ExtResource("19_2lf6f")]
-transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 23.33367, 94.46501, -132.63132)
+transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 23.33367, 93.7919, -132.63132)
 
 [node name="crate2" parent="." unique_id=1793677370 instance=ExtResource("19_2lf6f")]
-transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 11.735739, 92.27471, -146.42259)
+transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 14.200106, 92.27471, -146.42259)
 
 [node name="crate3" parent="." unique_id=963106693 instance=ExtResource("19_2lf6f")]
-transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 25.178156, 91.7986, -132.61406)
+transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 24.78345, 91.7986, -132.61406)
