@@ -483,6 +483,13 @@ func _server_finish_quest(id: int, quest_id: String) -> void:
 		return
 	if str(players[id].get("quest", "")) != quest_id:
 		return # not on it: nothing to hand in
+	# a counting quest is not handed in until the count is really made. The
+	# conversation offering the answer is LOCAL, so a patched client can pick it
+	# whenever it likes — this is the server's own tally, and the only thing
+	# standing between "I did it." and 25 bandits nobody killed.
+	if QuestData.kills_needed(quest_id) > 0 \
+			and not QuestData.is_complete(quest_id, int(players[id].get("quest_kills", 0))):
+		return
 	var at := QuestData.done_at(quest_id)
 	if at == "" or not _near_npc(id, at):
 		return
@@ -558,8 +565,14 @@ func _set_quest(id: int, quest_id: String) -> void:
 	_send_purse(id)
 
 ## SERVER: `id` just killed a bandit. It only counts while they are on a quest
-## that asks for kills, and that quest finishes itself the moment the count is
-## reached — it has no `done_at`, so there is nobody to report back to.
+## that asks for kills.
+##
+## What the last kill does depends on whether anybody is waiting to hear about
+## it. A counting quest with a `done_at` TURNS ROUND on the final kill — it
+## stays on the HUD, the heading becomes its `done_name` and the star points
+## back at whoever sent you — and is only cleared when you stand in front of
+## them (`_server_finish_quest`). One with no `done_at` has nobody to report
+## back to, so it finishes itself where it stands.
 func _credit_quest_kill(id: int) -> void:
 	if not players.has(id):
 		return
@@ -568,12 +581,21 @@ func _credit_quest_kill(id: int) -> void:
 	if needed <= 0:
 		return
 	var done := int(players[id].get("quest_kills", 0)) + 1
-	players[id]["quest_kills"] = done
+	# capped, or a kill after the count is made keeps ticking a number the
+	# heading has already stopped showing
+	players[id]["quest_kills"] = mini(done, needed)
 	if done < needed:
 		_send_purse(id)
 		return
+	var at := QuestData.done_at(quest_id)
+	if at != "":
+		if done == needed:
+			print("[Net] %s counted out '%s' (%d kills), reporting to '%s'"
+					% [players[id]["name"], QuestData.label(quest_id), needed, at])
+		_send_purse(id) # the heading flips to the walk home
+		return
 	print("[Net] %s finished '%s' (%d kills)" % [players[id]["name"],
-			QuestData.label(quest_id), done])
+			QuestData.label(quest_id), needed])
 	_set_quest(id, "")
 
 ## Client -> server: I'd like to buy this. Never applied locally first.

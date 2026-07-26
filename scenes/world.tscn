@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" uid="uid://uj5rvb1182cu" path="res://Assets/Models/World/Islands/StarterIsland/Island1.glb" id="1_nnsk1"]
 [ext_resource type="Texture2D" uid="uid://dmup8pjq8hpk1" path="res://Assets/Textures/Skyboxes/beautiful-view-sea-with-cloudy-sky-reflected-it.jpg" id="3_i7141"]
 [ext_resource type="Script" uid="uid://utfup6w6qxdt" path="res://scripts/world/spawn_point.gd" id="3_k0juu"]
+[ext_resource type="PackedScene" uid="uid://cfkbjklmgx003" path="res://scenes/entities/npc/built/knight.tscn" id="4_2lf6f"]
 [ext_resource type="Script" uid="uid://dsfc67ukwp5gu" path="res://scripts/ui/hud.gd" id="5_hud"]
 [ext_resource type="Script" uid="uid://ccnll1i5iuigg" path="res://scripts/world/world.gd" id="6_world"]
 [ext_resource type="Script" uid="uid://c4apsnqkotlma" path="res://scripts/world/ocean.gd" id="7_ocean"]
@@ -52,6 +53,20 @@ transform = Transform3D(500, 0, 0, 0, 500, 0, 0, 0, 500, 14.0139475, 0, 35.03484
 [node name="Marker3D" type="Marker3D" parent="Island1" unique_id=891781952]
 transform = Transform3D(0.9999997, 0, 0, 0, 0.9999997, 0, 0, 0, 0.9999997, 0.34185776, 0.1839312, -0.46375248)
 script = ExtResource("3_k0juu")
+
+[node name="Knight" parent="Island1" unique_id=1042695314 instance=ExtResource("4_2lf6f")]
+transform = Transform3D(-0.0019886782, 0, 0.00021250042, 0, 0.001999999, 0, -0.00021250042, 0, -0.0019886782, 0.27813113, 0.18567225, -0.37826928)
+
+[node name="Knight2" parent="Island1" unique_id=696686187 instance=ExtResource("4_2lf6f")]
+transform = Transform3D(0.001999999, 0, 0, 0, 0.001999999, 0, 0, 0, 0.001999999, 0.2782884, 0.18567227, -0.3882506)
+
+[node name="Knight3" parent="Island1" unique_id=1058836010 groups=["npc"] instance=ExtResource("4_2lf6f")]
+transform = Transform3D(-0.00012019183, 0, 0.0019963845, 0, 0.001999998, 0, -0.0019963845, 0, -0.00012019183, 0.27079773, 0.1856722, -0.3866171)
+
+[node name="NpcInteractable" parent="Island1/Knight3" unique_id=1058836011 instance=ExtResource("16_npc")]
+dialog_id = "knight"
+interact_range = 5.0
+prompt_offset = Vector3(0, 2.3, 0)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1631508115]
 transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 0, 0)
@@ -122,7 +137,7 @@ transform = Transform3D(0.13797796, 0, 0.058839448, 0, 0.14999999, 0, -0.0588394
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 157.31122, 91.836174, -156.51982)
 
 [node name="Kingnpc" parent="." unique_id=1967818918 groups=["npc", "quest_king"] instance=ExtResource("15_7t5mc")]
-transform = Transform3D(0.039404184, 0, 0.99922335, 0, 1, 0, -0.99922335, 0, 0.039404184, 149.93307, 92.836174, -155.87569)
+transform = Transform3D(0.039404184, 0, 0.99922335, 0, 1, 0, -0.99922335, 0, 0.039404184, 148.99997, 92.836174, -155.87569)
 
 [node name="NpcInteractable" parent="Kingnpc" unique_id=1620172739 instance=ExtResource("16_npc")]
 dialog_id = "king"

@@ -46,6 +46,11 @@ var _page_left := -1.0
 ## brings its choices back without saying it all again. Cleared by `start`.
 var _read := {}
 var _player: Node
+## The conversation being played, for the speaker name a line falls back to.
+var _owner := {}
+## The NPC the player walked up to — who the camera returns to after a line
+## belonging to somebody else standing beside them.
+var _owner_node: Node3D
 
 func _ready() -> void:
 	layer = 20
@@ -76,8 +81,9 @@ func start(id: String, speaker_node: Node3D = null) -> bool:
 	dialog_id = id
 	_lines = convo.get("lines", {})
 	_read = {} # a fresh conversation says everything again, including the opener
-	_speaker.text = str(convo.get("speaker", ""))
-	_speaker.visible = _speaker.text != ""
+	_owner = convo
+	_owner_node = speaker_node
+	_set_speaker(str(convo.get("speaker", "")))
 	_root.visible = true
 	set_process(true)
 	_player = _local_player()
@@ -87,17 +93,55 @@ func start(id: String, speaker_node: Node3D = null) -> bool:
 	_show_line(_opening_line(convo))
 	return true
 
-## Which line a conversation opens on. Normally "start", but a conversation may
-## carry a "first_time" block naming a line to use until a gift has been taken —
-## how an NPC greets you differently the first time you walk up to them. Read off
-## the GameStats mirror, which is the server's own record of who has been given
-## what, so it is not something this screen can be talked out of.
+## Which line a conversation opens on. Normally "start", but an NPC can have
+## something more pressing to say than their greeting, and there are two ways to
+## say so — both read off the GameStats mirror, which is the SERVER's own record,
+## so neither is something this screen can be talked out of:
+##
+##   "when_quest_done": {"line": ..., "quest": ...}
+##       while the player is on that quest with its count made. "So?" instead of
+##       "Yes? What do you want?" — he knows why you walked back over.
+##   "first_time": {"line": ..., "until_gift": ...}
+##       until a gift has been taken: how an NPC greets you the first time.
+##
+## Reporting in WINS when both apply, because it is why the player is standing
+## there — a greeting can wait for the conversation after this one.
 func _opening_line(convo: Dictionary) -> String:
 	var start := str(convo.get("start", ""))
+	var done: Dictionary = convo.get("when_quest_done", {})
+	if not done.is_empty():
+		var quest := str(done.get("quest", ""))
+		if str(GameStats.quest) == quest \
+				and QuestData.is_complete(quest, GameStats.quest_kills):
+			return str(done.get("line", start))
 	var first: Dictionary = convo.get("first_time", {})
 	if first.is_empty() or GameStats.gift_taken(str(first.get("until_gift", ""))):
 		return start
 	return str(first.get("line", start))
+
+## Who is saying the line on screen: the conversation's own "speaker" unless the
+## line names somebody else. A scene can have two people in it — the King thanks
+## you and the Knight beside him speaks up — and the name over the box has to
+## keep up, or the second half reads as the first person still talking.
+func _set_speaker(name_text: String) -> void:
+	_speaker.text = name_text
+	_speaker.visible = name_text != ""
+
+## Point the camera at whoever the current line belongs to. A line may carry
+## "speaker_at": the `dialog_id` of an NpcInteractable standing in the world, so
+## the shot turns to the character who just cut in and back to the NPC you
+## walked up to when they are done. Silent when nobody in the level answers to
+## that id — the line still plays, it is just not framed.
+func _focus_speaker(line: Dictionary) -> void:
+	var at := str(line.get("speaker_at", ""))
+	if at == "":
+		if is_instance_valid(_owner_node):
+			Cinematic.focus(_owner_node)
+		return
+	for npc in get_tree().get_nodes_in_group("npc_interactable"):
+		if is_instance_valid(npc) and str(npc.dialog_id) == at:
+			Cinematic.focus(npc)
+			return
 
 func close() -> void:
 	if not is_open():
@@ -117,6 +161,8 @@ func close() -> void:
 	if is_instance_valid(_player):
 		_player.set("ui_open", false)
 	_player = null
+	_owner = {}
+	_owner_node = null
 	closed.emit(was)
 
 # ---------------- conversation flow ----------------
@@ -127,6 +173,10 @@ func _show_line(line_id: String) -> void:
 		return
 	_line_id = line_id
 	var line: Dictionary = _lines[line_id]
+	# who is talking, before a word of it is typed — including on a line that
+	# has been read before, which takes the early way out below
+	_set_speaker(str(line.get("speaker", _owner.get("speaker", ""))))
+	_focus_speaker(line)
 	_clear_answers()
 	# Coming BACK to a line already read — every "goto" that returns to the
 	# question you branched off — keeps the answer you just finished reading on

@@ -92,15 +92,119 @@ func _run() -> void:
 
 	if not _blacksmith():
 		return
+	if not _report_back():
+		return
 
 	print("DIALOGTEST RESULT=PASS")
 	get_tree().quit(0)
 
-## The shopkeeper's own conversation is two lines long, so it gets a smoke test
-## rather than a walk: it opens, and the answer that ends it really does close
-## the box. (That the "buy" answer reaches a SHOP is test_shop's job.)
+## Walking back to the King with the bandits done. Two things this is guarding,
+## and both are invisible in the text: the conversation opens somewhere ELSE
+## when the server's count is made, and the Knight beside the throne cutting in
+## really does change the name over the box. A speaker that never updates reads
+## as the King offering the catacombs himself.
+##
+## No server here (see the header), so the MIRROR is set by hand — which is all
+## a client can do anyway. What the server would then refuse is test_quest's.
+func _report_back() -> bool:
+	var quest := "kill_bandits"
+	var was_quest := str(GameStats.quest)
+	var was_kills := int(GameStats.quest_kills)
+	GameStats.quest = quest
+	GameStats.quest_kills = QuestData.kills_needed(quest)
+
+	var ok := _report_lines(quest)
+	GameStats.quest = was_quest
+	GameStats.quest_kills = was_kills
+	return ok
+
+func _report_lines(quest: String) -> bool:
+	var lines: Dictionary = DialogData.get_conversation(CONV).get("lines", {})
+	if not _check(DialogSystem.start(CONV), "the King has no conversation"):
+		return false
+	_skip_typing()
+	if not _check(_body() == _last_page(str(lines["so"]["text"])),
+			"with the count made he should open on 'So?', got '%s'" % _body()):
+		return false
+	if not _check(_speaker() == "The King",
+			"the opener is the King's, got '%s'" % _speaker()):
+		return false
+
+	# one kill short and it is the ordinary greeting again — the opener is a
+	# condition, not a permanent swap
+	DialogSystem.close()
+	GameStats.quest_kills = QuestData.kills_needed(quest) - 1
+	if not _check(DialogSystem.start(CONV), "could not reopen the conversation"):
+		return false
+	_skip_typing()
+	if not _check(_body() == _last_page(str(lines["greeting"]["text"])),
+			"one kill short should still be the greeting, got '%s'" % _body()):
+		return false
+	DialogSystem.close()
+
+	GameStats.quest_kills = QuestData.kills_needed(quest)
+	if not _check(DialogSystem.start(CONV), "could not reopen the conversation"):
+		return false
+	_skip_typing()
+	if not _check(_pick("I did it"), "'So?' has no way to report in"):
+		return false
+	_skip_typing()
+	if not _check(_speaker() == "The King",
+			"the thank-you is still the King's, got '%s'" % _speaker()):
+		return false
+
+	# ...and now somebody else is talking
+	if not _check(_pick("Continue"), "the thank-you has no way on to the Knight"):
+		return false
+	_skip_typing()
+	if not _check(_speaker() == "Knight",
+			"the Knight cutting in should change the name over the box, got '%s'" % _speaker()):
+		return false
+	if not _check(_has_answer("I'll do it"), "the Knight's offer has no way to take it"):
+		return false
+	if not _check(_pick("I'll do it"), "could not take the catacombs quest"):
+		return false
+	_skip_typing()
+	if not _check(_speaker() == "Knight",
+			"'good luck soldier' is the Knight's line too, got '%s'" % _speaker()):
+		return false
+	if not _check(_pick("Goodbye"), "the Knight's last line should close the box"):
+		return false
+	if not _check(not DialogSystem.is_open(), "the scene should have closed"):
+		return false
+
+	# he is also somebody you can walk up to, which is what makes him a real
+	# quest giver rather than a voice in the King's conversation
+	if not _check(DialogSystem.start("knight"), "the Knight has no conversation"):
+		return false
+	_skip_typing()
+	if not _check(_speaker() == "Knight", "the Knight's own name is over his own box"):
+		return false
+	if not _check(_pick("Nothing"), "the Knight has no way out of the conversation"):
+		return false
+	if not _check(not DialogSystem.is_open(), "walking off should have closed the box"):
+		return false
+	return true
+
+func _speaker() -> String:
+	return str(DialogSystem._speaker.text)
+
+## The shopkeeper's own conversation is short, so it gets a walk rather than a
+## branch test: it opens, and the answer that ends it really does close the box.
+## (That the "buy" answer reaches a SHOP is test_shop's job.)
+##
+## He opens on the GIFT line, not the greeting — his `first_time` block runs
+## until the armor has been handed over, and there is no server here to have
+## handed it over. So the walk starts by taking it, which is what a player
+## meeting him for the first time does and the only way through to the rest.
 func _blacksmith() -> bool:
 	if not _check(DialogSystem.start("blacksmith"), "the blacksmith has no conversation"):
+		return false
+	_skip_typing()
+	if not _check(not GameStats.gift_taken("blacksmith_armor"),
+			"this test assumes the armor has not been given yet"):
+		return false
+	if not _check(_pick("Thank you"), "the first-time gift line has no way on"):
 		return false
 	_skip_typing()
 	if not _check(_pick("leave now"), "the blacksmith has no way out of the conversation"):

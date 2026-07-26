@@ -572,10 +572,24 @@ mixed pile.
   plus either `answers` or a plain `goto`; `goto: END` closes the box). An
   answer may carry `"action"`, which the `DialogSystem.action_triggered` signal
   reports so gameplay code (shops, quests) can hook in.
+- A conversation can open somewhere OTHER than its `start`, and there are two
+  conditions for it — `first_time` (until a gift has been taken) and
+  `when_quest_done` (while the player is on a named quest with its count made,
+  which is how the King asks "So?" instead of "Yes? What do you want?").
+  Reporting in wins when both apply. BOTH read the SERVER's own record through
+  the `GameStats` mirror, never anything the box remembers, so the worst a
+  patched client wins is the wrong greeting on its own screen.
+- A line may name its own `"speaker"`, and `"speaker_at"` (a `dialog_id`) puts
+  the camera on whoever in the world is saying it. That is what makes a scene
+  with two people in it — the King thanks you, the Knight beside him cuts in —
+  one conversation rather than two. Without the speaker swap the second half
+  reads as the first person still talking.
 - Test: `--headless res://tests/test_dialog.tscn` (prints
   `DIALOGTEST RESULT=PASS/FAIL`) — needs no server, since a conversation is
   local. It walks down a branch and back out of it, which is the loop-back rule
-  above, and checks reopening still says everything.
+  above, checks reopening still says everything, and walks the throne scene: the
+  count-made opener (and that one kill short is still the plain greeting), and
+  the name over the box really changing when the Knight speaks.
 - `DialogSystem` (autoload) owns the box: semi-transparent black panel,
   typewriter reveal with the looping keyboard clatter in
   `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
@@ -699,6 +713,18 @@ mixed pile.
   you are standing at to hand it in; `from` is the one it insists you are
   standing at to start it, and an empty `from` means only the SERVER hands that
   quest out.
+- A COUNTING quest (`kills`) either ends where it stands or turns round, and
+  which one is whether it has a `done_at`. `kill_bandits` has one, so the 25th
+  bandit does NOT clear it: the count is capped, the heading becomes the entry's
+  `done_name` ("Report back to the King"), the star swaps to its `done_target`
+  and you walk it home. Only standing in front of the King clears it. A counting
+  quest with no `done_at` still finishes itself on the last kill — there is
+  nobody to report to.
+- The server checks the COUNT as well as the distance on a hand-in. The answer
+  that reports in lives in a local conversation, so a patched client can pick it
+  whenever it likes; `_server_finish_quest` refusing anything short of
+  `QuestData.is_complete` is the only thing between "I did it." and 25 bandits
+  nobody killed.
 - Finishing the tutorial puts you straight on `TutorialData.NEXT_QUEST`
   ("Speak to the King") as it puts you ashore, through
   `Net.server_grant_quest` — the server deciding, so there is nothing to
@@ -711,6 +737,20 @@ mixed pile.
   `NpcInteractable` is a CHILD of him rather than a sibling (the blacksmith's
   way round), which is the better of the two: at the origin of its parent it
   needs no transform of its own and it follows him wherever he is dragged.
+- The Knight beside the throne (`Island1/Knight3` in `world.tscn`, group `npc`)
+  hands out `clear_catacombs`. He is offered INSIDE the King's conversation —
+  he speaks up as the King finishes thanking you — but the server still checks
+  you are standing at HIM, because `from` is `"knight"`. That works only
+  because he is 2.4 m from the King: his `interact_range` is 5.0 rather than
+  the default 3.5 so the check has room (talking to the King can put you 5.9 m
+  from the Knight, against his 7.5 m reach). `test_quest` asserts that sum
+  rather than trusting it — move either of them apart and taking the quest
+  would otherwise silently do nothing.
+- THE CATACOMBS ARE NOT IN THE LEVEL YET. `clear_catacombs` has no anchor, so
+  it has no star and no way to finish, and that is deliberate rather than
+  half-done: it hands out no reward for walking nowhere. When the place is
+  built, drop a `QuestAnchor` with `target_id = "catacombs"` at its door and
+  give the entry a `kills` count or a `done_at`.
 - The HUD: `quest_tracker.gd` is the heading (the quest's name, and nothing at
   all when you are on none — it used to read "Current Quest ★" whether or not
   there was one), and `quest_marker_overlay.gd` is the star out in the world
@@ -730,7 +770,11 @@ mixed pile.
   King one end to end: the tutorial's follow-up is a real quest whose target
   and quest-giver NPC are both in the level, the server can hand it out, it
   will not hand IN from 60 m away, it does at his feet, and handing in a quest
-  you are not on does nothing.
+  you are not on does nothing. Then the counting quest: the last kill keeps the
+  quest and turns the heading and the star round, the King refuses a report
+  from 60 m and one from a player with 0 kills, takes it at his feet, and the
+  Knight really is close enough to the throne to hand out his own quest from
+  inside the King's conversation.
 
 ## Items and shops
 

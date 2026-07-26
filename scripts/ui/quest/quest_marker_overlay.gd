@@ -46,7 +46,9 @@ func _draw() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	var target: Variant = QuestData.target_pos(get_tree(), quest)
+	# the count rides along, because a quest that has been counted out points
+	# somewhere else: the star turns round to whoever you have to report to
+	var target: Variant = QuestData.target_pos(get_tree(), quest, GameStats.quest_kills)
 	if target == null:
 		return # the place this quest points at is not in this level
 	var world: Vector3 = target

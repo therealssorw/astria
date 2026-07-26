@@ -48,8 +48,11 @@ class Runner:
 			_fail("bar is not %d slots" % Net.HOTBAR_SLOTS)
 			return
 
-		# 1. handed-out items land on the bar without anyone touching the UI
-		var ids: Array = ItemDb.ITEMS.keys()
+		# 1. handed-out items land on the bar without anyone touching the UI.
+		# Only as many as there are slots: the catalogue outgrew the bar the
+		# moment armor was added to it, and a bar that is full is a normal state
+		# (see 1b), not the end of the test.
+		var ids: Array = (ItemDb.ITEMS.keys() as Array).slice(0, Net.HOTBAR_SLOTS)
 		for id: String in ids:
 			Net.request_cheat_give(id)
 			await tree.physics_frame
@@ -67,6 +70,27 @@ class Runner:
 			_fail("duplicate slot for a second copy")
 			return
 
+		# 1b. with the bar full, the next thing picked up is CARRIED and not
+		# dropped on the floor — auto-placement is a convenience, and running
+		# out of room must not cost you the item.
+		var spare := ""
+		for id: String in ItemDb.ITEMS:
+			if not ids.has(id):
+				spare = id
+				break
+		if spare == "":
+			_fail("the catalogue no longer has more items than the bar has slots")
+			return
+		var full: Array = _bar().duplicate()
+		Net.request_cheat_give(spare)
+		await tree.physics_frame
+		if _bar() != full:
+			_fail("a full bar was rearranged to fit '%s'" % spare)
+			return
+		if GameStats.item_count(spare) != 1:
+			_fail("'%s' was lost when the bar had no room for it" % spare)
+			return
+
 		# 2. selection walks and wraps (what R1/L1 ask for)
 		Net.request_hotbar_select(2)
 		await tree.physics_frame
@@ -79,18 +103,29 @@ class Runner:
 			_fail("out-of-range slot was accepted")
 			return
 
-		# 3. assigning an item that is already on the bar swaps the two slots
+		# 3. assigning an item that is already on the bar SWAPS the two slots —
+		# whatever was in the target comes back to the slot it left, and neither
+		# is duplicated. Checked against the real occupant rather than against
+		# "": the bar used to be mostly empty here, so the swap was only ever
+		# exercised against a hole, which is the easy half of it.
 		var moved: String = ids[0]
+		var displaced: String = _bar()[4]
+		if displaced == "" or displaced == moved:
+			_fail("slot 4 holds '%s', so this does not test a swap" % displaced)
+			return
 		Net.request_hotbar_assign(4, moved)
 		await tree.physics_frame
-		if _bar()[4] != moved or _bar().count(moved) != 1 or _bar()[0] != "":
+		if _bar()[4] != moved or _bar().count(moved) != 1:
 			_fail("assign duplicated or lost an entry: %s" % str(_bar()))
+			return
+		if _bar()[0] != displaced or _bar().count(displaced) != 1:
+			_fail("what was in slot 4 should be in slot 0 now: %s" % str(_bar()))
 			return
 
 		# 4. an item the player does not carry can never reach the bar
 		Net.request_hotbar_assign(0, "not_a_real_item")
 		await tree.physics_frame
-		if _bar()[0] != "":
+		if _bar()[0] != displaced:
 			_fail("bar took an item that isn't carried")
 			return
 

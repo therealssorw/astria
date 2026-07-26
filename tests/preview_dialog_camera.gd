@@ -20,6 +20,9 @@ const INTERACTABLE := preload("res://scenes/entities/npc/npc_interactable.tscn")
 const CAST := [
 	{"scene": "res://scenes/entities/npc/built/kingnpc.tscn", "dialog": "king"},
 	{"scene": "res://scenes/entities/npc/built/villager.tscn", "dialog": "tut_mayor"},
+	# The King's guard: a taller character than either of the above, and the one
+	# the camera has to turn to mid-scene when he cuts in over the throne.
+	{"scene": "res://scenes/entities/npc/built/knight.tscn", "dialog": "knight"},
 ]
 
 func _ready() -> void:

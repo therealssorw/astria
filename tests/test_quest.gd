@@ -241,9 +241,9 @@ class Runner:
 		print("QUESTTEST king=", npc.global_position)
 		return await _kill_count(tree)
 
-	## The King's follow-up: a quest that counts kills instead of ending at
-	## somebody. The count belongs to the SERVER — a client saying it has killed
-	## twenty-five bandits has said nothing at all.
+	## The King's follow-up: a quest that counts kills AND is reported back. The
+	## count belongs to the SERVER — a client saying it has killed twenty-five
+	## bandits has said nothing at all.
 	func _kill_count(tree: SceneTree) -> bool:
 		var quest := "kill_bandits"
 		var needed := QuestData.kills_needed(quest)
@@ -283,7 +283,8 @@ class Runner:
 				"switching quest should reset the count"):
 			return false
 
-		# 4. the last kill finishes it: no `done_at`, so nobody to report to
+		# 4. the last kill TURNS THE QUEST ROUND rather than finishing it: this
+		# one has a `done_at`, so the King is owed an answer
 		Net.server_grant_quest(1, quest)
 		await tree.physics_frame
 		for i in needed - 1:
@@ -294,13 +295,125 @@ class Runner:
 			return false
 		Net.server_record_enemy_kill("Bandit_last", 1)
 		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"the %dth kill should have kept the quest, not cleared it" % needed):
+			return false
+		if not _check(GameStats.quest_kills == needed,
+				"the count should read %d, not %d" % [needed, GameStats.quest_kills]):
+			return false
+		if not _check(tracker.visible, "the heading should still be up, pointing home"):
+			return false
+		# ...and the HUD says so: the heading is the walk back, and the star has
+		# turned round to the King instead of still pointing at an empty camp
+		if not _check(str(tracker._label.text) == QuestData.progress_label(quest, needed),
+				"the heading still reads the count: '%s'" % tracker._label.text):
+			return false
+		if not _check(not str(tracker._label.text).contains("/"),
+				"a counted-out quest should not still read a tally: '%s'" % tracker._label.text):
+			return false
+		var home: Variant = QuestData.target_pos(tree, quest, needed)
+		var camp: Variant = QuestData.target_pos(tree, quest, 0)
+		if not _check(home != null and camp != null and home != camp,
+				"the star should have turned round to the quest's `done_target`"):
+			return false
+		return await _report_back(tree, quest, needed)
+
+	## Walking it back to the King. Everything the server can check is checked
+	## here: the count, and that the pawn is really at him.
+	func _report_back(tree: SceneTree, quest: String, needed: int) -> bool:
+		var tracker: Node = _tracker(tree)
+		var npc := _npc_with(tree, QuestData.done_at(quest))
+		if not _check(npc != null, "the NPC '%s' ends this quest is not in the world"
+				% QuestData.done_at(quest)):
+			return false
+		var pawn: Node3D = tree.get_nodes_in_group("local_player")[0]
+
+		# 1. from across the town it does nothing, same as any other hand-in
+		_place(pawn, npc.global_position + Vector3(60, 0, 0))
+		await tree.physics_frame
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"a counted-out quest should not hand in from 60 m away"):
+			return false
+
+		# 2. at his feet it does
+		_place(pawn, npc.global_position + Vector3(1.5, 0, 0))
+		await tree.physics_frame
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
 		if not _check(str(GameStats.quest) == "",
-				"the %dth kill should have finished the quest" % needed):
+				"reporting in at the King should have finished the quest"):
 			return false
 		if not _check(not tracker.visible, "the heading goes away with the quest"):
 			return false
 
+		# 3. THE ONE THAT MATTERS: the answer offering the hand-in lives in a
+		# LOCAL conversation, so a patched client can pick it whenever it likes.
+		# Standing in front of him with no bandits killed must buy nothing.
+		Net.server_grant_quest(1, quest)
+		await tree.physics_frame
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"the King took a report of %d kills from a player with 0" % needed):
+			return false
+		# ...and one short is still short
+		for i in needed - 1:
+			Net.server_record_enemy_kill("Bandit_short_%d" % i, 1)
+		await tree.physics_frame
+		Net.request_finish_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"the King took a report one kill short of %d" % needed):
+			return false
+		Net.request_cheat_quest("")
+		await tree.physics_frame
+
 		print("QUESTTEST kill count=", needed)
+		return await _catacombs(tree)
+
+	## The quest the Knight beside the throne hands over the moment the bandits
+	## are reported in. Its PLACE is not built yet, which is a normal state — so
+	## what is checked is the part that does exist: he is really standing in the
+	## world with that dialog_id, and the dialog really offers it.
+	func _catacombs(tree: SceneTree) -> bool:
+		var quest := "clear_catacombs"
+		if not _check(QuestData.has(quest), "'%s' is not in the catalogue" % quest):
+			return false
+		var giver := QuestData.giver(quest)
+		var knight := _npc_with(tree, giver)
+		if not _check(knight != null,
+				"the Knight who gives '%s' ('%s') is not in the world" % [quest, giver]):
+			return false
+		if not _check(DialogData.has(giver), "the Knight has nothing to say"):
+			return false
+
+		# He is offered inside the KING's conversation ("Now that I think of
+		# it..."), and the server checks you are standing at the giver — so the
+		# two of them have to be close enough that being at one is being at the
+		# other, or taking the quest silently does nothing.
+		var king := _npc_with(tree, "king")
+		if not _check(king != null, "the King is not in the world"):
+			return false
+		var apart := king.global_position.distance_to(knight.global_position)
+		var reach: float = float(knight.interact_range) + Net.SHOP_RANGE_SLACK
+		var talk: float = float(king.interact_range)
+		if not _check(apart + talk <= reach,
+				"the Knight is %.1f m from the King: standing at the King can be %.1f m from him, past his %.1f m reach"
+						% [apart, apart + talk, reach]):
+			return false
+
+		# and it really is granted from there
+		var pawn: Node3D = tree.get_nodes_in_group("local_player")[0]
+		_place(pawn, king.global_position + Vector3(0, 0, 1.0))
+		await tree.physics_frame
+		Net.request_start_quest(quest)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"the Knight should hand '%s' over to a pawn stood at the throne" % quest):
+			return false
+		print("QUESTTEST knight=", apart, "m from the King")
 		return true
 
 	func _npc_with(tree: SceneTree, dialog_id: String) -> Node3D:

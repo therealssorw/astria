@@ -18,9 +18,22 @@ extends RefCounted
 ##       # remembers, so it survives a reconnect and cannot be faked into a
 ##       # second helping. The line it names still lives in "lines" like any
 ##       # other, and reaching it by `goto` works as normal.
+##
+##       # Optional. Opens somewhere else while the player is on a quest whose
+##       # count has been made and is walking it back to this NPC:
+##       #   "when_quest_done": {"line": "so", "quest": "kill_bandits"},
+##       # It is the same idea and the same rule — the count is the SERVER's
+##       # (GameStats.quest / .quest_kills mirror it), so a patched client can
+##       # only talk its OWN screen into the wrong greeting. Reporting in beats
+##       # "first_time" when both apply.
 ##       "lines": {
 ##           "line_id": {
 ##               "text": "What the NPC says.",
+##               # Optional, for a scene with two people in it: the name over
+##               # the box for THIS line, and the `dialog_id` of whoever in the
+##               # world is saying it so the camera turns to them.
+##               "speaker": "Knight",
+##               "speaker_at": "knight",
 ##               # Either give answers the player picks between...
 ##               "answers": [
 ##                   {"text": "Player's reply", "goto": "other_line"},
@@ -184,7 +197,45 @@ Sadly, I'm sure they'll come back.",
 	"king": {
 		"speaker": "The King",
 		"start": "greeting",
+		# Walk back with the 25 bandits done and he does not ask what you want —
+		# he asks "So?". The condition is the SERVER's count (GameStats.quest /
+		# .quest_kills are its mirrors), and the answer under it only ASKS to
+		# hand the quest in; the server checks the tally and that you are really
+		# standing here before it agrees.
+		"when_quest_done": {"line": "so", "quest": "kill_bandits"},
 		"lines": {
+			"so": {
+				"text": "So?",
+				"answers": [
+					{"text": "I did it.", "goto": "service",
+							"action": "finish_quest:kill_bandits"},
+				],
+			},
+			"service": {
+				"text": "Very well.\nI hope this means we no longer have to deal with them.\nThank you for your service.",
+				"goto": "catacombs",
+			},
+			# The Knight standing beside the throne cuts in. A line may name its
+			# own speaker, and `speaker_at` is the dialog_id of who in the WORLD
+			# is saying it, so the camera turns to him and back afterwards — see
+			# DialogSystem._focus_speaker. He is a real NPC you can also walk up
+			# to ("knight" below); this is the same character speaking up while
+			# you are already stood in front of the King.
+			"catacombs": {
+				"speaker": "Knight",
+				"speaker_at": "knight",
+				"text": "Now that I think of it. We are experiencing a bit of an overflow of the dead inside of our catacombs. If you would be willing to defeat them, I am sure we will reward you greatly.",
+				"answers": [
+					{"text": "I'll do it.", "goto": "good_luck",
+							"action": "start_quest:clear_catacombs"},
+				],
+			},
+			"good_luck": {
+				"speaker": "Knight",
+				"speaker_at": "knight",
+				"text": "Very well, good luck soldier.",
+				"goto": END,
+			},
 			"greeting": {
 				"text": "Yes?\nWhat do you want?",
 				"answers": [
@@ -218,6 +269,30 @@ Sadly, I'm sure they'll come back.",
 			"rancor": {
 				"text": "You're right now in the town of Rancor.\nYour other question, I am unable to answer. All I know is we recently had a shipment of immigrants — you likely would have got here from that.",
 				"goto": "hideout",
+			},
+		},
+	},
+	# The King's guard. He hands out "clear_catacombs", which is why he needs a
+	# dialog_id and an NpcInteractable of his own at all: the server only gives
+	# a quest to a pawn standing at the NPC that gives it out, and it finds that
+	# NPC by this id. Because he stands beside the throne, taking the quest
+	# inside the King's conversation passes that check too.
+	"knight": {
+		"speaker": "Knight",
+		"start": "greeting",
+		"lines": {
+			"greeting": {
+				"text": "Something you need, soldier?",
+				"answers": [
+					{"text": "What's down in the catacombs?", "goto": "dead"},
+					{"text": "Nothing.", "goto": END},
+				],
+			},
+			# back to the question it was asked from, like every other branch in
+			# this file — so "Nothing." is still there as the way out
+			"dead": {
+				"text": "The dead, and more of them every week.\nWe seal the doors and hope. It is not a plan.",
+				"goto": "greeting",
 			},
 		},
 	},

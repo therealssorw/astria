@@ -41,9 +41,29 @@ const QUESTS := {
 		"height": 3.0,
 		"from": "king",
 		## Bandits to put down. A quest carrying `kills` is counted by the
-		## server (`Net._credit_quest_kill`) and finishes ITSELF the moment the
-		## count is reached — there is no `done_at`, so nobody to report back to.
+		## server (`Net._credit_quest_kill`).
 		"kills": 25,
+		## ...and this one has a `done_at`, so the count is not the end of it:
+		## the 25th bandit turns the quest round rather than clearing it, and
+		## you walk back to the King to say so. The three `done_*` keys below
+		## are what the HUD swaps to while it is pointing you home.
+		"done_at": "king",
+		"done_name": "Report back to the King",
+		"done_target": "king",
+		"done_height": 2.9,
+	},
+	## What the Knight beside the throne asks of you the moment the bandits are
+	## reported in. NOTE: the catacombs are not in the level yet, so this quest
+	## has no star (`target_pos` answers null, which is a normal answer here)
+	## and no way to finish. When the place is built, drop a `QuestAnchor` with
+	## `target_id = "catacombs"` at its door and give this entry a `kills` count
+	## or a `done_at`; until then it is deliberately open-ended rather than
+	## handing out a reward for walking nowhere.
+	"clear_catacombs": {
+		"name": "Clear out the catacombs",
+		"target": "catacombs",
+		"height": 2.5,
+		"from": "knight",
 	},
 	"bandit_camp": {
 		"name": "Drive off the bandits",
@@ -85,12 +105,23 @@ static func kills_needed(id: String) -> int:
 		return 0
 	return int(QUESTS[id].get("kills", 0))
 
-## What the HUD heading reads: the name, plus "7/25" while a quest is counting.
-## Formatting lives here so the heading has no idea which quests count.
+## Has the counting part been done? Only ever true for a quest that counts —
+## a quest with no `kills` is never "complete", it is either on or handed in.
+## The count is the SERVER's (`GameStats.quest_kills` is its mirror), so this
+## is reading a decision, not making one.
+static func is_complete(id: String, kills: int) -> bool:
+	var needed := kills_needed(id)
+	return needed > 0 and kills >= needed
+
+## What the HUD heading reads: the name, plus "7/25" while a quest is counting,
+## and the `done_name` once the counting is done and it is the walk back that is
+## left. Formatting lives here so the heading has no idea which quests count.
 static func progress_label(id: String, kills: int) -> String:
 	var needed := kills_needed(id)
 	if needed <= 0:
 		return label(id)
+	if is_complete(id, kills):
+		return str(QUESTS[id].get("done_name", label(id)))
 	return "%s  %d/%d" % [label(id), clampi(kills, 0, needed), needed]
 
 ## Group the quest's target wears. A `QuestAnchor` joins it from its own
@@ -126,12 +157,22 @@ static func reward_gold(id: String) -> int:
 ## Where the star should sit, or null when this quest's target is not in the
 ## level — a normal answer, not an error: a quest can be written here before
 ## the place it points at has been built.
-static func target_pos(tree: SceneTree, id: String) -> Variant:
+##
+## `kills` is how far along the counting is, because a quest that has been
+## COUNTED OUT points somewhere else: `done_target` is the walk home, so the
+## star turns round to the King on the 25th bandit instead of still pointing at
+## an empty camp. Leave it out and you get the outbound target, which is what
+## the cheat menu wants when it is asking "is this quest's place in the level".
+static func target_pos(tree: SceneTree, id: String, kills := 0) -> Variant:
 	if not QUESTS.has(id):
 		return null
 	var entry: Dictionary = QUESTS[id]
-	for node in tree.get_nodes_in_group(group(str(entry.get("target", "")))):
+	var target := str(entry.get("target", ""))
+	var height := float(entry.get("height", 0.0))
+	if is_complete(id, kills) and str(entry.get("done_target", "")) != "":
+		target = str(entry["done_target"])
+		height = float(entry.get("done_height", height))
+	for node in tree.get_nodes_in_group(group(target)):
 		if node is Node3D:
-			return (node as Node3D).global_position \
-					+ Vector3.UP * float(entry.get("height", 0.0))
+			return (node as Node3D).global_position + Vector3.UP * height
 	return null
