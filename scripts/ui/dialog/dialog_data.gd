@@ -158,7 +158,7 @@ Sadly, I'm sure they'll come back.",
 			# he has just been handed a reason to talk to you, and the shop is
 			# the next thing you want.
 			"gift": {
-				"text": "Good work out there beating the bandits up.\nHere\nI have a pair of old armor",
+				"text": "Good work out there beating the bandits up.\nHere\nI have a pair of old armor\nYou deserve it for what you did",
 				"answers": [
 					{"text": "Thank you.", "goto": "greeting",
 							"action": "take_gift:blacksmith_armor"},
