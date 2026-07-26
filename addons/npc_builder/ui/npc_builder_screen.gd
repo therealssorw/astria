@@ -53,6 +53,20 @@ func _ready() -> void:
 
 	_set_definition(_starter_definition())
 
+## A suit is MADE in the Items tab and WORN here, which means the two halves of
+## that workflow are two screens in ONE editor session -- and this one is built
+## once, when the plugin loads. So the list of saved suits was a snapshot of the
+## folder as it stood at editor startup: every suit made after that was invisible
+## here, and the only way to see your own armor was to know that a button called
+## "Rescan parts" also rescans suits. Rebuilding the list on the way into the tab
+## is what closes that: save in Items, switch to NPC Builder, wear it.
+##
+## Cheap enough to do unconditionally -- it is a directory listing and a load of
+## each suit's header, both of which the editor has cached.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and visible and _suit_picker != null:
+		_refresh_suits()
+
 # ---------------------------------------------------------------------------
 # construction
 # ---------------------------------------------------------------------------
@@ -281,7 +295,13 @@ func _refresh_sets() -> void:
 ## SET is the art as drawn, for dressing a character without making a suit
 ## first. Metadata carries the path or the set name, so applying one does not
 ## have to guess from the label.
+##
+## Whatever was picked stays picked across a rebuild. The list is rebuilt every
+## time this tab is opened (see `_notification`), and a menu that snapped back
+## to its first entry on the way in would quietly swap the suit under the NPC
+## you came back to dress.
 func _refresh_suits() -> void:
+	var previous := _selected_suit()
 	_suit_picker.clear()
 	var saved := ArmorLibrary.paths()
 	if not saved.is_empty():
@@ -296,14 +316,20 @@ func _refresh_suits() -> void:
 			_suit_picker.add_item(suit)
 			_suit_picker.set_item_metadata(_suit_picker.item_count - 1, suit)
 	if _suit_picker.item_count == 0:
-		_suit_picker.add_item("(no armor in %s)" % NpcRig.ARMOR_ROOT.get_file())
+		_suit_picker.add_item("(nothing made yet — the Items tab makes suits)")
 		_suit_picker.disabled = true
 		return
 	_suit_picker.disabled = false
 	for i in _suit_picker.item_count:
+		if _suit_picker.is_item_separator(i):
+			continue
+		if str(_suit_picker.get_item_metadata(i)) == previous:
+			_suit_picker.select(i)
+			return
+	for i in _suit_picker.item_count:
 		if not _suit_picker.is_item_separator(i):
 			_suit_picker.select(i)
-			break
+			return
 
 func _selected_set() -> String:
 	if _set_picker.selected < 0:
