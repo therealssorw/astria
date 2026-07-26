@@ -165,6 +165,28 @@ mixed pile.
   guaranteed hit inside `locked_hit_bonus`, the camera tracking, the red HUD
   ring) is therefore a reward for locking on deliberately, not a default.
 
+## Combat: health regeneration
+
+- Go `health_regen_delay` (3s) without taking damage and health climbs back at
+  `health_regen` (6/s) to full — both `@export`s on `player.gd`, and a rate of
+  0 turns it off. There is no item, no button and no cooldown: walking away
+  from a fight IS the heal.
+- Anything that gets through stalls it, chip through a raised guard included
+  (`server_take_damage` sets `_hurt_hold` whenever `dealt > 0`). A clean parry
+  deals no damage, so it deliberately does NOT stall the heal — perfect
+  defence keeps you healing.
+- Server-owned like the rest of combat: `_regen_health` is ticked from
+  `_physics_process` behind `multiplayer.is_server()`, so it runs on the
+  server's copy of EVERY pawn (its own included) and never on a client's. The
+  owner's bar catches up through the existing `cl_vitals` sync twice a second
+  — the client never adds a point to its own health.
+- Bandits do not regenerate; only players do. If enemies ever should, it needs
+  its own exports on `enemy.gd`, and note it makes disengaging mid-fight
+  pointless.
+- Covered by `--headless res://tests/test_combat.tscn` (the `=== regen ===`
+  section): the stall, the climb rate, stopping at full, corpses not healing,
+  and the parry/chip split.
+
 ## Technical notes
 
 - Rendering: GL Compatibility; physics: Jolt. Main scene: `scenes/world.tscn`.

@@ -84,6 +84,8 @@ func _run() -> void:
 	await _test_clips()
 	print("=== guard ===")
 	await _test_guard()
+	print("=== regen ===")
+	await _test_regen()
 	print("=== combo ===")
 	await _test_combo()
 	print("=== stance ===")
@@ -201,6 +203,85 @@ func _test_guard() -> void:
 	b.stamina = 100.0
 	b._try_start_attack(false)
 	ok(not b.attacking, "no attacking while staggered")
+
+	a.free()
+	b.free()
+	await get_tree().process_frame
+
+## Health comes back by itself after a quiet spell. It is the SERVER's copy
+## that heals (_regen_health is only ever ticked behind an is_server check),
+## so this drives it by hand the way the server's physics frame would.
+func _test_regen() -> void:
+	var a := _spawn_player(1, Vector3.ZERO)
+	var b := _spawn_player(2, Vector3(0, 0, 1.2))
+	await get_tree().process_frame
+	var dt := 1.0 / 60.0
+
+	# a hit that lands stalls the heal for the full delay
+	b.health = 50.0
+	b.stamina = 100.0
+	b.blocking = false
+	b._hurt_hold = 0.0
+	_face(b, a.global_position)
+	_silence(b)
+	_hit(a, b)
+	ok(about(b.health, 40.0, 0.01), "the hit lands", "hp=%.2f" % b.health)
+	ok(about(b._hurt_hold, b.health_regen_delay, 0.001), "a hit stalls the heal",
+			"%.2fs" % b._hurt_hold)
+
+	# nothing comes back until the delay is up, then it climbs at the rate
+	var hurt: float = b.health
+	var stalled := int(b.health_regen_delay / dt) - 2 # just short of the delay
+	for i in stalled:
+		b._regen_health(dt)
+	ok(b.health == hurt, "nothing comes back inside the %.0fs" % b.health_regen_delay,
+			"hp=%.2f" % b.health)
+	var healing := 120
+	for i in healing:
+		b._regen_health(dt)
+	var healed_for: float = float(stalled + healing) * dt - b.health_regen_delay
+	ok(about(b.health, hurt + b.health_regen * healed_for, 0.2),
+			"then it climbs at the regen rate",
+			"hp=%.2f after %.2fs of %.1f/s" % [b.health, healed_for, b.health_regen])
+
+	# it stops at full, and a corpse doesn't heal at all
+	b.health = b.max_health - 1.0
+	b._hurt_hold = 0.0
+	for i in 120:
+		b._regen_health(dt)
+	ok(b.health == b.max_health, "the heal stops at full", "hp=%.2f" % b.health)
+	b.dead = true
+	b.health = 10.0
+	b._hurt_hold = 0.0
+	for i in 60:
+		b._regen_health(dt)
+	ok(b.health == 10.0, "a corpse doesn't heal", "hp=%.2f" % b.health)
+	b.dead = false
+
+	# a parry costs no health, so it must not stall the heal either
+	b.health = 50.0
+	b.stamina = 50.0
+	b.blocking = true
+	b._time = 10.0
+	b.block_start_time = 10.0 - b.parry_window * 0.5
+	b._hurt_hold = 0.0
+	a.stagger_time = 0.0
+	_silence(b)
+	_hit(a, b)
+	ok(b.health == 50.0 and b._hurt_hold == 0.0,
+			"a clean parry doesn't stall the heal",
+			"hp=%.2f hold=%.2fs" % [b.health, b._hurt_hold])
+
+	# chip damage is still damage
+	b.blocking = true
+	b.block_start_time = -100.0
+	b.stamina = 100.0
+	b._hurt_hold = 0.0
+	_silence(b)
+	_hit(a, b)
+	ok(b.health < 50.0 and about(b._hurt_hold, b.health_regen_delay, 0.001),
+			"chip through the guard stalls it too",
+			"hp=%.2f hold=%.2fs" % [b.health, b._hurt_hold])
 
 	a.free()
 	b.free()

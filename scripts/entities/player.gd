@@ -131,6 +131,12 @@ extends CharacterBody3D
 # --- Health ---
 @export var max_health := 100.0
 @export var death_restart_delay := 3.0
+## Health comes back on its own once a fighter has gone this long without
+## taking damage, at `health_regen` a second up to `max_health`. A parry costs
+## no health, so it doesn't stall the heal — being hit does, chip included.
+## Set the rate to 0 to turn regeneration off entirely.
+@export var health_regen := 6.0
+@export var health_regen_delay := 3.0
 ## This character's grunt pair — one random grunt plays per unblocked hit.
 ## Each character gets exactly one pair (player pair still unassigned).
 @export var hurt_grunts: AudioStream
@@ -209,6 +215,7 @@ var fx_parry_time := 0.0
 var fx_break_time := 0.0
 var _shake := 0.0
 var _stam_hold := 0.0 # regen pause after spending stamina
+var _hurt_hold := 0.0 # SERVER: heal pause after taking damage
 
 # sprint state
 var sprinting := false
@@ -352,6 +359,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	_time += delta
 	stagger_time = maxf(0.0, stagger_time - delta)
+	# health belongs to the server for every pawn, its own included — so the
+	# heal is ticked here rather than in either role's branch below
+	if multiplayer.is_server():
+		_regen_health(delta)
 	if is_local:
 		_tick_local_fx(delta)
 		_local_tick(delta)
@@ -1168,6 +1179,16 @@ func _regen_stamina(delta: float) -> void:
 		return
 	stamina = minf(max_stamina, stamina + stamina_regen * delta)
 
+## SERVER ONLY: health climbs back once nothing has landed on this fighter for
+## `health_regen_delay`. The owner never adds a point to its own bar — it gets
+## the new number in the vitals sync, exactly the way damage arrives, so a
+## patched client can only lie to its own screen about how healthy it is.
+func _regen_health(delta: float) -> void:
+	_hurt_hold = maxf(0.0, _hurt_hold - delta)
+	if dead or _hurt_hold > 0.0 or health >= max_health:
+		return
+	health = minf(max_health, health + health_regen * delta)
+
 ## The guard only covers the front. `away` is the hit's push direction, i.e.
 ## attacker -> me, so the attacker sits opposite it.
 func _guard_covers(knockback: Vector3) -> bool:
@@ -1212,6 +1233,8 @@ func server_take_damage(amount: float, knockback: Vector3, attacker := 0,
 				blocking = false
 				server_stagger(guard_break_stagger_time)
 	health -= dealt
+	if dealt > 0.0:
+		_hurt_hold = health_regen_delay # anything that got through stalls the heal
 	Net.server_broadcast_player_damage(peer_id, health, result, kb, stamina, attacker)
 	if health <= 0.0:
 		_server_die(attacker)
@@ -1387,6 +1410,7 @@ func net_respawn(pos: Vector3) -> void:
 	block_start_time = -10.0
 	cached_press_time = -10.0
 	_stam_hold = 0.0
+	_hurt_hold = 0.0
 	if is_local:
 		_restore_capsule()
 		_shake = 0.0
