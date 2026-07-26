@@ -15,7 +15,12 @@ extends Node3D
 
 const ANIM_DIR := "res://Assets/Animations/Humanoid/"
 const CLIPS := {
-	"idle": {"path": ANIM_DIR + "Movement/Idle/Offensive Idle.fbx", "speed": 1.0, "loop": true},
+	# Two idles. "idle" is what standing still looks like; stand still long
+	# enough (IDLE_LONG_AFTER) and the character drops into "idle_long" instead
+	# and stays there until something moves them. Swapping which pose is which
+	# is swapping these two paths — nothing else knows what is in either clip.
+	"idle": {"path": ANIM_DIR + "Movement/Idle/Idle.fbx", "speed": 1.0, "loop": true},
+	"idle_long": {"path": ANIM_DIR + "Movement/Idle/Offensive Idle.fbx", "speed": 1.0, "loop": true},
 	"walk": {"path": ANIM_DIR + "Movement/Walking/Walking.fbx", "speed": 1.0, "loop": true},
 	"run": {"path": ANIM_DIR + "Movement/Running/Running.fbx", "speed": 1.0, "loop": true},
 	"slide": {"path": ANIM_DIR + "Movement/Sliding/Running Slide.fbx", "speed": 1.0, "loop": true},
@@ -62,7 +67,11 @@ const CLIPS := {
 ## which is what makes it read as the slow, committed version. Repeats still
 ## cross-blend through the "__alt" copy.
 const SWORD_CLIPS := {
-	"idle": "sword_idle", "walk": "sword_walk", "run": "sword_run",
+	# "idle_long" maps to the same sword idle as "idle" on purpose: a character
+	# with a blade in hand has one standing pose, so the long-idle swap happens
+	# and nothing about it shows.
+	"idle": "sword_idle", "idle_long": "sword_idle",
+	"walk": "sword_walk", "run": "sword_run",
 	"light_0": "sword_slash", "light_1": "sword_slash",
 	"light_2": "sword_slash", "heavy": "sword_slash",
 }
@@ -94,6 +103,10 @@ const REACT_DECAY := 1.6
 const STAGGER_LEAN := -0.3
 ## Animation rate during hitstop — the near-freeze that gives a punch weight.
 const HITSTOP_SCALE := 0.06
+## Seconds of unbroken standing still before "idle" gives way to "idle_long".
+## Anything at all — a step, a swing, a guard, a hit — puts it back to zero, so
+## this is time spent doing NOTHING, not time since the last idle started.
+const IDLE_LONG_AFTER := 15.0
 
 ## Per-character scale on attack clip playback (and thus swing timings);
 ## lets the player punch faster than enemies sharing this visual.
@@ -116,6 +129,7 @@ var _lean_target := 0.0
 var _react_lean := 0.0     # transient recoil from a hit, decays back to 0
 var _hitstop_time := 0.0   # >0: animation nearly frozen (impact emphasis)
 var _stagger_time := 0.0   # >0: helpless recoil pose overrides the clip
+var _idle_time := 0.0      # seconds stood still; past IDLE_LONG_AFTER, idle_long
 
 ## Whether entering the tree builds the Mixamo clip library as well as the
 ## model. Set it before add_child; a static editor preview does not need
@@ -536,6 +550,13 @@ func tick(delta: float, anim: String, _t := 0.0, speed_ratio := 0.0) -> void:
 	_stagger_time = maxf(0.0, _stagger_time - delta)
 	_react_lean = move_toward(_react_lean, 0.0, delta * REACT_DECAY)
 
+	# Standing still is the only thing that runs the long-idle clock, and being
+	# rocked back by a hit is not standing still.
+	if anim == "idle" and _stagger_time <= 0.0:
+		_idle_time += delta
+	else:
+		_idle_time = 0.0
+
 	_lean_target = 0.0
 	var loco := "" # locomotion clip, if any — its playback tracks ground speed
 	if _stagger_time > 0.0:
@@ -544,7 +565,7 @@ func tick(delta: float, anim: String, _t := 0.0, speed_ratio := 0.0) -> void:
 	else:
 		match anim:
 			"idle":
-				_play("idle")
+				_play(_idle_key())
 			"run":
 				loco = "run" if speed_ratio > 0.65 else "walk"
 			"air":
@@ -579,6 +600,16 @@ func tick(delta: float, anim: String, _t := 0.0, speed_ratio := 0.0) -> void:
 			anim_player.speed_scale = clampf(speed_ratio / float(LOCO_NOMINAL[loco]), 0.7, 1.75)
 	model.rotation.x = lerpf(model.rotation.x, _lean_target + _react_lean, minf(delta * 12.0, 1.0))
 
+## Which of the two standing poses belongs on screen this frame. Falls back to
+## the short one for anything built without the long clip — a villager's clip
+## list is idle/walk/run, and they have no business taking a fighting stance.
+func _idle_key() -> String:
+	if _idle_time < IDLE_LONG_AFTER:
+		return "idle"
+	if anim_player and anim_player.has_animation("lib/" + _clip_for("idle_long")):
+		return "idle_long"
+	return "idle"
+
 func play_death() -> void:
 	anim_player.pause()
 	var tw := create_tween()
@@ -594,6 +625,7 @@ func revive() -> void:
 	_react_lean = 0.0
 	_hitstop_time = 0.0
 	_stagger_time = 0.0
+	_idle_time = 0.0
 	if anim_player:
 		anim_player.speed_scale = 1.0
 	_current_key = ""

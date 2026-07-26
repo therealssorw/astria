@@ -194,6 +194,34 @@ mixed pile.
 - No new animation: `_animate` already replicates `ratio = speed / walk_speed`,
   and `HumanoidVisual.tick` picks the run clip and scales stride rate from it.
 
+## Standing still: the two idles
+
+- There are TWO standing poses, and which one is on screen is a matter of how
+  long the character has been doing nothing. `idle` (Mixamo's plain `Idle.fbx`)
+  is what standing still looks like; after `HumanoidVisual.IDLE_LONG_AFTER`
+  (15s) of unbroken idle they drop into `idle_long` (`Offensive Idle.fbx`, the
+  fighting stance that used to be the only idle) and stay there until something
+  moves them.
+- The clock is time spent doing NOTHING, not time since the last idle started:
+  `tick` adds to `_idle_time` only while `anim == "idle"` and nothing is
+  staggering them, and zeroes it otherwise. A single step, swing, guard, jump
+  or hit puts them back on the short idle.
+- Which pose is which is the two paths in `CLIPS` and nothing else — no code
+  knows what is in either clip, so swapping them (or pointing `idle_long` at a
+  new "bored" animation) is a one-line change.
+- A sword in hand hides the whole thing: `SWORD_CLIPS` maps BOTH idles to
+  `sword_idle`, so the swap still happens and nothing shows. Do the same for
+  any future weapon set — an idle that has no armed version would otherwise
+  yank the blade out of the character's hands at 15s.
+- Built NPCs never do it. `NpcVisual.NPC_CLIPS` is idle/walk/run, so villagers
+  do not load the clip; `_idle_key` checks `has_animation` and stays on the
+  short idle rather than erroring. A villager taking a boxing stance because
+  nobody talked to them for 15s is not the behaviour.
+- Covered by `--headless res://tests/test_npc_builder.tscn` (`_check_long_idle`,
+  driven through the real `tick` with frame-sized deltas): not before the wait,
+  yes after it, reset by one step, invisible with a sword, and not loaded for
+  villagers.
+
 ## Combat: where a swing goes
 
 - An unlocked punch goes where the CAMERA is pointed. It used to prefer the
