@@ -1,5 +1,34 @@
 # Astria — Godot 4.7 third-person action game
 
+## How to report back (IMPORTANT)
+
+Say NOTHING until the work is finished. No preamble, no plan read back, no
+narration of what is being opened or tried, no summary paragraph afterwards.
+
+When it is done, the whole reply is a bulleted list:
+
+- **One bullet per task.** SIX WORDS MAXIMUM in a bullet. Count them.
+- Nothing else in the message. No heading, no closing line, no explanation of
+  how it was done — the code and its comments are where that lives.
+- Anything that has to be raised is a bullet too, in the same six words:
+  "Three tests red, not mine." / "Copper armor price now mismatched." /
+  "Needs a pad button: ask." A caveat still gets said; it just gets said short.
+
+Anything longer belongs in a comment, in CLAUDE.md, or in the commit message.
+
+## The file index (IMPORTANT)
+
+The bottom of this file lists every file in the project and what it does. It is
+loaded with this document, so it is already in front of you.
+
+- **Go to the file, do not hunt for it.** Do not grep or glob the repo for
+  something the index already names — open it directly.
+- Search only for what the index does not cover: a symbol inside a file, or
+  something genuinely new that is not on the list yet.
+- **KEEP IT TRUE.** Adding a file means adding its line in the same commit;
+  changing what a file is FOR means rewriting its line. An index that lies is
+  worse than no index, because it is trusted instead of checked.
+
 ## Before you write anything (IMPORTANT)
 
 Three questions, asked BEFORE the first line and not after the last one. They
@@ -1979,3 +2008,176 @@ mixed pile.
   of a scene or a level, and reapply your own change on top of it: they moved
   that node deliberately, whereas the group or property you were adding can go
   anywhere.
+
+## File index
+
+Every file in the project and the one job it does. Read this instead of
+searching; keep it true when you add or repurpose a file (see "The file index").
+
+Assets are indexed BY FOLDER, not per file — there are hundreds of FBX, glTF and
+PNG in them and a line each would say nothing. The vendored MagicaVoxel importer
+is one line for the same reason: it is third party and unmodified.
+
+### Autoloads
+
+- `scripts/core/network_manager.gd` — `Net`: every RPC, the server-owned player registry, hosting/joining, UPnP.
+- `scripts/core/game_stats.gd` — `GameStats`: read-only local mirror of the server's gold, bag, bar and quest.
+- `scripts/core/input_device.gd` — `InputDevice`: which device was last used, and the button names prompts show.
+- `scripts/core/discord_notifier.gd` — `Discord`: posts "somebody joined" to a webhook, dedicated server only.
+- `scripts/core/voice/voice_chat.gd` — `Voice`: the microphone, push-to-talk/open-mic, and playback on speakers' bodies.
+- `scripts/core/voice/voice_codec.gd` — `VoiceCodec`: the voice wire format (companded mono at RATE) and the resampler.
+- `scripts/ui/dialog/dialog_system.gd` — `DialogSystem`: the dialog box, its typewriter, pages and answer buttons.
+- `scripts/ui/shop/shop_ui.gd` — `ShopSystem`: the buy/sell screen, opened by a dialog action.
+- `scripts/ui/debug/cheat_menu.gd` — `CheatMenu`: the editor-only cheat list (give, quest, teleport, tutorial).
+- `scripts/ui/cutscene/cinematic.gd` — `Cinematic`: letterbox bars, the high-angle shot, turning the speaker to face you.
+- `scripts/ui/cutscene/intro_cutscene.gd` — `IntroCutscene`: the black screen, the two lines, and getting up as it fades.
+- `scripts/world/quest/quest_system.gd` — `Quests`: turns dialog answers into quest start/finish requests.
+- `scripts/world/gift/gift_system.gd` — `Gifts`: turns a dialog answer into a one-off gift request.
+- `scripts/world/tutorial/tutorial_system.gd` — `Tutorial`: owns each player's island copy, their bandits, and their step.
+- `scripts/items/icons/item_icon_renderer.gd` — `ItemIcons`: photographs each item's own art into an icon at startup.
+
+### Combat and characters
+
+- `scripts/entities/player.gd` — the player pawn: movement, swings, guard, and every request the client sends.
+- `scripts/entities/enemy.gd` — bandit AI, its fight states, and the tutorial's "hold" levels.
+- `scripts/entities/humanoid_visual.gd` — the shared rig, the clip table, and the tick that picks a pose.
+- `scripts/entities/player_visual.gd` — the player's body: the "Player" voxel character with the full clip list.
+- `scripts/entities/rouge_visual.gd` — Rouge, the enemies' model and the skeleton every voxel NPC borrows.
+- `scripts/combat/combat_levels.gd` — the ONE place weapon level, enemy level and armor become a damage number.
+
+### NPCs
+
+- `scripts/entities/npc/npc_character.gd` — a placed NPC: builds itself from a definition, animates off its own movement.
+- `scripts/entities/npc/npc_visual.gd` — a built voxel NPC rigged onto Rouge's skeleton.
+- `scripts/entities/npc/npc_rig.gd` — the rigging itself: reshapes the skeleton, skins the voxels, caps the seams.
+- `scripts/entities/npc/npc_definition.gd` — the saved data for one NPC (`@tool`, or it loads as a placeholder).
+- `scripts/entities/npc/npc_part.gd` — one slot of a built NPC: model, colours and nudges.
+- `scripts/entities/npc/npc_interactable.gd` — makes an NPC talkable, and measures its face and height for the shot.
+
+### Items
+
+- `scripts/items/item_db.gd` — the item catalogue: names, prices, levels, hold and armor blocks.
+- `scripts/items/armor/armor_definition.gd` — one suit of armor, saved so any character can wear it (`@tool`).
+- `scripts/items/armor/armor_library.gd` — where suits live on disk, and how one is listed and saved.
+
+### UI
+
+- `scripts/ui/theme/ui_theme.gd` — the palette and panel builders every screen is made from.
+- `scripts/ui/hud.gd` — the code-built HUD, and the host of every drawn overlay.
+- `scripts/ui/inventory_ui.gd` — the bag, the hotbar, the equipment cross, and drag and drop.
+- `scripts/ui/items/item_prompt.gd` — the bottom-right "use / special" hint for whatever is in hand.
+- `scripts/ui/scoreboard.gd` — the hold-P scoreboard, read from the server registry.
+- `scripts/ui/main_menu.gd` — the boot screen: name, connect, and the voice mode switch.
+- `scripts/ui/dialog/dialog_data.gd` — every line of conversation text in the game.
+- `scripts/ui/dialog/npc_prompt_overlay.gd` — the speech bubble drawn over a talkable NPC.
+- `scripts/ui/shop/shop_data.gd` — which NPC stocks what.
+- `scripts/ui/quest/quest_tracker.gd` — the quest heading panel in the top-right corner.
+- `scripts/ui/quest/quest_marker_overlay.gd` — the gold star to the objective, edge-clamped when off screen.
+- `scripts/ui/tutorial/tutorial_overlay.gd` — the tutorial's control popup and its banner line.
+- `scripts/ui/voice/voice_overlay.gd` — the mic glyph: your own in the corner, and over anyone being heard.
+
+### World
+
+- `scripts/world/world.gd` — the island root: grows collision, arms the intro, places things.
+- `scripts/world/main.gd` — the old arena root; bakes a navmesh at runtime.
+- `scripts/world/ocean.gd` — the endless sea: wave tiles kept centred on the player.
+- `scripts/world/spawn_point.gd` — marks where players spawn and respawn.
+- `scripts/world/bandit_spawner.gd` — refills a bandit camp, keeping them out of each other and off roofs.
+- `scripts/world/gold_drop.gd` — a dropped pile; the server decides who gets it.
+- `scripts/world/dungeon/dungeon_walls.gd` — generates a dungeon's stone shell from its floor and door markers.
+- `scripts/world/quest/quest_data.gd` — every quest: name, target, giver, and where it is handed in.
+- `scripts/world/quest/quest_anchor.gd` — a marker that IS a quest's destination.
+- `scripts/world/teleport/teleport_data.gd` — the places the teleport cheat can send you.
+- `scripts/world/teleport/teleport_anchor.gd` — a marker that IS a teleport destination.
+- `scripts/world/tutorial/tutorial_data.gd` — the lesson as a table, plus where the island copies sit.
+- `scripts/world/tutorial/tutorial_arena.gd` — one player's private island copy, its waves and its villager.
+- `scripts/effects/fire_flicker.gd` — flickers a fire's light with layered sines.
+
+### Scenes
+
+- `scenes/world.tscn` — the real island: the game's main scene.
+- `scenes/player.tscn` — the player pawn, camera rig and all.
+- `scenes/enemy.tscn` — a bandit.
+- `scenes/main.tscn` — the old test arena.
+- `scenes/starterDungeon.tscn` — the dungeon floor and door markers; its walls are generated.
+- `scenes/ui/main_menu.tscn` — the boot scene.
+- `scenes/effects/furnace_fire.tscn` — the forge fire.
+- `scenes/entities/npc/npc_interactable.tscn` — instance this beside an NPC to make it talkable.
+- `scenes/entities/npc/built/villager.tscn` — the built villager, used by the tutorial.
+- `scenes/entities/npc/built/kingnpc.tscn` — the King beside the town hall.
+- `scenes/entities/npc/built/king.tscn` — an earlier King build.
+- `scenes/entities/npc/built/knight.tscn` — the knight who hands out the catacombs quest.
+- `scenes/entities/npc/built/player.tscn` — the player body as a placeable NPC.
+- `scenes/world/quest_anchor.tscn` — drop this where a quest points.
+- `scenes/world/teleport_anchor.tscn` — drop this where a teleport lands.
+- `scenes/world/tutorial/tutorial_arena.tscn` — the island copy the tutorial instances per player.
+
+### Editor plugins
+
+- `addons/npc_builder/plugin.gd` — registers the NPC Builder tab.
+- `addons/npc_builder/ui/npc_builder_screen.gd` — the NPC Builder itself: parts, colours, armor, save.
+- `addons/npc_builder/ui/npc_preview.gd` — its turntable view.
+- `addons/npc_builder/ui/part_slot_editor.gd` — one slot's row of controls in that screen.
+- `addons/npc_builder/io/npc_writer.gd` — writes the definition and the placeable scene.
+- `addons/item_builder/plugin.gd` — registers the Items tab.
+- `addons/item_builder/ui/item_builder_screen.gd` — the Items tab: where armor suits are made.
+- `addons/grass_brush/grass_brush_plugin.gd` — the viewport brush for painting grass.
+- `addons/grass_brush/grass_paint.gd` — the painted grass layer itself (one MultiMesh).
+- `addons/sky_cloud_remover/cloud_remover_plugin.gd` — the menu entry that scrubs clouds from a sky texture.
+- `addons/sky_cloud_remover/cloud_scrub.gd` — the cloud-removal image processing, runnable headless.
+- `addons/MagicaVoxel_Importer_with_Extensions/` — third party, unmodified: imports `.vox` files.
+- `addons/*/plugin.cfg` — one manifest per plugin; Godot reads these, nothing else does.
+
+### Tests and previews
+
+- `tests/helpers/test_host.gd` — the shared boot for any test needing a world: hosts and waits for the pawn.
+- `tests/test_combat.gd` — swings, the guard, combos and the level ladders.
+- `tests/test_hotbar.gd` — auto-placement, selection, swaps, use, and the drag rules.
+- `tests/test_shop.gd` — buying and selling, and who moves the coins.
+- `tests/test_quest.gd` — the marker maths and the server's quest state.
+- `tests/test_gift.gd` — one-off gifts, and the protection armor buys.
+- `tests/test_dialog.gd` — line flow, loop-backs, and the speaker swap.
+- `tests/test_tutorial.gd` — the whole lesson, end to end, on a real listen server.
+- `tests/test_intro_cutscene.gd` — the black, the lines, the fade, and the getting-up.
+- `tests/test_voice_chat.gd` — the wire format, the resampler, and who can hear you.
+- `tests/test_npc_builder.gd` — rigs every part in the library and checks the joins.
+- `tests/test_armor_suits.gd` — suits: saving, wearing, and the Items tab.
+- `tests/test_item_icons.gd` — every item has art, and it photographs in its own colours.
+- `tests/test_teleport.gd` — the teleport cheat's refusals and its landing.
+- `tests/test_gold_drops.gd` — dropped gold and who is paid for it.
+- `tests/test_bandit_spawner.gd` — where a camp puts its bandits, and surviving a corpse.
+- `tests/test_dungeon_walls.gd` — the generated dungeon shell: doors, gaps, overlaps, collision.
+- `tests/test_ui_theme.gd` — the palette, the font, and no screen painted black.
+- `tests/test_menu_scroll.gd` — long menus following the highlight for a pad.
+- `tests/test_discord.gd` — the message that would be posted; it posts nothing.
+- `tests/preview_ui.gd` — the real screens: palette, shop, dialog, tutorial popup, quest corner, inventory.
+- `tests/preview_dialog_camera.gd` — the shot each conversation opens on, speakers starting turned away.
+- `tests/preview_get_up.gd` — the intro's getting-up, four frames across the clip.
+- `tests/preview_sword_swings.gd` — each sword swing going in, at the strike, and out.
+- `tests/preview_held_item.gd` — a weapon in the player's hand, for fitting the grip.
+- `tests/preview_npc_armor.gd` — a villager bare, suited, and in a recoloured suit.
+- `tests/preview_item_icons.gd` — every item icon on one sheet, with a colour-wash report.
+- `tests/preview_voice.gd` — the voice HUD in each of its states.
+- `tests/*.tscn` — one scene per test or preview above; each just hosts its script.
+
+### Data resources and assets
+
+- `Assets/Data/Npcs/*.tres` — the built characters (player, villager, king, kingnpc, knight).
+- `Assets/Data/Armor/*.tres` — the three suits: flimsy, copper, iron.
+- `Assets/Models/Entity/Humanoid/bonemap_*.tres` — retarget maps: Manny, Mixamo, MotusMan.
+- `Assets/Audio/SFX/**/*.tres` — the random-pick sound sets (grunts, impacts, wooshes, deaths).
+- `Assets/Animations/Humanoid/` — every clip, grouped by purpose (Movement, Combat, Sword, Cutscene).
+- `Assets/Models/Entity/Humanoid/` — Rouge, and the voxel NPC parts and armor libraries.
+- `Assets/Models/World/` — islands, buildings, dungeon prefabs.
+- `Assets/Models/World/Prefab/grass.tscn` — the blade the grass brush instances.
+- `Assets/Models/World/wave_mesh.tscn` — one tile of the ocean.
+- `Assets/Models/Items/` — the things characters carry.
+- `Assets/Textures/` — character, world and UI textures; `UI/panel_grunge.jpg` is every panel's paint.
+- `Assets/Fonts/EBGaramond/` — the game's one typeface, with its licence.
+
+### Project files
+
+- `project.godot` — autoloads, the input map, rendering and audio settings.
+- `export_presets.cfg` — the Windows client and dedicated server presets.
+- `tools/voxel/gox_to_gltf.py` — converts a Goxel `.gox` to the `.gltf` the builder reads.
+- `CLAUDE.md` — this file: the rules, the systems, and the index above.
