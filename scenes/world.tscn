@@ -120,7 +120,7 @@ transform = Transform3D(0.13797796, 0, 0.058839448, 0, 0.14999999, 0, -0.0588394
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 157.31122, 91.836174, -156.51982)
 
 [node name="Kingnpc" parent="." unique_id=1967818918 instance=ExtResource("15_7t5mc")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 149.93307, 92.836174, -155.87569)
+transform = Transform3D(0.039404184, 0, 0.99922335, 0, 1, 0, -0.99922335, 0, 0.039404184, 149.93307, 92.836174, -155.87569)
 
 [node name="House1" parent="." unique_id=367744375 instance=ExtResource("16_lakw3")]
 transform = Transform3D(-0.8748799, 0, 0.48433992, 0, 1, 0, -0.48433992, 0, -0.8748799, 165.65933, 92.13936, -181.15128)
