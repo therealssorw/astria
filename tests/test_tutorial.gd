@@ -12,6 +12,9 @@ extends Node
 ## on a fresh copy; and a gate nobody answers gives in rather than trapping the
 ## player in a lesson that is hitting them.
 ##
+## A wave that arrives talking is checked too: those bandits must be held still
+## until their line has been read, so nobody is punched mid-sentence.
+##
 ## The gates are worked with REAL input events. That matters: the heavy gate
 ## used to be unpassable by tapping the button, which left three bandits frozen
 ## and no way forward, and no amount of setting flags directly would have
@@ -62,6 +65,18 @@ class Runner:
 			if int(e.owner_peer) == ME and not e.dead:
 				out.append(e)
 		return out
+
+	## Angle between where the camera rig is pointing and the speaker.
+	func _camera_off_by(rig: Node3D, pawn: Node3D, speaker: Node3D) -> float:
+		if rig == null or not is_instance_valid(speaker):
+			return TAU
+		var to: Vector3 = speaker.global_position - pawn.global_position
+		to.y = 0.0
+		if to.length() < 0.01:
+			return 0.0
+		var facing := -rig.global_transform.basis.z
+		facing.y = 0.0
+		return absf(facing.normalized().signed_angle_to(to.normalized(), Vector3.UP))
 
 	func _any_swinging() -> bool:
 		for b in _my_bandits():
@@ -191,6 +206,40 @@ class Runner:
 			return
 		Net.report_tutorial_ready()
 
+		# 2b. the bandit arrives talking, and must be STILL until its line has
+		#     been read — no punching anyone through a box they cannot close
+		if not await _until(func() -> bool: return _step_id() == "first_bandit", 600):
+			_fail("the first bandit never arrived (at '%s')" % _step_id())
+			return
+		for b in _my_bandits():
+			if b.hold_mode != Enemy.Hold.STILL:
+				_fail("the bandit was not held still while it talked")
+				return
+		# the camera frames whoever is speaking, and the bars come in with them
+		if not await _until(func() -> bool: return Cinematic.is_framing(), 600):
+			_fail("nothing framed the bandit while it was talking")
+			return
+		var talk_began := Time.get_ticks_msec()
+		if not await _until(func() -> bool: return Cinematic.bar_amount() > 0.9, 120):
+			_fail("the cinematic bars never came in for the bandit's line")
+			return
+		var speaker: Node3D = _my_bandits()[0]
+		var rig: Node3D = pawn.get("cam_rig")
+		if not await _until(func() -> bool: return _camera_off_by(rig, pawn, speaker) < 0.35, 300):
+			_fail("the camera never turned to face the bandit (off by %.0f deg)"
+					% rad_to_deg(_camera_off_by(rig, pawn, speaker)))
+			return
+
+		# ...and the line being read is what lets the lesson start, NOT the
+		# patience valve giving up on it
+		if not await _until(func() -> bool: return _step_id() != "first_bandit", 900):
+			_fail("the bandit's line never finished")
+			return
+		var talked := float(Time.get_ticks_msec() - talk_began) / 1000.0
+		if talked >= TutorialData.GATE_PATIENCE - 2.0:
+			_fail("the taunt ran out its patience (%.1fs) instead of just being read" % talked)
+			return
+
 		# 3. ONE bandit, switched on a piece at a time. Block first, against an
 		#    enemy that can do nothing but punch you on a slow count.
 		if not await _until(func() -> bool: return _step_id() == "teach_block", 600):
@@ -218,23 +267,41 @@ class Runner:
 					% [patience, spent])
 			return
 
-		# then it stops dead and lets you learn to hit it back
+		# then it stops PUNCHING and lets you learn to hit it back. It still
+		# circles: the first thing you swing at should be a target that moves.
 		if not await _until(func() -> bool: return _step_id() == "teach_attack"):
 			_fail("the punch lesson did not follow the block lesson")
+			return
+		var circler: Node3D = _my_bandits()[0]
+		var was_at: Vector3 = circler.global_position
+		var wandered := 0.0
+		for i in 120:
+			await tree.physics_frame
+			if circler.attacking:
+				_fail("the bandit swung during the punch lesson")
+				return
+			wandered = maxf(wandered, circler.global_position.distance_to(was_at))
+		if wandered < 0.5:
+			_fail("the bandit stood rooted during the punch lesson instead of circling")
+			return
+		why = await _pass_gate("teach_attack", "attack")
+		if why != "":
+			_fail(why)
+			return
+
+		# the heavy is taught against something completely still
+		if not await _until(func() -> bool: return _step_id() == "teach_heavy"):
+			_fail("the heavy lesson did not follow the punch lesson")
 			return
 		var dummy: Node3D = _my_bandits()[0]
 		var stood_at: Vector3 = dummy.global_position
 		for i in 90:
 			await tree.physics_frame
 			if dummy.attacking:
-				_fail("the bandit swung during the punch lesson")
+				_fail("the bandit swung during the heavy lesson")
 				return
 		if dummy.global_position.distance_to(stood_at) > 0.35:
-			_fail("the bandit was not completely still for the punch lesson")
-			return
-		why = await _pass_gate("teach_attack", "attack")
-		if why != "":
-			_fail(why)
+			_fail("the bandit was not completely still for the heavy lesson")
 			return
 		why = await _pass_gate("teach_heavy", "attack_heavy")
 		if why != "":
@@ -259,19 +326,17 @@ class Runner:
 		_kill_all_bandits()
 
 		# 3c. and only then the rest of the raid
-		if not await _until(func() -> bool: return _step_id() == "clear_raid"):
-			_fail("the reinforcements never arrived")
+		# they arrive talking and hold still until the line is read, so give
+		# this one room for the line as well as the walk-on
+		if not await _until(func() -> bool: return _step_id() == "clear_raid", 900):
+			_fail("the reinforcements never arrived (stuck at '%s')" % _step_id())
 			return
 		if _my_bandits().size() != 3:
 			_fail("expected three more bandits, found %d" % _my_bandits().size())
 			return
 		_kill_all_bandits()
 
-		# 4. the villager step, then out of the copy and onto the real island
-		if not await _until(func() -> bool: return _step_id() == "mayor"):
-			_fail("the villager never came after the copy was clear")
-			return
-		Net.report_tutorial_pressed("mayor")
+		# 4. the raid being beaten IS the end: no quest, no hand-off
 		if not await _until(func() -> bool: return not Tutorial.server_running(ME)):
 			_fail("the tutorial never ended")
 			return

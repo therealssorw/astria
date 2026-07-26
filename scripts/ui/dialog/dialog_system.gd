@@ -55,10 +55,19 @@ func is_open() -> bool:
 	return dialog_id != ""
 
 ## Open `dialog_id` from DialogData. Returns false if there is no such entry.
-func start(id: String) -> bool:
+##
+## `speaker_node` is who is saying it, if anyone in the world is: the camera
+## frames them and the cinematic bars come in for as long as the box is up.
+## Leave it out for a line that comes from the player's own head — those are
+## instructions, not scenes, and should not take the camera away.
+func start(id: String, speaker_node: Node3D = null) -> bool:
 	if not DialogData.has(id):
 		push_warning("DialogSystem: no dialog named '%s'" % id)
 		return false
+	if is_instance_valid(speaker_node):
+		Cinematic.focus(speaker_node)
+	else:
+		Cinematic.unfocus()
 	var convo: Dictionary = DialogData.get_conversation(id)
 	dialog_id = id
 	_lines = convo.get("lines", {})
@@ -88,6 +97,7 @@ func close() -> void:
 	_root.visible = false
 	set_process(false)
 	_clear_answers()
+	Cinematic.unfocus() # give the camera back; bars a cutscene is holding stay
 	if is_instance_valid(_player):
 		_player.set("ui_open", false)
 	_player = null

@@ -40,7 +40,9 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _focused and event.is_action_pressed("interact"):
 		get_viewport().set_input_as_handled()
-		DialogSystem.start(dialog_id)
+		# hand ourselves over as the speaker: the camera frames whoever is
+		# talking, and the cinematic bars come in while they are
+		DialogSystem.start(dialog_id, self)
 
 func prompt_anchor() -> Vector3:
 	return global_position + prompt_offset

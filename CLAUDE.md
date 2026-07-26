@@ -217,14 +217,21 @@ mixed pile.
   `talk` is the villager, `end` sends you to the island. Reordering the lesson
   is reordering that array.
 - THE FIGHT IS BUILT UP A PIECE AT A TIME, and that is the design. Every step
-  carries an `ai` level that says how much of the bandits is switched on
-  (`Enemy.Hold`): `attacker` walks in, CIRCLES you and throws ONE punch every
-  `hold_attack_period` (3s) and nothing else; `still` is a training dummy that
-  does not move, turn or swing; `full` is an ordinary bandit. So: you meet a
-  bandit that can only circle and punch and learn to BLOCK it, it stops dead
-  and you learn to swing and to hold a heavy, then it wakes all the way up for
-  a straight 1v1, and only when that is won does the rest of the raid arrive.
-  A button is never taught against an enemy doing something else at once.
+  carries an `ai` level saying how much of the bandit is switched on
+  (`Enemy.Hold`): `still` is a dummy that does not move, turn or swing (what a
+  line is spoken over); `circler` circles you but never swings; `attacker`
+  circles AND throws one punch every `hold_attack_period` (3s); `full` is an
+  ordinary bandit. The order that makes: it can only punch, so BLOCK is the
+  first thing you are taught; then it stops punching and only circles, so you
+  learn to swing at something that moves; the heavy and lock-on are taught
+  against it standing still; then it wakes all the way up for a 1v1, and only
+  when that is won does the rest of the raid arrive.
+- Nobody is hit through a box they cannot close. A wave that arrives talking
+  carries `await_dialog: true`: it lands STILL and the step waits for the line
+  to be read before anything is switched on. A gate likewise waits for the
+  action to FINISH (`FINISH_GRACE`, capped so holding block cannot stall it)
+  before the next line starts, so nothing talks over the swing it just asked
+  for.
 - Measured, hands off the controls: the first punch lands 3.7s in, it circles
   about one and a half times around you in 15s, and three punches cost 16 hp.
   The dials are `held_circle_mult` (how fast it orbits), `hold_attack_period`
@@ -272,11 +279,9 @@ mixed pile.
 - A step's line waits its turn: `_say` queues behind whatever is already
   talking, because a wave and the gate after it arrive in the same frame and
   the taunt would otherwise be cut off mid-word by the first instruction.
-- The villager is still placeholder art — a capsule with a nametag. Drop a
-  built NPC in its place in `scenes/world/tutorial/tutorial_arena.tscn`; the
-  logic finds everything by node name through `tutorial_arena.gd`'s accessors.
-- The mayor does not exist yet: the villager's line is the hand-off, and the
-  step after it is "go to the island".
+- There is no hand-off at the end and no quest: the last bandit going down IS
+  the end, and you are put on the real island. The villager who used to walk
+  over was removed with it.
 - Test: `--headless res://tests/test_tutorial.tscn` (prints
   `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
   lesson: joining lands on a copy and not the real island, the copy has the
@@ -294,6 +299,28 @@ mixed pile.
 - It hosts on its own port (27140, not `Net.DEFAULT_PORT`), so running it while
   a game is up from the editor does not fail with "pawn never spawned" because
   ENet could not bind.
+
+## Cinematic framing
+
+- `Cinematic` (autoload, `scripts/ui/cutscene/cinematic.gd`) is the shared
+  "this is a scene" look: two black bars top and bottom, and the camera turning
+  to whoever is speaking. Reusable by anything, not cutscene-only.
+- Two switches on purpose. `focus(node)` / `unfocus()` turns the camera onto a
+  character and brings the bars in with them; `hold_bars(true/false)` is bars
+  alone, for a scene with nobody in it to look at (the intro monologue). Bars
+  show while EITHER is on, so a cutscene that opens a conversation halfway
+  through does not flap them.
+- `DialogSystem.start(id, speaker_node)` is what drives it: pass the node that
+  is talking and it gets framed for as long as the box is up. NpcInteractable
+  passes itself; the tutorial passes the bandit. Lines with NO speaker node
+  (the player's own head, which is what the teaching lines are) deliberately
+  get neither bars nor a camera move: those are instructions, not scenes.
+- It only NUDGES the pawn's own camera rig (the same yaw and pitch the mouse
+  drives) toward the target, so when it lets go the player carries on from
+  where the shot ended instead of being snapped somewhere. It takes no input
+  away — the dialog box already does that.
+- Purely local and cosmetic: where one player's camera points changes nothing
+  anyone else can see.
 
 ## NPC dialog
 

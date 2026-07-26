@@ -19,32 +19,14 @@ extends Node3D
 ## Copies sit at the island's own height rather than above it, so the ocean
 ## (which follows the local player and reaches 3.6km) and the distance fog
 ## behave exactly as they do at home.
-##
-## The villager who sees you off at the end is cosmetic, so every peer runs it
-## locally and nobody replicates it. It walks toward the pawn of the player
-## whose island this is, NOT "the local player" — on the server that pawn
-## belongs to somebody else entirely. The capsule is placeholder art: drop a
-## built NPC in its place and nothing else changes.
-
-signal villager_arrived
 
 ## Whose copy this is. Set by the tutorial system right after instancing.
 var owner_peer := 0
 
-## How close the villager gets before it says its piece.
-const VILLAGER_REACH := 2.4
-const VILLAGER_SPEED := 3.2
-## Bandits arrive in a ring this far out, and the villager from a little beyond.
+## Bandits arrive in a ring this far out.
 const BANDIT_RING := 7.5
-const VILLAGER_START := 16.0
-
-var _villager: Node3D
-var _walking := false
 
 func _ready() -> void:
-	_villager = $Villager
-	_villager.visible = false
-	set_process(false)
 	_build_collision()
 
 ## A glTF has no collision shapes; the real island grows its own the same way.
@@ -67,9 +49,6 @@ func bandit_spawn(i: int) -> Vector3:
 	var reach := BANDIT_RING + fposmod(float(i) * 0.618, 1.0) * 3.0
 	return _ground_at(player_spawn() + Vector3(cos(ang), 0.0, sin(ang)) * reach)
 
-func villager_start() -> Vector3:
-	return _ground_at(player_spawn() + Vector3(0.6, 0.0, 0.8).normalized() * VILLAGER_START)
-
 ## Drop a point onto the terrain. Characters are excluded, or someone standing
 ## on the spot puts the next bandit on their head.
 func _ground_at(pos: Vector3) -> Vector3:
@@ -85,43 +64,3 @@ func _ground_at(pos: Vector3) -> Vector3:
 	if hit.is_empty():
 		return pos
 	return hit.position + Vector3.UP * 0.2
-
-## Cosmetic: the villager appears and walks over. `villager_arrived` fires once
-## it is close enough to talk.
-func send_villager() -> void:
-	if _walking:
-		return
-	_villager.global_position = villager_start()
-	_villager.visible = true
-	_walking = true
-	set_process(true)
-
-func _process(delta: float) -> void:
-	if not _walking:
-		return
-	var pawn := _owner_pawn()
-	if pawn == null:
-		return
-	var to := pawn.global_position - _villager.global_position
-	to.y = 0.0
-	if to.length() <= VILLAGER_REACH:
-		_walking = false
-		set_process(false)
-		_face(pawn)
-		villager_arrived.emit()
-		return
-	var step := to.normalized() * VILLAGER_SPEED * delta
-	_villager.global_position = _ground_at(_villager.global_position + step)
-	_face(pawn)
-
-func _face(pawn: Node3D) -> void:
-	var at := Vector3(pawn.global_position.x, _villager.global_position.y,
-			pawn.global_position.z)
-	if at.distance_to(_villager.global_position) > 0.05:
-		_villager.look_at(at, Vector3.UP)
-
-func _owner_pawn() -> Node3D:
-	for p in get_tree().get_nodes_in_group("player"):
-		if is_instance_valid(p) and p.get("peer_id") == owner_peer:
-			return p as Node3D
-	return null

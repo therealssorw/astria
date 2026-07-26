@@ -144,39 +144,6 @@ const DIALOGS := {
 			},
 		},
 	},
-	# The villager who walks over once the raid is beaten. This is the hand-off
-	# to the mayor — the mayor's own conversation is not written yet.
-	"tut_mayor": {
-		"speaker": "Villager",
-		"start": "alright",
-		"lines": {
-			"alright": {
-				"text": "Are you alright?",
-				"answers": [
-					{"text": "Yes — it's just my head.", "goto": "standing"},
-				],
-			},
-			"standing": {
-				"text": "You look way better than you should be after taking out those thugs.",
-				"answers": [
-					{"text": "Who even were they?", "goto": "thugs"},
-					{"text": "What should I do now?", "goto": "mayor"},
-				],
-			},
-			# back to the question it was asked from, so the other one is still
-			# there to ask
-			"thugs": {
-				"text": "They're thugs who keep raiding our village.\nSadly, I'm sure they'll come back.",
-				"goto": "standing",
-			},
-			"mayor": {
-				"text": "Head to the Mayor's office. I'm sure he'll reward you for this fight.",
-				"answers": [
-					{"text": "Sounds good!", "goto": END},
-				],
-			},
-		},
-	},
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",
@@ -199,7 +166,7 @@ const DIALOGS := {
 				],
 			},
 			"iron": {
-				"text": "From the old mine east of the ridge — or I did, before the bandits made a camp of it. Now I melt down whatever the tide brings in.",
+				"text": "From the old mine east of the ridge, or I did, before the bandits made a camp of it. Now I melt down whatever the tide brings in.",
 				"answers": [
 					{"text": "Maybe I'll clear them out.", "goto": "bandits"},
 					{"text": "Rough luck.", "goto": "greeting"},

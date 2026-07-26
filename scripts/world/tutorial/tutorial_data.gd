@@ -9,7 +9,9 @@ extends RefCounted
 ##   "wait_ready" — hold until that player's client says the intro cutscene is
 ##                  over. Nothing moves before the player can see.
 ##   "wave"       — spawn `count` bandits around the spawn, switched on to that
-##                  step's `ai` level.
+##                  step's `ai` level. `await_dialog: true` holds the step open
+##                  until its line has been read, so a wave that arrives
+##                  talking cannot start hitting you mid-sentence.
 ##   "gate"       — teach ONE button. Its `dialog` plays first (see DialogData),
 ##                  then the prompt goes up and the step waits until the player
 ##                  really does it. `action` is the input map name; the server
@@ -20,15 +22,15 @@ extends RefCounted
 ##                  lesson.
 ##   "clear"      — no prompt, no pause: fight. Ends when every bandit spawned
 ##                  so far is dead.
-##   "talk"       — a villager walks over and talks (the mayor hand-off). Ends
-##                  when the conversation closes.
 ##   "end"        — out of the copy and onto the real island; it is torn down.
 ##
 ## Every step carries an `ai` level that says how much of the bandits is
 ## switched on for it (see Enemy.Hold):
 ##
-##   "attacker" — rooted, punching once every three seconds and nothing else.
-##   "still"    — a training dummy: it does not move, turn or swing.
+##   "still"    — a training dummy: it does not move, turn or swing. What a
+##                line is spoken over.
+##   "circler"  — circles you, never swings. A moving thing to learn to hit.
+##   "attacker" — circles you AND punches once every three seconds.
 ##   "full"     — an ordinary bandit, everything on.
 ##
 ## That ladder IS the lesson. A fight is built one piece at a time: you meet a
@@ -66,6 +68,12 @@ const MAX_SLOTS := 4
 ## (A `static var` so the test can turn it down; nothing in the game writes it.)
 static var GATE_PATIENCE := 25.0
 
+## After a gate is satisfied, the lesson waits for the action to FINISH before
+## the next line starts — the guard coming down, the swing playing out — so it
+## is never talking over the thing it just asked for. Capped, or a player who
+## simply holds block would never hear another word.
+const FINISH_GRACE := 1.5
+
 ## What a tutorial bandit's punch is worth against an ordinary one's: 60% off.
 ## This is the ONLY thing about them that is softened — same reach, same
 ## wind-up, same timings — so what you learn here is what the real island does,
@@ -76,17 +84,19 @@ const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
 
 	# ONE bandit for the whole lesson, switched on a piece at a time.
-	# First it can only circle and punch, on a slow count — so the first thing
-	# you are taught is the answer to it. Its taunt lands straight after "where
-	# even am I?", which is what put you on the ground in the first place.
-	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "attacker",
-			"dialog": "tut_taunt"},
+	# It lands STILL and says its piece first — its taunt comes straight after
+	# "where even am I?", and being punched through a box you cannot close is
+	# not a fight anybody lost fairly. Then it can circle and punch, on a slow
+	# count, and the first thing you are taught is the answer to it.
+	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "still",
+			"dialog": "tut_taunt", "await_dialog": true},
 	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block",
 			"ai": "attacker", "patience": 14.0},
 
-	# now it stops dead and lets you learn what to do back
+	# it stops throwing punches and lets you learn what to do back — still
+	# circling, so the first thing you swing at is a target that moves
 	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack",
-			"ai": "still"},
+			"ai": "circler"},
 	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "dialog": "tut_heavy",
 			"ai": "still"},
 	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "dialog": "tut_lock_on",
@@ -95,12 +105,11 @@ const STEPS := [
 	# everything it knows, one on one, with no interruptions left
 	{"id": "duel", "kind": "clear", "ai": "full", "banner": "One on one. Finish him."},
 
-	# and only then the rest of the raid
-	{"id": "reinforcements", "kind": "wave", "count": 3, "ai": "full",
-			"dialog": "tut_reinforcements"},
+	# and only then the rest of the raid. They arrive STILL and wait for their
+	# own line to finish before any of them may touch you.
+	{"id": "reinforcements", "kind": "wave", "count": 3, "ai": "still",
+			"dialog": "tut_reinforcements", "await_dialog": true},
 	{"id": "clear_raid", "kind": "clear", "ai": "full", "banner": "Drive them out."},
-
-	{"id": "mayor", "kind": "talk", "dialog": "tut_mayor"},
 	{"id": "leave", "kind": "end"},
 ]
 
@@ -141,6 +150,8 @@ static func hold_for(step: Dictionary) -> Enemy.Hold:
 	match str(step.get("ai", "full")):
 		"still":
 			return Enemy.Hold.STILL
+		"circler":
+			return Enemy.Hold.CIRCLER
 		"attacker":
 			return Enemy.Hold.ATTACKER
 	return Enemy.Hold.NONE

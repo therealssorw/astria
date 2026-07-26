@@ -49,6 +49,7 @@ func arm() -> void:
 	_armed = true
 	_rect.color = Color.BLACK
 	_rect.visible = true
+	Cinematic.hold_bars(true) # framed like a scene, all the way through
 
 ## The local pawn exists — start talking. Called by player.gd. Does nothing if
 ## we were never armed, so a respawn mid-session never replays the intro.
@@ -126,6 +127,7 @@ func _finish() -> void:
 	_tween = null
 	_rect.visible = false
 	_rect.color = Color.BLACK # reset for the next time we load in
+	Cinematic.hold_bars(false)
 	_freeze(false)
 	if get_tree().get_first_node_in_group("local_player") != null:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

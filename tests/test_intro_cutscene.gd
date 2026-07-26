@@ -55,6 +55,10 @@ func _run() -> void:
 	# the world scene arms it before it has drawn a frame
 	IntroCutscene.arm()
 	_check(IntroCutscene.darkness() == 1.0, "screen not black when the world armed it")
+	# a cutscene is framed like one: bars top and bottom for the whole thing
+	_check(Cinematic.is_framing(), "the cutscene did not put the bars up")
+	var ok_bars := await _until(func() -> bool: return Cinematic.bar_amount() > 0.9)
+	_check(ok_bars, "the cinematic bars never slid in")
 
 	IntroCutscene.on_local_pawn_ready()
 	var ok := await _until(func() -> bool: return DialogSystem.dialog_id == IntroCutscene.DARK_DIALOG)
@@ -93,6 +97,9 @@ func _run() -> void:
 	_check(ok, "cutscene never ended")
 	_check(IntroCutscene.darkness() == 0.0, "screen left dark after the cutscene")
 	_check(not pawn.ui_open, "player left frozen after the cutscene")
+	_check(not Cinematic.is_framing(), "the cutscene kept the bars after it ended")
+	ok = await _until(func() -> bool: return Cinematic.bar_amount() == 0.0)
+	_check(ok, "the cinematic bars never slid back out")
 
 	# a pawn that shows up later (a respawn) must not replay the intro
 	IntroCutscene.on_local_pawn_ready()

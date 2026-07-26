@@ -1,26 +1,29 @@
 extends Node
-## The tutorial: you wake up in a city being raided, you are taught one button
-## at a time while the fight holds still for you, and when the last bandit is
-## down a villager sends you to the mayor. Autoload: Tutorial.
+## The tutorial: you wake up on a copy of the island while it is being raided,
+## you are taught one fighting button at a time with the bandits switched on a
+## piece at a time to suit, and when the last of them is down you are put on
+## the real island. Autoload: Tutorial.
 ##
 ## Two halves in one file, because they are two views of the same script:
 ##
-## SERVER — owns everything. It gives each player in the tutorial a private
-## copy of the city (`TutorialData.slot_origin`), spawns their bandits, walks
-## the step table, freezes and unfreezes the fight, and finally drops them on
-## the island. The bandits of a copy are told only to the player they belong
-## to, fight only that player, and are cleaned up with the copy.
+## SERVER — owns everything. It gives each player a private copy of the island
+## (`TutorialData.slot_origin`), spawns their bandits, walks the step table,
+## sets how much of the AI each step wants switched on, and finally drops them
+## on the real island. The bandits of a copy are told only to the player they
+## belong to, fight only that player, and are cleaned up with the copy.
 ##
-## CLIENT — owns nothing but the screen. It instances its own copy of the city
+## CLIENT — owns nothing but the screen. It instances its own copy of the arena
 ## scene at the same coordinates (the way every peer loads the world scene),
 ## plays the line the step names, and puts the button prompt up. It reports the
-## press for gates the server cannot see for itself; everything else the server
-## reads off the requests the player is already sending it.
+## press for gates the server cannot see for itself, and the moment a line that
+## the bandits are waiting on has been read; everything else the server reads
+## off the requests the player is already sending it.
 ##
-## A freeze gate is deliberately NOT a pause menu: the bandits stop, the player
-## does not. You can still walk, turn the camera and look at the thing about to
-## hit you. The hold ends on the real action, so the lesson cannot be clicked
-## through without doing it.
+## A gate is deliberately NOT a pause menu: the bandits are held, the player is
+## not. You can still walk, turn the camera and look at the thing about to hit
+## you. It opens on the real action, so the lesson cannot be clicked through
+## without doing it — and then waits for that action to FINISH before the next
+## line starts, so nothing talks over the swing it just asked for.
 ##
 ## All of the spoken text lives in DialogData under the `tut_*` ids.
 
@@ -120,7 +123,7 @@ func server_report_pressed(id: int, step_id: String) -> void:
 	var step := _step_of(id)
 	if step.get("id", "") != step_id:
 		return
-	if step.get("kind", "") == "talk" or bool(step.get("client_gate", false)):
+	if bool(step.get("client_gate", false)) or bool(step.get("await_dialog", false)):
 		_advance(id)
 
 # ---------------- server: the walk through the table ----------------
@@ -136,16 +139,35 @@ func _process(delta: float) -> void:
 				if _wave_cleared(id):
 					_advance(id)
 			"gate":
-				if not bool(step.get("client_gate", false)) \
-						and _gate_satisfied(id, str(step.get("action", ""))):
-					_advance(id)
-					continue
+				var action := str(step.get("action", ""))
+				if not bool(step.get("client_gate", false)):
+					if not bool(run.get("gate_done", false)):
+						if _gate_satisfied(id, action):
+							run["gate_done"] = true
+							run["done_time"] = 0.0
+					else:
+						# they did it — now let them FINISH it. Talking over the
+						# swing you just asked for reads as not having noticed.
+						run["done_time"] = float(run.get("done_time", 0.0)) + delta
+						if _action_over(id, action) \
+								or run["done_time"] >= TutorialData.FINISH_GRACE:
+							_advance(id)
+						continue
 				# a gate is a lesson, not a lock: give in eventually rather than
 				# leave a player in front of bandits frozen forever
 				run["gate_time"] = float(run.get("gate_time", 0.0)) + delta
 				if run["gate_time"] >= TutorialData.patience(step):
 					print("[Tutorial] peer %d spent %.0fs on '%s' — moving on"
 							% [id, TutorialData.patience(step), step.get("id", "")])
+					_advance(id)
+			"wave":
+				# these wait on the client saying the line has been read. Give
+				# in eventually too: a line that never closes must not strand
+				# somebody in front of bandits that cannot touch them.
+				run["gate_time"] = float(run.get("gate_time", 0.0)) + delta
+				if run["gate_time"] >= TutorialData.patience(step):
+					print("[Tutorial] peer %d never finished '%s' — moving on"
+							% [id, step.get("id", "")])
 					_advance(id)
 
 ## Did the player really do it? Read off the SERVER's own copy of the pawn,
@@ -167,6 +189,19 @@ func _gate_satisfied(id: int, action: String) -> bool:
 			return pawn.blocking
 	return false
 
+## Has the thing the gate asked for run its course? A guard lowered, a swing
+## played out. Read off the server's own copy of the pawn, like the gate itself.
+func _action_over(id: int, action: String) -> bool:
+	var pawn := Net.pawn_of(id)
+	if pawn == null or pawn.dead:
+		return true
+	match action:
+		"attack", "attack_heavy":
+			return not pawn.attacking
+		"block":
+			return not pawn.blocking
+	return true
+
 func _step_of(id: int) -> Dictionary:
 	var run: Dictionary = _runs.get(id, {})
 	if run.is_empty():
@@ -185,6 +220,8 @@ func _enter_step(id: int, index: int) -> void:
 		return
 	run["index"] = index
 	run["gate_time"] = 0.0
+	run["gate_done"] = false
+	run["done_time"] = 0.0
 	var step := TutorialData.step(index)
 	if step.is_empty():
 		server_end(id, true)
@@ -197,12 +234,13 @@ func _enter_step(id: int, index: int) -> void:
 		"wave":
 			_spawn_wave(id, int(step.get("count", 1)), TutorialData.hold_for(step))
 			Net.tutorial_step(id, str(step["id"]))
-			_advance(id) # a wave is a beat, not a wait: the step after it holds
+			# a wave is usually just a beat — but one that arrives talking waits
+			# for its own line to be read, so nobody is hit mid-sentence
+			if not bool(step.get("await_dialog", false)):
+				_advance(id)
 			return
 		"gate", "clear":
 			_set_wave_ai(id, TutorialData.hold_for(step))
-		"talk":
-			_set_wave_ai(id, Enemy.Hold.NONE)
 		"end":
 			server_end(id, true)
 			return
@@ -274,12 +312,9 @@ func client_enter(slot: int) -> void:
 		_my_arena.owner_peer = multiplayer.get_unique_id()
 		world.add_child(_my_arena)
 		_my_arena.global_position = TutorialData.slot_origin(slot)
-	_my_arena.villager_arrived.connect(_on_villager_arrived)
 
 func client_leave() -> void:
 	if is_instance_valid(_my_arena):
-		if _my_arena.villager_arrived.is_connected(_on_villager_arrived):
-			_my_arena.villager_arrived.disconnect(_on_villager_arrived)
 		# the server's own copy is freed by server_end; only free one we made
 		if not multiplayer.is_server():
 			_my_arena.queue_free()
@@ -293,19 +328,17 @@ func client_step(step_id: String) -> void:
 	step_changed.emit(step)
 	if step.is_empty():
 		return
-	if str(step.get("kind", "")) == "talk":
-		# nobody talks from across the square: the villager walks over first,
-		# and arriving is what opens the box
-		if is_instance_valid(_my_arena):
-			_my_arena.send_villager()
-		else:
-			_on_villager_arrived()
-		return
 	# every other step says its line, waiting its turn if something else is
 	# still talking. The prompt waits for the box to close on its own (the
 	# overlay hides while it is up), so the player is never asked to press
 	# something they cannot press yet.
-	await _say(step)
+	var spoke := await _say(step)
+	if bool(step.get("await_dialog", false)):
+		# the bandits are standing still until this line has been read
+		if spoke and DialogSystem.is_open():
+			await DialogSystem.closed
+		if _my_step.get("id", "") == step.get("id", ""):
+			Net.report_tutorial_pressed(str(step["id"]))
 
 func client_is_running() -> bool:
 	return not _my_step.is_empty()
@@ -326,17 +359,29 @@ func _say(step: Dictionary) -> bool:
 		# the run moved on (or ended) while we were waiting our turn
 		if str(_my_step.get("dialog", "")) != line:
 			return false
-	return DialogSystem.start(line)
+	return DialogSystem.start(line, _speaker_for(step))
 
-func _on_villager_arrived() -> void:
-	var step := _my_step
-	if str(step.get("kind", "")) != "talk":
-		return
-	if await _say(step):
-		await DialogSystem.closed
-		if _my_step.get("id", "") != step.get("id", ""):
-			return # the run ended under us while the box was open
-	Net.report_tutorial_pressed(str(step["id"]))
+## Who is saying this line, if anyone in the world is. The camera frames them
+## and the cinematic bars come in; a line with nobody behind it (the player's
+## own head, which is what the teaching lines are) gets neither.
+func _speaker_for(step: Dictionary) -> Node3D:
+	if not DialogData.get_conversation(str(step.get("dialog", ""))).has("speaker"):
+		return null
+	# whichever bandit is nearest: in the tutorial the only ones anywhere near
+	# are this player's own, and a client is not told the others exist
+	var pawn := get_tree().get_first_node_in_group("local_player")
+	if pawn == null:
+		return null
+	var best: Node3D = null
+	var best_d := INF
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d: float = (e as Node3D).global_position.distance_to(pawn.global_position)
+		if d < best_d:
+			best_d = d
+			best = e
+	return best
 
 ## Gates the server cannot see (lock-on) are watched here and reported.
 func _unhandled_input(event: InputEvent) -> void:

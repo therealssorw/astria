@@ -111,14 +111,17 @@ var owner_peer := 0
 ##   NONE     — an ordinary bandit: the whole state machine, as in the world.
 ##   STILL    — completely still. No turning, no stepping, no swinging: a
 ##              training dummy that can still be hit, staggered and killed.
-##              This is what the punching lessons are taught against.
+##              What a line is spoken over, so nobody is punched through a box
+##              they cannot close.
+##   CIRCLER  — circles you like an ATTACKER but never swings. A moving target
+##              to learn to hit, rather than a post.
 ##   ATTACKER — circling you and throwing ONE punch every `hold_attack_period`
 ##              and nothing else: no closing the fight down, no guard, no
 ##              retreat. That metronome IS the block lesson — a punch you can
 ##              see coming, on a beat slow enough to answer — and the circling
 ##              is there so it reads as a fight from the very first second
 ##              rather than a target dummy that hits back.
-enum Hold { NONE, STILL, ATTACKER }
+enum Hold { NONE, STILL, CIRCLER, ATTACKER }
 
 ## Grace before a bandit that has just been let loose may swing — long enough
 ## for the line it says as it wakes up.
@@ -463,7 +466,7 @@ func _tick_held(delta: float) -> void:
 					# properly first and only then starts circling — spiralling
 					# in from range takes so long the lesson looks broken.
 					want = to_p * move_speed * held_step_mult
-				elif _hold_swing_left <= 0.0 and dist <= attack_range:
+				elif hold_mode == Hold.ATTACKER and _hold_swing_left <= 0.0 and dist <= attack_range:
 					_hold_swing_left = hold_attack_period
 					_start_swing()
 				else:
