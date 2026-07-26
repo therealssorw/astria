@@ -885,13 +885,35 @@ mixed pile.
   dark wedges that opened across the chest and down the arms of every built NPC
   as soon as anything animated. Worse in armor, which rides the same bones from
   a voxel further out and so swings further.
-- So `NpcRig._add_seam_caps` puts the missing face back on every join between
-  two voxels on DIFFERENT bones, one square per side, each bound to its own
-  voxel. At rest the pair sits back to back on the same plane facing opposite
-  ways, so each is the other's backface and neither is drawn; the moment the
-  joint opens, both sides show solid colour. Joins WITHIN a bone are left alone
-  — those two voxels can never part. It costs about 40% more triangles on a
-  villager and nothing at all on a head (one bone, no seams).
+- THE RULE: what one bone carries has to be a CLOSED surface on its own, because
+  a bone is what moves as a unit. So `NpcRig._add_seam_caps` gives a voxel a face
+  on any side the art left bare, UNLESS the voxel next to it is the same part on
+  the same bone — only then can the two never part. Where two of them meet, the
+  pair sits back to back on one plane facing opposite ways, so each is the
+  other's backface and neither is drawn until the joint actually opens.
+- Three ways a side ends up bare, and only the first is a bone boundary: the
+  neighbour is the same part on a DIFFERENT bone (the chest join); the neighbour
+  was this model's own voxel and got dropped because an earlier part filled that
+  cell (every arms model carries a copy of the torso it was drawn against, the
+  torso wins those cells, and what is left is an arm with no end on it — the
+  hole at the shoulder); or the neighbour is a different MESH on the same bone
+  (nothing moves apart, but nothing of ours covers the join either — a helmet
+  cut around a head is open all the way round its rim).
+- Sides the art ALREADY draws are left alone. A second face pointing the same way
+  as an existing one is exactly the z-fighting the rest of this file avoids.
+- `NpcRig._fill_interior` adds the voxels the exporter never wrote at all: Goxel
+  writes only faces you could have seen, so a cell walled in on six sides is
+  absent from the model. Capping the rim is then not enough — a bone boundary
+  through the middle of a solid part has nothing on it, and the shell comes apart
+  as two rings with a hole down the middle of each. Which cells are enclosed is
+  not a guess: flood the air AROUND the part and whatever the flood cannot reach
+  is inside it. Filled cells wear the colour of the surface cell that found them,
+  and it runs on the shape as DRAWN, before anything is handed to an earlier part
+  — a part eaten down to a stump is full of holes for a flood to pour through.
+- Both halves are load-bearing: without the caps a plain villager leaves 304 open
+  edges and an armoured one 1000; with the caps but no interior fill, still 120
+  and 162. Together, zero. It costs a villager about 60% more triangles and a
+  head nothing at all (one bone, no seams).
 - Fixing it in the art instead would mean re-exporting every part ever made with
   interior faces on, tripling the triangles, and writing faces at every join
   when only the ones straddling a bone can ever come apart.
@@ -903,11 +925,18 @@ mixed pile.
   each leans towards its own three corners). That was close enough to say which
   voxel a face belongs to and nowhere near close enough to build on: the caps
   landed a sixth of a voxel proud and dragged the mesh's bounding box with them.
-- Test: the `_check_joins_are_capped` / `_open_joins` section of
-  `test_npc_builder` — every join across two bones carries a face, on the rest
-  pose (a hole is a hole whether or not the clip is pulling it open this frame),
-  bare and armoured. With the cap pass off it reports 180 open joins on a plain
-  villager and 414 on an armoured one.
+- Test: `_check_joins_are_capped` / `_open_edges` in `test_npc_builder` — every
+  edge of every BONE GROUP is shared by exactly two of its triangles, which is
+  what "closed" means; an edge used once is the rim of a hole. Per bone group,
+  not per mesh: a mesh can be perfectly closed and still open up the moment two
+  of its bones part. Edges used more than twice are NOT holes — that is two
+  surfaces meeting along a line, which is what a cap does in a concave corner.
+  Checked on the rest pose (a holed group is holed whether or not the clip is
+  pulling it open this frame), bare and armoured.
+- When comparing vertices by name, force zero positive: negative zero prints as
+  `-0.0000` and positive as `0.0000`, so every vertex on the centre line matches
+  nothing and every part looks split down the middle. That cost a round of
+  chasing holes that were not there.
 - That reference copy is also why a SET IS WORN WHOLE. An arms model carries the
   torso it was drawn against, and only the cells its own body covers get dropped
   — put it over another set's body and the leftover reference torso sticks out
