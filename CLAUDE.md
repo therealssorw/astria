@@ -760,6 +760,36 @@ mixed pile.
   precisely `light_damage`, each blade beating the last, a level 3 enemy eating
   part of a level 3 blade, and a levelled jab still not staggering.
 
+## Discord join notifications
+
+- When somebody joins the dedicated server, `Discord` (autoload,
+  `scripts/core/discord_notifier.gd`) posts an embed to a webhook: who joined,
+  when, how many are on and who they are. The point is people seeing there is
+  somebody playing and coming to join them, so the roster matters as much as
+  the name.
+- THE WEBHOOK URL IS A SECRET AND IS NOT IN THE REPO — anyone holding it can
+  post to the channel as the server, and this repository is public. It is read
+  at runtime from `ASTRIA_DISCORD_WEBHOOK`, or from `discord_webhook.txt` beside
+  the server binary (or in the project folder in the editor), which `.gitignore`
+  keeps out of git. No URL means no posting, which is a normal state, not an
+  error. If it ever does get committed, rotate it in Discord — editing the
+  commit away does not un-leak it.
+- ONLY the dedicated server posts (`Net.is_dedicated`). A listen server is
+  somebody's own machine: playing from the editor, a LAN game and every headless
+  test in `tests/` all host one and register a player, so without that check a
+  test run would post to a real Discord channel every time anyone ran the suite.
+- Times are sent as Discord's own `<t:unix:F>` / `<t:unix:R>` markup rather than
+  a formatted string, so every reader sees the join in THEIR timezone and the
+  "3 minutes ago" keeps counting without the message being edited.
+- A failed post is logged and dropped — it is a notification, not game state, so
+  nothing retries into a loop. Posts queue behind a `MIN_GAP` and stop being
+  queued past `MAX_QUEUED`, so a client stuck in a reconnect cycle cannot flood
+  the channel.
+- Test: `--headless res://tests/test_discord.tscn` (prints
+  `DISCORDTEST RESULT=PASS/FAIL`). It POSTS NOTHING: it checks the message that
+  would be sent, and that a non-dedicated run queues nothing even with a URL
+  configured.
+
 ## Development cheats
 
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —

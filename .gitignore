@@ -7,3 +7,7 @@
 
 # Claude Code local session artifacts
 /.claude/scheduled_tasks.lock
+
+# Discord webhook URL — a secret, and this repo is public. Read at runtime by
+# scripts/core/discord_notifier.gd; put one beside the server binary too.
+/discord_webhook.txt

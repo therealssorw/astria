@@ -179,6 +179,9 @@ func sv_register(username: String) -> void:
 		return  # re-registration would reset stats — never allow it
 	players[id] = _make_entry(_sanitize_name(username))
 	print("[Net] %s joined (peer %d)" % [players[id]["name"], id])
+	# tell Discord somebody is on, so people who would play with them find out.
+	# Server-side and after registration, so the roster it reports includes them
+	Discord.post_join(str(players[id]["name"]), id, player_names())
 	_sync_players()
 	rpc_id(id, "cl_load_world")
 
@@ -367,6 +370,14 @@ func _sanitize_name(raw: String) -> String:
 
 func my_stats() -> Dictionary:
 	return players.get(multiplayer.get_unique_id(), _make_entry(""))
+
+## Everybody currently registered, by name. The scoreboard reads the registry
+## itself; this is for anything that just wants the roster (the Discord post).
+func player_names() -> Array:
+	var names: Array = []
+	for id in players:
+		names.append(str(players[id].get("name", "")))
+	return names
 
 # ---------------- purse and bag (server-owned) ----------------
 #
