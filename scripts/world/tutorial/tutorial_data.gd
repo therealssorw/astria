@@ -66,13 +66,21 @@ const MAX_SLOTS := 4
 ## (A `static var` so the test can turn it down; nothing in the game writes it.)
 static var GATE_PATIENCE := 25.0
 
+## What a tutorial bandit's punch is worth against an ordinary one's: 60% off.
+## This is the ONLY thing about them that is softened — same reach, same
+## wind-up, same timings — so what you learn here is what the real island does,
+## just at a price a first fight can afford.
+const DAMAGE_MULT := 0.4
+
 const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
 
 	# ONE bandit for the whole lesson, switched on a piece at a time.
-	# First it can only punch, on a slow count — so the first thing you are
-	# taught is the answer to it.
-	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "attacker"},
+	# First it can only circle and punch, on a slow count — so the first thing
+	# you are taught is the answer to it. Its taunt lands straight after "where
+	# even am I?", which is what put you on the ground in the first place.
+	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "attacker",
+			"dialog": "tut_taunt"},
 	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block",
 			"ai": "attacker", "patience": 14.0},
 
@@ -85,8 +93,7 @@ const STEPS := [
 			"client_gate": true, "ai": "still"},
 
 	# everything it knows, one on one, with no interruptions left
-	{"id": "duel", "kind": "clear", "ai": "full", "dialog": "tut_duel",
-			"banner": "One on one. Finish him."},
+	{"id": "duel", "kind": "clear", "ai": "full", "banner": "One on one. Finish him."},
 
 	# and only then the rest of the raid
 	{"id": "reinforcements", "kind": "wave", "count": 3, "ai": "full",

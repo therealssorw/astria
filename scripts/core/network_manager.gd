@@ -1051,6 +1051,8 @@ func server_spawn_tutorial_bandit(id: int, pos: Vector3,
 	en.add_child(bandit)
 	bandit.global_position = pos
 	bandit.set_hold(hold)
+	# a lesson should cost less than the real thing when you get it wrong
+	bandit.attack_damage *= TutorialData.DAMAGE_MULT
 	# these are raiders in the middle of a raid, not sentries waiting to notice
 	# you: point them at the player and wake them up, or one that happens to
 	# land facing the other way stands there until it is punched

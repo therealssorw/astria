@@ -112,15 +112,19 @@ var owner_peer := 0
 ##   STILL    — completely still. No turning, no stepping, no swinging: a
 ##              training dummy that can still be hit, staggered and killed.
 ##              This is what the punching lessons are taught against.
-##   ATTACKER — rooted and facing you, throwing ONE punch every
-##              `hold_attack_period` and doing nothing else. That metronome IS
-##              the block lesson: a punch you can see coming, on a beat slow
-##              enough to answer.
+##   ATTACKER — circling you and throwing ONE punch every `hold_attack_period`
+##              and nothing else: no closing the fight down, no guard, no
+##              retreat. That metronome IS the block lesson — a punch you can
+##              see coming, on a beat slow enough to answer — and the circling
+##              is there so it reads as a fight from the very first second
+##              rather than a target dummy that hits back.
 enum Hold { NONE, STILL, ATTACKER }
 
 ## Grace before a bandit that has just been let loose may swing — long enough
 ## for the line it says as it wakes up.
 const WAKE_GRACE := 1.8
+## Roughly how long an ATTACKER circles one way before switching.
+const HOLD_CIRCLE_TIME := 2.2
 
 var hold_mode: Hold = Hold.NONE
 ## Seconds between an ATTACKER's punches — the beat the block lesson stands on.
@@ -128,8 +132,11 @@ var hold_mode: Hold = Hold.NONE
 ## How fast an ATTACKER closes the last step into reach: a walk, not a charge.
 ## It has to be able to actually land the punch it is demonstrating.
 @export var held_step_mult := 0.45
+## ...and how fast it circles you between those punches, against `strafe_speed`.
+@export var held_circle_mult := 0.5
 
 var _hold_swing_left := 0.0
+var _hold_turn_left := 0.0
 
 var health: float
 var dead := false
@@ -420,14 +427,16 @@ func net_die() -> void:
 
 ## A bandit with only part of itself switched on, for one tutorial lesson.
 ## STILL is a training dummy — it does not even turn — and ATTACKER is a
-## metronome: face the player, walk the last step into reach, and land one
-## punch every `hold_attack_period` with the real wind-up, star and damage.
-## Everything the state machine would otherwise do — chasing, strafing,
-## circling, guarding — stays off in both.
+## metronome: face the player, circle them, and land one punch every
+## `hold_attack_period` with the real wind-up, star and damage. Everything else
+## the state machine would do — hunting you across the island, guarding,
+## retreating, choosing when to press — stays off in both.
 func _tick_held(delta: float) -> void:
 	cooldown_left = maxf(0.0, cooldown_left - delta)
-	velocity.x = move_toward(velocity.x, 0.0, 25.0 * delta)
-	velocity.z = move_toward(velocity.z, 0.0, 25.0 * delta)
+	# ONE place decides where it wants to go this frame and one applies it:
+	# damping at the top and steering underneath it were pulling against each
+	# other, and the damping won — the circle came out a shuffle.
+	var want := Vector3.ZERO
 	# rocked back or parried: wide open, exactly as in a real fight
 	if stagger_left > 0.0:
 		stagger_left -= delta
@@ -442,21 +451,44 @@ func _tick_held(delta: float) -> void:
 			aggroed = true # being held in a fight means it has seen you
 			_face_player(delta)
 			if attacking:
-				_tick_attack(delta)
+				_tick_attack(delta) # planted: a punch is thrown from the spot
 			else:
 				_hold_swing_left -= delta
-				var dist := global_position.distance_to(player.global_position)
-				if dist > attack_range:
-					# close the last step, or the punch it is demonstrating
-					# lands on nothing
-					var dir := player.global_position - global_position
-					dir.y = 0.0
-					dir = dir.normalized() * move_speed * held_step_mult
-					velocity.x = dir.x
-					velocity.z = dir.z
-				elif _hold_swing_left <= 0.0:
+				var to_p := player.global_position - global_position
+				to_p.y = 0.0
+				var dist := to_p.length()
+				to_p = to_p.normalized()
+				if dist > attack_range * 1.2:
+					# still crossing the ground between you: walk in. It closes
+					# properly first and only then starts circling — spiralling
+					# in from range takes so long the lesson looks broken.
+					want = to_p * move_speed * held_step_mult
+				elif _hold_swing_left <= 0.0 and dist <= attack_range:
 					_hold_swing_left = hold_attack_period
 					_start_swing()
+				else:
+					# between punches it CIRCLES you — arcing in while it is
+					# out of reach, drifting out when it is on top of you — so
+					# even the first lesson is a fight to move with rather than
+					# a post to stand at. Swapping sides now and then keeps it
+					# from being a treadmill.
+					_hold_turn_left -= delta
+					if _hold_turn_left <= 0.0:
+						_hold_turn_left = HOLD_CIRCLE_TIME * (0.7 + _next_pattern() * 0.8)
+						strafe_side = -strafe_side
+					# mostly sideways: the in/out correction only nudges, or the
+					# circle collapses into walking at you and reads as a
+					# shuffle. It orbits INSIDE its own reach on purpose — park
+					# the circle on the edge of it and the punch it is meant to
+					# be demonstrating never gets thrown.
+					var steer := Vector3.UP.cross(to_p) * strafe_side
+					if dist > attack_range * 0.8:
+						steer += to_p * 0.4
+					elif dist < attack_range * 0.5:
+						steer -= to_p * 0.4
+					want = steer.normalized() * strafe_speed * held_circle_mult
+	velocity.x = move_toward(velocity.x, want.x, 25.0 * delta)
+	velocity.z = move_toward(velocity.z, want.z, 25.0 * delta)
 	if not is_on_floor():
 		velocity.y -= _gravity() * delta
 	_separate() # two held bandits must still not stand inside each other

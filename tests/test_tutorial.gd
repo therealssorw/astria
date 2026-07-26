@@ -201,7 +201,7 @@ class Runner:
 			return
 		# it really throws the punch there is to block — waited out, not assumed
 		var began := Time.get_ticks_msec()
-		if not await _until(_any_swinging, 300):
+		if not await _until(_any_swinging, 480):
 			_fail("the block lesson never threw a punch to block")
 			return
 		var why := await _pass_gate("teach_block", "block")

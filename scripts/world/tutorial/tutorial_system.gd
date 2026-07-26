@@ -301,10 +301,11 @@ func client_step(step_id: String) -> void:
 		else:
 			_on_villager_arrived()
 		return
-	# every other step says its line straight away. The prompt waits for the
-	# box to close on its own (the overlay hides while it is up), so the player
-	# is never asked to press something they cannot press yet.
-	_say(step)
+	# every other step says its line, waiting its turn if something else is
+	# still talking. The prompt waits for the box to close on its own (the
+	# overlay hides while it is up), so the player is never asked to press
+	# something they cannot press yet.
+	await _say(step)
 
 func client_is_running() -> bool:
 	return not _my_step.is_empty()
@@ -313,17 +314,25 @@ func client_is_running() -> bool:
 func client_step_data() -> Dictionary:
 	return _my_step
 
+## Say this step's line. If something is already talking — the bandit's taunt
+## as it lands, say — this queues behind it instead of cutting it off
+## mid-sentence, because a wave and the gate after it arrive in the same frame.
 func _say(step: Dictionary) -> bool:
 	var line := str(step.get("dialog", ""))
 	if line == "" or not DialogData.has(line):
 		return false
+	if DialogSystem.is_open():
+		await DialogSystem.closed
+		# the run moved on (or ended) while we were waiting our turn
+		if str(_my_step.get("dialog", "")) != line:
+			return false
 	return DialogSystem.start(line)
 
 func _on_villager_arrived() -> void:
 	var step := _my_step
 	if str(step.get("kind", "")) != "talk":
 		return
-	if _say(step):
+	if await _say(step):
 		await DialogSystem.closed
 		if _my_step.get("id", "") != step.get("id", ""):
 			return # the run ended under us while the box was open

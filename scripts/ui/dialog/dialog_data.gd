@@ -69,17 +69,21 @@ const DIALOGS := {
 		},
 	},
 	# --- tutorial ---
-	# PLACEHOLDER TEXT. These are the lines the tutorial speaks; the step table
-	# in scripts/world/tutorial/tutorial_data.gd names them and nothing else
-	# does, so rewriting every "text" below changes the tutorial's script
+	# The step table in scripts/world/tutorial/tutorial_data.gd names these and
+	# nothing else does, so rewriting a "text" below rewrites the tutorial
 	# without touching a line of code. Keep the "auto" beats (they are what
-	# makes a line play by itself while the fight is held still) and keep each
-	# id, or the step that asks for it will find nothing to say.
+	# makes a line play by itself while the lesson waits) and keep each id, or
+	# the step that asks for it will find nothing to say.
+	#
+	# The four teaching lines are the player's own head — no speaker — and name
+	# their buttons in the text. The prompt drawn under them names the same
+	# button for whichever device is in use, so a pad player is never left
+	# reading about a mouse.
 	"tut_attack": {
 		"start": "line",
 		"lines": {
 			"line": {
-				"text": "PLACEHOLDER — the bandit is on you. Tell the player to swing.",
+				"text": "He's punching me. Let me fight back (Left Click or R2 on controller)",
 				"auto": 1.6,
 				"goto": END,
 			},
@@ -89,7 +93,7 @@ const DIALOGS := {
 		"start": "line",
 		"lines": {
 			"line": {
-				"text": "PLACEHOLDER — that one is winding up. Tell the player to guard.",
+				"text": "I think I remember how to block (Right Click or L2 on controller)",
 				"auto": 1.6,
 				"goto": END,
 			},
@@ -99,7 +103,7 @@ const DIALOGS := {
 		"start": "line",
 		"lines": {
 			"line": {
-				"text": "PLACEHOLDER — two of them now. Tell the player to lock on.",
+				"text": "My eyes are getting better, let me focus on him (Middle Mouse button or R3 to lock target)",
 				"auto": 1.6,
 				"goto": END,
 			},
@@ -109,14 +113,15 @@ const DIALOGS := {
 		"start": "line",
 		"lines": {
 			"line": {
-				"text": "PLACEHOLDER — the last of them. Tell the player to hold the swing.",
+				"text": "Let me give him a real hard hit (Hold Attack for Heavy)",
 				"auto": 1.6,
 				"goto": END,
 			},
 		},
 	},
-	# The bandit, when it stops being a lesson and starts being a fight.
-	"tut_duel": {
+	# The first thing anyone says to you, straight after "where even am I?" —
+	# and the answer to it: this is who put you on the ground.
+	"tut_taunt": {
 		"speaker": "Bandit",
 		"start": "line",
 		"lines": {

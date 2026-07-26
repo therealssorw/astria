@@ -218,13 +218,24 @@ mixed pile.
   is reordering that array.
 - THE FIGHT IS BUILT UP A PIECE AT A TIME, and that is the design. Every step
   carries an `ai` level that says how much of the bandits is switched on
-  (`Enemy.Hold`): `attacker` is rooted and throws ONE punch every
-  `hold_attack_period` (3s) and nothing else, `still` is a training dummy that
-  does not move, turn or swing, `full` is an ordinary bandit. So: you meet a
-  bandit that can only punch and learn to BLOCK it, it stops dead and you learn
-  to swing and to hold a heavy, then it wakes all the way up for a straight
-  1v1, and only when that is won does the rest of the raid arrive. A button is
-  never taught against an enemy doing something else at the same time.
+  (`Enemy.Hold`): `attacker` walks in, CIRCLES you and throws ONE punch every
+  `hold_attack_period` (3s) and nothing else; `still` is a training dummy that
+  does not move, turn or swing; `full` is an ordinary bandit. So: you meet a
+  bandit that can only circle and punch and learn to BLOCK it, it stops dead
+  and you learn to swing and to hold a heavy, then it wakes all the way up for
+  a straight 1v1, and only when that is won does the rest of the raid arrive.
+  A button is never taught against an enemy doing something else at once.
+- Measured, hands off the controls: the first punch lands 3.7s in, it circles
+  about one and a half times around you in 15s, and three punches cost 16 hp.
+  The dials are `held_circle_mult` (how fast it orbits), `hold_attack_period`
+  (the beat) and `held_step_mult` (how fast it closes). An ATTACKER orbits
+  INSIDE its own reach on purpose — park the circle on the edge of it and the
+  punch it exists to demonstrate never gets thrown, which is exactly what
+  happened the first time.
+- A tutorial bandit hits for `TutorialData.DAMAGE_MULT` (0.4) of an ordinary
+  one. That is the ONLY thing softened about them — same reach, wind-up and
+  timings — so what you learn there is what the island does, at a price a
+  first fight can afford.
 - A gate holds the BANDITS, never the player: you can walk and look around
   while the lesson waits. It opens on the real action, read off the server's
   own copy of the pawn (`attacking` / `attack_is_heavy` / `blocking`), so it
@@ -253,9 +264,14 @@ mixed pile.
   HELD, so tapping it only ever jabbed and the gate never opened. Hence also
   `gate_is_hold()`, which makes the prompt read "HOLD <button>" instead of the
   button alone.
-- All the spoken text is `tut_*` in DialogData, and is PLACEHOLDER: rewriting
-  those `text` fields rewrites the tutorial. Keep the `auto` beats (they are
-  what makes a line play by itself) and keep the ids.
+- All the spoken text is `tut_*` in DialogData: rewriting those `text` fields
+  rewrites the tutorial. Keep the `auto` beats (they are what makes a line play
+  by itself) and keep the ids. The bandit's `tut_taunt` lands straight after
+  the cutscene's "where even am I?" — it is the answer to that question, and
+  the reason your head hurts.
+- A step's line waits its turn: `_say` queues behind whatever is already
+  talking, because a wave and the gate after it arrive in the same frame and
+  the taunt would otherwise be cut off mid-word by the first instruction.
 - The villager is still placeholder art — a capsule with a nametag. Drop a
   built NPC in its place in `scenes/world/tutorial/tutorial_arena.tscn`; the
   logic finds everything by node name through `tutorial_arena.gd`'s accessors.
