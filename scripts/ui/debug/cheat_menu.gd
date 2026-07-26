@@ -137,11 +137,6 @@ func _build_root() -> void:
 	_add_row("Start tutorial", "island raid", func() -> void:
 		close()
 		Net.request_cheat_tutorial())
-	# the same exit the last lesson uses, so the city and its bandits go away
-	# and the follow-up quest is handed over — not a teleport out
-	_add_row("Enter starter town", "ends the tutorial", func() -> void:
-		close()
-		Net.request_cheat_leave_tutorial())
 
 ## Every place in TeleportData, whether or not it has been built yet — a
 ## destination with no anchor in the level answers with that, which is more
@@ -152,6 +147,12 @@ func _build_teleport() -> void:
 		var placed := TeleportData.anchor(get_tree(), id) != null
 		_add_row(TeleportData.label(id), "" if placed else "not in this level",
 				func() -> void: Net.request_cheat_teleport(id))
+	# Not a TeleportData destination, because it is not only a place: from
+	# inside the tutorial it graduates you out of it (see
+	# `Net._server_cheat_starter_town`) rather than dropping you through a wall
+	# of the city and leaving the lesson running.
+	_add_row("Enter starter town", "leaves the tutorial", func() -> void:
+		Net.request_cheat_starter_town())
 	_add_row("‹ Back", "", func() -> void:
 		_page = "root"
 		_refresh())

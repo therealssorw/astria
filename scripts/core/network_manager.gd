@@ -605,33 +605,38 @@ func _server_cheat_tutorial(id: int) -> void:
 	Tutorial.server_report_ready(id)
 	_trade_reply(id, "Tutorial restarted.", true)
 
-## Client -> server: skip to the end of the tutorial. Editor builds only. It
-## GRADUATES rather than just teleporting: the same exit the last step uses, so
-## the copy of the city is torn down, its bandits go with it and the follow-up
-## quest is handed over — a teleport out would leave the lesson running behind
-## you and its bandits standing in an island nobody is in.
-func request_cheat_leave_tutorial() -> void:
+## Client -> server: put me in the starter town. Editor builds only. It is a
+## destination first and an escape hatch second: from inside the tutorial it
+## GRADUATES you — the same exit the last lesson uses, so the copy of the city
+## is torn down, its bandits go with it and the follow-up quest is handed over.
+## A plain teleport out would leave the lesson running behind you, with its
+## bandits standing in an island nobody is in.
+func request_cheat_starter_town() -> void:
 	if multiplayer.is_server():
-		_server_cheat_leave_tutorial(multiplayer.get_unique_id())
+		_server_cheat_starter_town(multiplayer.get_unique_id())
 	else:
-		rpc_id(1, "sv_cheat_leave_tutorial")
+		rpc_id(1, "sv_cheat_starter_town")
 
 @rpc("any_peer", "call_remote", "reliable")
-func sv_cheat_leave_tutorial() -> void:
+func sv_cheat_starter_town() -> void:
 	if not multiplayer.is_server():
 		return
-	_server_cheat_leave_tutorial(multiplayer.get_remote_sender_id())
+	_server_cheat_starter_town(multiplayer.get_remote_sender_id())
 
-func _server_cheat_leave_tutorial(id: int) -> void:
+func _server_cheat_starter_town(id: int) -> void:
 	if not players.has(id):
 		return
 	if not cheats_allowed():
 		_trade_reply(id, "Cheats are off on this server.", false)
 		return
-	if not Tutorial.server_running(id):
-		_trade_reply(id, "You are not in the tutorial.", false)
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		_trade_reply(id, "Not while you are down.", false)
 		return
-	Tutorial.server_end(id, true)
+	if Tutorial.server_running(id):
+		Tutorial.server_end(id, true) # graduating already places you on the island
+	else:
+		server_place_on_island(id)
 	_trade_reply(id, "Off to the starter town.", true)
 
 ## Client -> server: put my pawn at a named place. Editor builds only.

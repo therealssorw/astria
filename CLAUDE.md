@@ -613,14 +613,17 @@ mixed pile.
   `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
   (everything in `ItemDb.ITEMS`; picking one asks the server for a copy),
   "Quest" (everything in `QuestData.QUESTS`, plus "Clear quest"),
-  "Teleport" (everything in `TeleportData.DESTINATIONS`), "Start tutorial" and
-  "Enter starter town". Adding a cheat is one row in `_build_root`.
+  "Teleport" (everything in `TeleportData.DESTINATIONS`, plus "Enter starter
+  town") and "Start tutorial". Adding a cheat is one row in `_build_root`.
 - "Start tutorial" goes through the server like everything else, and is a real
   restart: a fresh copy of the island with its own bandits.
-- "Enter starter town" GRADUATES you (`Tutorial.server_end(id, true)`) rather
-  than teleporting out, so the copy of the city is torn down, its bandits go
-  with it and the follow-up quest is handed over — the same exit the last
-  lesson uses. A teleport would leave the lesson running behind you.
+- "Enter starter town" sits under Teleport but is not a `TeleportData`
+  destination, because it is not only a place: inside the tutorial it
+  GRADUATES you (`Tutorial.server_end(id, true)`), so the copy of the city is
+  torn down, its bandits go with it and the follow-up quest is handed over —
+  the same exit the last lesson uses. Teleporting out would leave the lesson
+  running behind you. Outside the tutorial it is a plain hop to the island
+  spawn.
 - A conversation does not keep the menu shut (the box is closed on the way in).
   Half of what these cheats are for is getting out of something that is talking
   to you — an NPC, or a gate you cannot find the button for.
