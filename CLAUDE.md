@@ -146,7 +146,8 @@ mixed pile.
   FAILS on anything still painted black, naming the node. That last one is the
   regression guard: it is what stops a new screen quietly going back to black.
 - Eyeballing it: `godot --path . res://tests/preview_ui.tscn` (NO `--headless`
-  — it renders) opens the REAL shop and dialog box over a stand-in world and
+  — it renders) opens the REAL shop, dialog box and quest corner over a
+  stand-in world and
   saves a PNG of each, plus a swatch sheet of the three shades and the font at
   every size the game uses, into `user://ui_preview`.
 
@@ -313,6 +314,22 @@ mixed pile.
   24 px in from the right. Its star is a drawn polygon, the same one as the
   wind-up star: Godot's default font has NO U+2605, so a typed ★ renders as
   tofu — any symbol in the HUD has to be drawn, which is the rule above anyway.
+- The quest corner is a REAL `UiTheme.panel()` — the same INK body, STONE edge
+  and sheet of paint every screen is built from — not two gold labels floating
+  over the water. It breaks the "panels are SOLID" rule on purpose and only on
+  opacity: a screen is opened over the world, whereas this is up the whole time
+  you are playing and a solid slab in the corner is a hole in the view. That is
+  the only dial it turns; the shades, the edge and the frame come from the
+  theme. Any future always-on HUD panel should do the same rather than mixing
+  a colour of its own.
+- Its width is FIXED. A panel that hugged its text would resize every time a
+  counting quest ticked over — the corner breathing while you fight — so the
+  labels clip instead (`clip_text`), and the star sits in a box of its own on
+  the heading row. The star has to be a NODE now rather than the tracker's own
+  `_draw()`: a Control paints itself BEFORE its children, so a star drawn by
+  the tracker would be behind its own panel.
+- The tutorial's banner is measured off `QuestTracker.MARGIN`/`SIZE` rather
+  than a typed y, so growing the panel never parks it on top of the banner.
 - Anchored HUD pieces set `offset_*`, never `position`: `position` is
   parent-relative, so on a right-anchored control it lands off the left edge.
 - `set_anchors_preset()` KEEPS THE CONTROL'S CURRENT RECT, baking offsets to

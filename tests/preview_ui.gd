@@ -44,6 +44,20 @@ func _ready() -> void:
 	await _shot("dialog")
 	DialogSystem.close()
 
+	# the quest corner, in both the shapes it takes: a plain objective and a
+	# counting one. It reads the mirror, so setting it here is the whole setup —
+	# nothing is claimed to the server and nothing is being asked for.
+	var tracker := QuestTracker.new()
+	add_child(tracker)
+	GameStats.quest = "kill_bandits"
+	GameStats.quest_kills = 7
+	GameStats.changed.emit()
+	await _shot("quest_tracker")
+	GameStats.quest = ""
+	GameStats.quest_kills = 0
+	GameStats.changed.emit()
+	tracker.queue_free()
+
 	print("PREVIEW saved=", ProjectSettings.globalize_path(OUT_DIR))
 	get_tree().quit()
 
