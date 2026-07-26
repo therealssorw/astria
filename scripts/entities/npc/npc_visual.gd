@@ -35,6 +35,13 @@ func _build_model() -> void:
 		mi.get_parent().remove_child(mi)
 		mi.free()
 
+	# An empty definition still rigs -- a correctly proportioned skeleton with
+	# nothing on it. That is indistinguishable from "the mesh was lost" once it
+	# is on screen, so it is worth a line of its own rather than leaving the
+	# caller to work out why their NPC is a set of bones.
+	if definition == null:
+		push_error("NpcVisual '%s' was built with no definition — it will be a bare skeleton"
+				% (get_path() if is_inside_tree() else name))
 	var def: NpcDefinition = definition if definition != null else NpcDefinition.new()
 	layout = NpcRig.rig(def, skeleton)
 	_collect_materials()

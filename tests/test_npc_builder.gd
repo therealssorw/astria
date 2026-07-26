@@ -333,6 +333,26 @@ func _check_save_roundtrip() -> void:
 		add_child(npc)
 		_expect(npc.visual != null and npc.visual.skeleton != null,
 				"the saved NPC scene did not rig itself on load")
+		# A skeleton is not a character. Rigging succeeds and leaves a correctly
+		# proportioned set of BONES whenever the parts fail to load, and from
+		# outside that is indistinguishable from the save having eaten the mesh
+		# -- so every slot the definition names has to come back with geometry
+		# on it, not just a rig to hang it from.
+		if npc.visual != null and npc.visual.skeleton != null:
+			var drawn := {}
+			for mi: MeshInstance3D in npc.visual.skeleton.find_children(
+					"*", "MeshInstance3D", false, false):
+				var verts := 0
+				if mi.mesh != null:
+					for s in mi.mesh.get_surface_count():
+						verts += mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX].size()
+				if verts > 0:
+					drawn[String(mi.name).to_lower()] = verts
+			for slot: String in NpcDefinition.SLOTS:
+				if def.get_part(slot).model_path.is_empty():
+					continue
+				_expect(drawn.has(slot),
+						"the saved NPC came back with no %s mesh (drawn: %s)" % [slot, drawn])
 		_expect(npc.interactable != null and npc.interactable.dialog_id == "blacksmith",
 				"the saved NPC scene is not talkable")
 		remove_child(npc)

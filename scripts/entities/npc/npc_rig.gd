@@ -112,11 +112,29 @@ static func palette_of(model_path: String) -> PackedColorArray:
 ## hip height, ...) so callers can size collision shapes and prompt offsets.
 static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 	var parts := {}
+	var asked := 0
 	for slot: String in NpcDefinition.SLOTS:
 		var spec: NpcPart = def.get_part(slot)
-		var data := _load_part(spec.model_path if spec else "")
+		var path := spec.model_path if spec else ""
+		if not path.is_empty():
+			asked += 1
+		var data := _load_part(path)
 		if not data.is_empty():
 			parts[slot] = data
+		elif not path.is_empty():
+			# A part that will not load is the whole slot gone, and the only sign
+			# of it used to be a gap in the character. Say so: an NPC that comes
+			# out as a bare skeleton is nearly always four of these in a row.
+			push_error("NpcRig: the %s model %s could not be loaded — that slot will be empty"
+					% [slot, path])
+	# Nothing to hang on the bones at all. Worth its own line: the caller gets a
+	# rigged, correctly proportioned, completely invisible character otherwise,
+	# which reads as "the mesh was lost" rather than "no part model loaded".
+	if parts.is_empty():
+		push_error("NpcRig: '%s' rigged with no parts at all — %s" % [
+				def.display_name,
+				"its definition names no models" if asked == 0
+						else "none of the %d models it names could be loaded" % asked])
 
 	var layout := _layout(def, parts)
 	_reproportion(skeleton, layout)
