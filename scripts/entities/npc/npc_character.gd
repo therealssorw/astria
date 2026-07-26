@@ -17,8 +17,29 @@ extends Node3D
 var visual: NpcVisual
 var interactable: NpcInteractable
 
+var _last_pos := Vector3.ZERO
+var _has_last := false
+
 func _ready() -> void:
 	_rebuild()
+
+## An NPC ANIMATES ITSELF, off its own movement. Nothing was ticking a placed
+## NPC's visual at all, so every villager and King in the world stood in the pose
+## its AnimationPlayer happened to load with — and the tutorial's villager slid
+## across the island without moving her legs.
+##
+## Measuring its own ground speed rather than being told means anything that
+## moves an NPC gets the walk for free, with no code on the other end: the
+## tutorial arena just changes her position, as it always did.
+func _process(delta: float) -> void:
+	if Engine.is_editor_hint() or visual == null or not visual.has_clips():
+		return
+	var speed := 0.0
+	if _has_last and delta > 0.0:
+		speed = _last_pos.distance_to(global_position) / delta
+	_last_pos = global_position
+	_has_last = true
+	visual.tick_motion(delta, speed)
 
 func _rebuild() -> void:
 	if not is_inside_tree():

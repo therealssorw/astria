@@ -34,6 +34,22 @@ const CLIPS := {
 	# frame is the legs-reaching-down pose, which holds for the rest of a fall.
 	"jump": {"path": ANIM_DIR + "Movement/Jumping/Jumping.fbx", "speed": 1.0, "loop": false,
 			"slice": [0.45, 1.10], "pin_hips_at": 0.0},
+	# The intro's wake-up: flat on the ground to standing. Played as a SCRIPTED
+	# one-shot (play_scripted) rather than off any pawn state — nothing in the
+	# game puts a character on the floor, so there is no state for it to be.
+	#
+	# The FBX ships two takes and the loader picks "mixamo_com", which runs 8.60s
+	# — and only the middle of that is the animation. The hips lie flat at 0.05
+	# until 1.7, climb to 0.52 by about 6.2, and then it stands there doing
+	# nothing for the last 2.4s. Sliced to the rise itself: a beat on the floor as
+	# the black starts lifting, and up on both feet as it clears. It ends a little
+	# hunched because the take does; the blend into the idle covers it, and paying
+	# another 0.7s for the rest of the take buys no more posture than that.
+	#
+	# The intro's fade is the length of THIS, so re-trimming it retimes the whole
+	# wake-up (see IntroCutscene).
+	"get_up": {"path": ANIM_DIR + "Cutscene/GettingUp/Getting Up.fbx", "speed": 1.0,
+			"loop": false, "slice": [1.50, 6.25]},
 	"strafe_l": {"path": ANIM_DIR + "Movement/Strafing/Left Strafe Walking.fbx", "speed": 1.0, "loop": true},
 	"strafe_r": {"path": ANIM_DIR + "Movement/Strafing/Right Strafe Walking.fbx", "speed": 1.0, "loop": true},
 	"walk_back": {"path": ANIM_DIR + "Movement/Walking/Walking Backwards.fbx", "speed": 1.0, "loop": true},
@@ -129,6 +145,12 @@ var _lean_target := 0.0
 var _react_lean := 0.0     # transient recoil from a hit, decays back to 0
 var _hitstop_time := 0.0   # >0: animation nearly frozen (impact emphasis)
 var _stagger_time := 0.0   # >0: helpless recoil pose overrides the clip
+## >0: a SCRIPTED clip owns the body for that long and the state-driven picking
+## in tick() stands down. tick() runs every frame off the pawn's own state, so a
+## clip started from outside would otherwise be replaced before its first frame
+## was ever drawn.
+var _scripted_time := 0.0
+var _scripted_key := ""
 var _idle_time := 0.0      # seconds stood still; past IDLE_LONG_AFTER, idle_long
 
 ## Whether entering the tree builds the Mixamo clip library as well as the
@@ -529,6 +551,53 @@ func play_stagger(duration: float) -> void:
 	_stagger_time = maxf(_stagger_time, duration)
 	_react_lean = STAGGER_LEAN
 
+## Hand the body to a one-shot clip and keep it there for the clip's own length,
+## returning how long that is (0.0 if this character was not built with it, which
+## is every villager — their clip list is idle/walk/run).
+##
+## For anything the pawn has no STATE for: the intro's getting-up is the first,
+## and a cutscene is exactly the case where what is on screen is not what the
+## player is doing. It ends by itself, so nothing has to remember to cancel it.
+func play_scripted(key: String) -> float:
+	if anim_player == null or not anim_player.has_animation("lib/" + _clip_for(key)):
+		return 0.0
+	var length := float(clip_lengths.get(key, 0.0)) / maxf(_clip_speed(key), 0.01)
+	if length <= 0.0:
+		return 0.0
+	_scripted_key = key
+	_scripted_time = length
+	_restart(key, 0.0) # from its first frame, no blend: it starts on the floor
+	return length
+
+## True while a scripted clip still owns the body.
+func is_scripted() -> bool:
+	return _scripted_time > 0.0
+
+## Give the body back early — an aborted cutscene, a death mid-clip.
+func stop_scripted() -> void:
+	_scripted_time = 0.0
+	_scripted_key = ""
+
+## Ground speed that a `speed_ratio` of 1.0 means, in m/s — the player's own
+## walk_speed, which is what every ratio in this file is measured against.
+const WALK_REFERENCE := 6.5
+## Below this ratio a character counts as standing still.
+const MOVING_RATIO := 0.03
+
+## False for a visual built without its clip library (the editor's preview, and
+## anything built with build_clips off) — there is nothing to tick.
+func has_clips() -> bool:
+	return anim_player != null and model != null
+
+## Animate something that is simply being MOVED about rather than driven by a
+## pawn's state machine — a villager walking over, and anything else that is
+## pushed around by a script. Hand it the ground speed in m/s and it picks the
+## pose and the stride rate itself.
+func tick_motion(delta: float, speed: float) -> void:
+	var ratio := speed / WALK_REFERENCE
+	# "run" is the locomotion key; tick() picks walk or run off the ratio
+	tick(delta, "run" if ratio > MOVING_RATIO else "idle", 0.0, ratio)
+
 func tick(delta: float, anim: String, _t := 0.0, speed_ratio := 0.0) -> void:
 	if _flash_time > 0.0:
 		_flash_time -= delta
@@ -537,7 +606,18 @@ func tick(delta: float, anim: String, _t := 0.0, speed_ratio := 0.0) -> void:
 				m.emission_enabled = false
 	_hitstop_time = maxf(0.0, _hitstop_time - delta)
 	_stagger_time = maxf(0.0, _stagger_time - delta)
+	_scripted_time = maxf(0.0, _scripted_time - delta)
 	_react_lean = move_toward(_react_lean, 0.0, delta * REACT_DECAY)
+
+	# A scripted clip outranks everything, including the state the pawn thinks it
+	# is in. It is only ever set by a cutscene, and a cutscene has already taken
+	# the controls away.
+	if _scripted_time > 0.0:
+		_play(_scripted_key, 0.0)
+		if anim_player:
+			anim_player.speed_scale = 1.0
+		model.rotation.x = lerpf(model.rotation.x, 0.0, minf(delta * 12.0, 1.0))
+		return
 
 	# Standing still is the only thing that runs the long-idle clock, and being
 	# rocked back by a hit is not standing still.

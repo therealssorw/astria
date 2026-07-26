@@ -819,6 +819,7 @@ func _check_player_visual() -> void:
 			"the player's held sword found no hand bone to hang off")
 
 	_check_animation_drives(vis, "player")
+	_check_scripted_clip(vis)
 	_drop(vis)
 
 ## Standing still for IDLE_LONG_AFTER drops the character into the second idle
@@ -864,6 +865,37 @@ func _check_long_idle(vis: HumanoidVisual) -> void:
 			"villagers now load the fighting idle — they have no business in it")
 
 	vis.tick(0.1, "run", 0.0, 1.0) # leave it as it was found
+
+## The intro's getting-up: a clip played from OUTSIDE the pawn's state machine
+## has to survive the state machine, which runs every frame and would otherwise
+## replace it before its first frame was ever drawn.
+func _check_scripted_clip(vis: HumanoidVisual) -> void:
+	vis.set_held_item("") # bare-handed: the check before this one left a sword in it
+	_expect(vis.clip_lengths.has("get_up"), "the getting-up clip was never built")
+	var length := vis.play_scripted("get_up")
+	# printed because it is also the length of the intro's fade to black
+	print("NPCTEST get_up=%.2fs" % length)
+	_expect(length > 0.5, "play_scripted('get_up') reported %.2fs" % length)
+	_expect(vis.is_scripted(), "the scripted clip did not take the body")
+	_expect(vis._current_key == "get_up",
+			"expected 'get_up' on screen, got '%s'" % vis._current_key)
+
+	# the pawn says it is standing still the whole way through, and is ignored
+	_tick_for(vis, "idle", maxf(length - 0.2, 0.1))
+	_expect(vis._current_key == "get_up",
+			"the pawn's own state replaced the scripted clip with '%s'" % vis._current_key)
+	_expect(vis.is_scripted(), "the scripted clip let go early")
+
+	# and it hands the body back by itself, with nothing having to cancel it
+	_tick_for(vis, "idle", 0.5)
+	_expect(not vis.is_scripted(), "the scripted clip never let go")
+	_expect(vis._current_key == "idle",
+			"after the clip the character should be back on 'idle', got '%s'"
+					% vis._current_key)
+
+	# a villager is not built with it, and asking must not error — it just says no
+	_expect(not NpcVisual.NPC_CLIPS.has("get_up"),
+			"villagers now load the getting-up clip; they never lie down")
 
 func _tick_for(vis: HumanoidVisual, anim: String, seconds: float) -> void:
 	var step := 1.0 / 60.0

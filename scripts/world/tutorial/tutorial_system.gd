@@ -250,9 +250,17 @@ func _spawn_wave(id: int, count: int, hold: Enemy.Hold) -> void:
 		return
 	var arena: TutorialArena = run["arena"]
 	var spawned: int = int(run.get("spawned", 0))
-	for i in count:
-		var bandit := Net.server_spawn_tutorial_bandit(id,
-				arena.bandit_spawn(spawned + i), hold)
+	# Every wave arrives in front of the player, and any wave after the first
+	# arrives closer: the raid turning up mid-fight has to be ON them.
+	var reach := TutorialArena.REINFORCEMENT_RING if spawned > 0 \
+			else TutorialArena.BANDIT_RING
+	# The SERVER's copy of where that player is and which way they are facing —
+	# the same pair combat is judged on, never a claim from the client.
+	var pawn := Net.pawn_of(id)
+	var from: Vector3 = pawn.server_body_pos() if pawn else arena.player_spawn()
+	var facing: Vector3 = pawn.server_facing() if pawn else Vector3.FORWARD
+	for pos in arena.wave_spawns(count, from, facing, reach):
+		var bandit := Net.server_spawn_tutorial_bandit(id, pos, hold)
 		if bandit:
 			run["bandits"].append(bandit)
 	run["spawned"] = spawned + count

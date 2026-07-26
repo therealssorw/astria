@@ -201,6 +201,9 @@ func _blacksmith() -> bool:
 	if not _check(DialogSystem.start("blacksmith"), "the blacksmith has no conversation"):
 		return false
 	_skip_typing()
+	# He opens on his GIFT while the armor is still outstanding, which is what a
+	# fresh player meets. Taking it comes back to the greeting, so the way out of
+	# the conversation is one line further in than it used to be.
 	if not _check(not GameStats.gift_taken("blacksmith_armor"),
 			"this test assumes the armor has not been given yet"):
 		return false

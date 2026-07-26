@@ -18,8 +18,16 @@ extends CanvasLayer
 const DARK_DIALOG := "intro_wake"    # spoken over the black
 const LIGHT_DIALOG := "intro_where"  # spoken once the world is visible
 
-## How long the world takes to appear once the first line is done.
+## The clip the pawn plays as the black lifts: flat on the ground to standing.
+const GET_UP_CLIP := "get_up"
+
+## How long the world takes to appear once the first line is done. Used when the
+## pawn has no getting-up clip to time the fade against — otherwise the fade
+## lasts exactly as long as that clip does (clamped), so the black clears at the
+## moment the player finishes standing up rather than at some unrelated count.
 const FADE_TIME := 4.5
+const FADE_MIN := 2.5
+const FADE_MAX := 7.0
 ## Beat between the world being visible and the second line starting.
 const AFTER_FADE_PAUSE := 0.8
 
@@ -113,8 +121,14 @@ func _fade_up() -> void:
 	# cutscene — hold onto them. The cursor stays free on its own: the pawn keeps
 	# it loose for as long as is_open() says the cutscene is running
 	_freeze(true)
+	# You come round on the ground and pick yourself up as the world appears, so
+	# the two are ONE beat: the fade is as long as the clip. Falling back to
+	# FADE_TIME rather than skipping the fade matters — a pawn with no such clip
+	# (any character built without it) must still get its world back.
+	var rise := _play_get_up()
+	var fade := clampf(rise, FADE_MIN, FADE_MAX) if rise > 0.0 else FADE_TIME
 	_tween = create_tween()
-	_tween.tween_property(_rect, "color:a", 0.0, FADE_TIME).set_trans(Tween.TRANS_SINE)
+	_tween.tween_property(_rect, "color:a", 0.0, fade).set_trans(Tween.TRANS_SINE)
 	_tween.tween_interval(AFTER_FADE_PAUSE)
 	_tween.tween_callback(_speak_awake)
 
@@ -133,6 +147,8 @@ func _finish() -> void:
 	_rect.visible = false
 	_rect.color = Color.BLACK # reset for the next time we load in
 	Cinematic.hold_bars(false)
+	# an abort mid-fade must not leave the player on the floor
+	_stop_get_up()
 	_freeze(false)
 	# the tutorial city waits for this: nothing swings at a player who is still
 	# looking at a black screen
@@ -143,3 +159,27 @@ func _freeze(on: bool) -> void:
 	var pawn := get_tree().get_first_node_in_group("local_player")
 	if is_instance_valid(pawn):
 		pawn.set("ui_open", on)
+
+## Put the local pawn on the floor and have it stand up, returning how long that
+## takes — 0.0 if this pawn has no getting-up clip, which the caller treats as
+## "just fade". The clip owns the body for its own length and then hands it back
+## by itself (HumanoidVisual.play_scripted), so there is nothing to cancel.
+func _play_get_up() -> float:
+	var visual := _local_visual()
+	if visual == null:
+		return 0.0
+	return float(visual.call("play_scripted", GET_UP_CLIP))
+
+func _stop_get_up() -> void:
+	var visual := _local_visual()
+	if visual and visual.has_method("stop_scripted"):
+		visual.call("stop_scripted")
+
+func _local_visual() -> Node:
+	var pawn := get_tree().get_first_node_in_group("local_player")
+	if not is_instance_valid(pawn):
+		return null
+	var visual: Node = pawn.get("body_visual")
+	if visual == null or not visual.has_method("play_scripted"):
+		return null
+	return visual

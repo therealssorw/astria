@@ -18,6 +18,23 @@ var _fails: PackedStringArray = []
 class FakePawn:
 	extends Node
 	var ui_open := false # the one thing the cutscene and the dialog box touch
+	var body_visual := FakeVisual.new()
+
+## Stands in for the pawn's HumanoidVisual and records what was asked of it. The
+## real thing is covered by test_npc_builder; what matters here is that the
+## cutscene asks for the getting-up AS the black starts lifting, so the two are
+## one beat rather than an animation nobody sees.
+class FakeVisual:
+	extends Node
+	var scripted: PackedStringArray = []
+	var stopped := 0
+
+	func play_scripted(key: String) -> float:
+		scripted.append(key)
+		return 4.75 # about what the real clip reports
+
+	func stop_scripted() -> void:
+		stopped += 1
 
 func _ready() -> void:
 	Engine.time_scale = TIME_SCALE
@@ -87,6 +104,10 @@ func _run() -> void:
 		return IntroCutscene.darkness() < 0.99 and IntroCutscene.darkness() > 0.0)
 	_check(ok, "world never started fading in")
 	_check(pawn.ui_open, "player let go mid-fade")
+	# you come round on the ground and pick yourself up as the world appears
+	_check(Array(pawn.body_visual.scripted) == [IntroCutscene.GET_UP_CLIP],
+			"the fade did not play the getting-up (asked for %s)"
+					% [pawn.body_visual.scripted])
 
 	ok = await _until(func() -> bool: return DialogSystem.dialog_id == IntroCutscene.LIGHT_DIALOG)
 	_check(ok, "second line never opened")
