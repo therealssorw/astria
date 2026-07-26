@@ -175,18 +175,33 @@ static func rig(def: NpcDefinition, skeleton: Skeleton3D) -> Dictionary:
 
 	var skin := skeleton.create_skin_from_rest_transforms()
 	var segments := _segments(skeleton)
-	# Voxels an earlier part already fills. Models are routinely drawn with
-	# their neighbours in view for reference and exported with them still
-	# there -- the base arms carry a whole copy of the torso -- and two parts
-	# painting the same cell means two coincident surfaces fighting over every
-	# pixel. Slot order decides who wins: the torso beats the arms laid over it.
-	var claimed := {}
+	# Who owns each voxel, worked out for EVERY part before any mesh is built.
+	# Two reasons it is a pass of its own rather than something each part does on
+	# its way past:
+	#  * Voxels an earlier part already fills are dropped. Models are routinely
+	#    drawn with their neighbours in view for reference and exported with them
+	#    still there -- the base arms carry a whole copy of the torso -- and two
+	#    parts painting the same cell means two coincident surfaces fighting over
+	#    every pixel. Slot order decides who wins: the torso beats the arms laid
+	#    over it.
+	#  * The seam caps below need to know which bone the voxel NEXT DOOR binds
+	#    to, and next door is often the next part along -- the join under the
+	#    chin is the head meeting the body. A part built before its neighbour
+	#    exists cannot ask.
+	var occupied := {}
+	var cells := {}
 	for slot: String in NpcDefinition.ALL_SLOTS:
 		if not parts.has(slot):
 			continue
-		var mi := _build_mesh(slot, parts[slot], def.get_part(slot),
+		cells[slot] = _claim_cells(slot, parts[slot], def.get_part(slot),
 				layout["part_xf"][slot], skeleton, segments,
-				layout["voxel_scale"], claimed)
+				layout["voxel_scale"], occupied)
+	for slot: String in NpcDefinition.ALL_SLOTS:
+		if not parts.has(slot):
+			continue
+		var mi := _build_mesh(parts[slot], def.get_part(slot),
+				layout["part_xf"][slot], cells[slot], occupied,
+				layout["voxel_scale"])
 		if mi == null:
 			continue
 		mi.name = mesh_name(slot)
@@ -713,9 +728,13 @@ static func _segments(skeleton: Skeleton3D) -> Dictionary:
 		out[i] = [a, b]
 	return out
 
-static func _build_mesh(slot: String, data: Dictionary, spec: NpcPart, xf: Transform3D,
+## Which voxels this part gets, on the grid every part shares: the bone each one
+## binds to, where its centre sits, and what colour it is. Nothing is drawn here
+## -- see `rig()` for why ownership has to be settled for the whole character
+## before the first mesh is built.
+static func _claim_cells(slot: String, data: Dictionary, spec: NpcPart, xf: Transform3D,
 		skeleton: Skeleton3D, segments: Dictionary, voxel_scale: float,
-		claimed: Dictionary) -> MeshInstance3D:
+		occupied: Dictionary) -> Dictionary:
 	var candidates: Array[int] = []
 	# Armor binds to the bones of the part it covers: a pauldron rides the arm
 	# it is strapped to, and there is no such thing as an armor bone.
@@ -731,49 +750,53 @@ static func _build_mesh(slot: String, data: Dictionary, spec: NpcPart, xf: Trans
 	var entry: PackedInt32Array = data["entry"]
 	var palette: PackedColorArray = data["palette"]
 
+	var mine := {}
+	for t in range(0, src_verts.size() - 2, 3):
+		# One bone for the whole voxel, chosen from its centre rather than from
+		# each face -- picking per vertex would tear voxels in half at the joints.
+		var cell := xf * (_face_centre(src_verts, t) - src_norms[t] * 0.5)
+		var key := _cell_key(cell, voxel_scale)
+		if occupied.has(key) or mine.has(key):
+			continue
+		mine[key] = {
+			"bone": _nearest_bone(cell, candidates, segments),
+			"centre": cell,
+			"colour": _colour(spec, palette, entry[t]),
+		}
+	for key: Vector3i in mine:
+		occupied[key] = int((mine[key] as Dictionary)["bone"])
+	return mine
+
+static func _build_mesh(data: Dictionary, spec: NpcPart, xf: Transform3D,
+		mine: Dictionary, occupied: Dictionary, voxel_scale: float) -> MeshInstance3D:
+	var src_verts: PackedVector3Array = data["verts"]
+	var src_norms: PackedVector3Array = data["norms"]
+	var entry: PackedInt32Array = data["entry"]
+	var palette: PackedColorArray = data["palette"]
+
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var cols := PackedColorArray()
 	var bones := PackedInt32Array()
 	var weights := PackedFloat32Array()
-	verts.resize(src_verts.size())
-	norms.resize(src_verts.size())
-	cols.resize(src_verts.size())
-	bones.resize(src_verts.size() * 4)
-	weights.resize(src_verts.size() * 4)
 
-	var mine := {}
-	var kept := 0
 	for t in range(0, src_verts.size() - 2, 3):
-		# One bone for the whole triangle, chosen from the centre of the voxel
-		# the triangle is a face of -- picking per vertex would tear voxels in
-		# half at the joints.
-		var centre := (src_verts[t] + src_verts[t + 1] + src_verts[t + 2]) / 3.0
-		var cell := xf * (centre - src_norms[t] * 0.5)
-		var key := _cell_key(cell, voxel_scale)
-		if claimed.has(key):
+		var key := _cell_key(xf * (_face_centre(src_verts, t) - src_norms[t] * 0.5),
+				voxel_scale)
+		if not mine.has(key):
 			continue
-		mine[key] = true
-		var bone := _nearest_bone(cell, candidates, segments)
+		var bone := int((mine[key] as Dictionary)["bone"])
 		for c in 3:
-			var i := kept * 3 + c
 			var src := t + c
-			verts[i] = xf * src_verts[src]
-			norms[i] = (xf.basis * src_norms[src]).normalized()
-			cols[i] = _colour(spec, palette, entry[src])
-			bones[i * 4] = bone
-			weights[i * 4] = 1.0
-		kept += 1
+			verts.append(xf * src_verts[src])
+			norms.append((xf.basis * src_norms[src]).normalized())
+			cols.append(_colour(spec, palette, entry[src]))
+			_bind(bones, weights, bone)
 
-	claimed.merge(mine)
-	if kept == 0:
+	_add_seam_caps(mine, occupied, xf.basis.get_scale().x, voxel_scale,
+			_winding_sign(data), verts, norms, cols, bones, weights)
+	if verts.is_empty():
 		return null
-	# Trim to what survived the occlusion pass.
-	verts.resize(kept * 3)
-	norms.resize(kept * 3)
-	cols.resize(kept * 3)
-	bones.resize(kept * 12)
-	weights.resize(kept * 12)
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -794,6 +817,101 @@ static func _build_mesh(slot: String, data: Dictionary, spec: NpcPart, xf: Trans
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	return mi
+
+## The centre of the square face a triangle is half of.
+##
+## NOT the triangle's own centroid, which sits a sixth of a voxel off it: a
+## voxel face is two triangles and each one leans towards its own three corners.
+## That was close enough to identify which voxel a face belongs to (the cell
+## grid is far coarser than a sixth) and nowhere near close enough to BUILD on,
+## which is what the seam caps do -- they were landing a sixth of a voxel proud
+## of the model and pushing its bounding box out with them. Taking the corners'
+## own min and max recovers the square exactly, because either triangle of a
+## square still spans the whole of it.
+static func _face_centre(verts: PackedVector3Array, t: int) -> Vector3:
+	var lo := verts[t].min(verts[t + 1]).min(verts[t + 2])
+	var hi := verts[t].max(verts[t + 1]).max(verts[t + 2])
+	return (lo + hi) * 0.5
+
+## One vertex bound whole to one bone. Rigid on purpose -- it is what keeps the
+## blocky look, pieces rotating about the joints instead of bending like skin.
+static func _bind(bones: PackedInt32Array, weights: PackedFloat32Array, bone: int) -> void:
+	bones.append(bone)
+	weights.append(1.0)
+	for _i in 3:
+		bones.append(0)
+		weights.append(0.0)
+
+## Which way round Godot wants a front face, read off the art rather than
+## assumed: the exporter already wound its own triangles correctly, so whether
+## (v1-v0)x(v2-v0) runs with the face normal or against it is a fact to look up
+## rather than a convention this file can get wrong. The caps below are the only
+## geometry the rig invents, and a cap wound backwards is invisible -- which
+## looks exactly like not having written it.
+static func _winding_sign(data: Dictionary) -> float:
+	var verts: PackedVector3Array = data["verts"]
+	var norms: PackedVector3Array = data["norms"]
+	for t in range(0, verts.size() - 2, 3):
+		var facing := (verts[t + 1] - verts[t]).cross(verts[t + 2] - verts[t]).dot(norms[t])
+		if absf(facing) > 0.0001:
+			return signf(facing)
+	return 1.0
+
+## Puts back the faces voxel art does not carry.
+##
+## Goxel exports only the OUTSIDE of a model: where two voxels touch there is no
+## geometry at all, and nothing needs any while the pair cannot move apart.
+## Rigid skinning moves them apart. A voxel bound to Chest and the one beside it
+## bound to Hips separate the moment the spine bends, and with no face on either
+## side of the join you are looking straight through the character -- that is
+## the row of dark wedges that opened across the chest and down the arms of
+## every built NPC as soon as anything animated, and it is worse in armor, which
+## sits a voxel further out from the bone and so swings further.
+##
+## So every join between two voxels on DIFFERENT bones gets its missing face
+## back, one square per side, each bound to its own voxel's bone. At rest the
+## pair sits back to back on the same plane facing opposite ways, so each is the
+## other's backface and neither is drawn; the moment the joint opens, both sides
+## show solid colour instead of the inside of the model.
+##
+## Joins WITHIN a bone are left alone -- those two voxels can never part, and
+## capping them would be geometry that is never seen. Neighbours across a PART
+## boundary count, which is what closes the seam under the chin.
+static func _add_seam_caps(mine: Dictionary, occupied: Dictionary, voxel: float,
+		voxel_scale: float, winding: float, verts: PackedVector3Array,
+		norms: PackedVector3Array, cols: PackedColorArray, bones: PackedInt32Array,
+		weights: PackedFloat32Array) -> void:
+	if voxel <= 0.0:
+		return
+	var half := voxel * 0.5
+	for key: Vector3i in mine:
+		var cell: Dictionary = mine[key]
+		var at: Vector3 = cell["centre"]
+		var bone := int(cell["bone"])
+		for axis in 3:
+			for step in [-1.0, 1.0]:
+				var dir := Vector3.ZERO
+				dir[axis] = step
+				var beside := _cell_key(at + dir * voxel, voxel_scale)
+				if not occupied.has(beside) or int(occupied[beside]) == bone:
+					continue
+				var u := Vector3.ZERO
+				u[(axis + 1) % 3] = half
+				var w := Vector3.ZERO
+				w[(axis + 2) % 3] = half
+				var face := at + dir * half
+				var quad: Array[Vector3] = [
+						face - u - w, face + u - w, face + u + w, face - u + w]
+				# u x w is +axis, so that order runs anticlockwise seen from the
+				# +axis side; flip it to face `dir`, then again if the art says
+				# Godot wants the other winding.
+				if (step > 0.0) != (winding < 0.0):
+					quad.reverse()
+				for corner in [0, 1, 2, 0, 2, 3]:
+					verts.append(quad[corner])
+					norms.append(dir)
+					cols.append(cell["colour"])
+					_bind(bones, weights, bone)
 
 static func _colour(spec: NpcPart, palette: PackedColorArray, index: int) -> Color:
 	var base := Color.WHITE

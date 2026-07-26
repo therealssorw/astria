@@ -959,6 +959,40 @@ mixed pile.
   with them still there — the base arms carry a complete copy of the torso.
   Two parts painting one cell means two coincident surfaces z-fighting, which
   looks like the NPC flickering inside out. The test asserts it never happens.
+  Ownership is settled for the WHOLE character before any mesh is built, so a
+  part can see which bone the voxel next door binds to — which is what the seam
+  caps below need, and next door is often the next part along.
+- Voxel art carries no faces BETWEEN two touching voxels: Goxel exports only the
+  outside of a model, and nothing needs any while the pair cannot move apart.
+  Rigid skinning moves them apart. A voxel bound to Chest and the one beside it
+  bound to Hips separate the moment the spine bends, and with no face on either
+  side of the join you are looking straight THROUGH the character — the row of
+  dark wedges that opened across the chest and down the arms of every built NPC
+  as soon as anything animated. Worse in armor, which rides the same bones from
+  a voxel further out and so swings further.
+- So `NpcRig._add_seam_caps` puts the missing face back on every join between
+  two voxels on DIFFERENT bones, one square per side, each bound to its own
+  voxel. At rest the pair sits back to back on the same plane facing opposite
+  ways, so each is the other's backface and neither is drawn; the moment the
+  joint opens, both sides show solid colour. Joins WITHIN a bone are left alone
+  — those two voxels can never part. It costs about 40% more triangles on a
+  villager and nothing at all on a head (one bone, no seams).
+- Fixing it in the art instead would mean re-exporting every part ever made with
+  interior faces on, tripling the triangles, and writing faces at every join
+  when only the ones straddling a bone can ever come apart.
+- The winding of those caps is read off the art (`_winding_sign`) rather than
+  assumed: the exporter already wound its own triangles correctly, and a cap
+  wound backwards is invisible — which looks exactly like not having written it.
+- A face's centre is the min/max of its triangle's corners, NOT the triangle's
+  centroid, which sits a sixth of a voxel off it (a square is two triangles and
+  each leans towards its own three corners). That was close enough to say which
+  voxel a face belongs to and nowhere near close enough to build on: the caps
+  landed a sixth of a voxel proud and dragged the mesh's bounding box with them.
+- Test: the `_check_joins_are_capped` / `_open_joins` section of
+  `test_npc_builder` — every join across two bones carries a face, on the rest
+  pose (a hole is a hole whether or not the clip is pulling it open this frame),
+  bare and armoured. With the cap pass off it reports 180 open joins on a plain
+  villager and 414 on an armoured one.
 - That reference copy is also why a SET IS WORN WHOLE. An arms model carries the
   torso it was drawn against, and only the cells its own body covers get dropped
   — put it over another set's body and the leftover reference torso sticks out
