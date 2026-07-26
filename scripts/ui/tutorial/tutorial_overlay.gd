@@ -19,6 +19,12 @@ extends Control
 
 const GOLD := Color(0.95, 0.79, 0.42)
 
+## How far below the middle of the screen the popup sits, and how wide it is
+## allowed to get. The two dials for "smaller, and further down" — everything
+## else about the box sizes itself to its text.
+const POPUP_DROP := 190.0
+const POPUP_WIDTH := 340.0
+
 var _gate: PanelContainer
 var _title: Label
 var _button: Label
@@ -89,7 +95,7 @@ func _update_banner(step: Dictionary) -> void:
 
 func _build() -> void:
 	# gold edge, like the cheat menu: a lesson is not an ordinary panel
-	_gate = UiTheme.panel(UiTheme.INK, UiTheme.PANEL_ALPHA, Vector4i(26, 26, 12, 12),
+	_gate = UiTheme.panel(UiTheme.INK, UiTheme.PANEL_ALPHA, Vector4i(18, 18, 9, 9),
 			Color(GOLD.r, GOLD.g, GOLD.b, 0.75))
 	# Anchored to the middle of the screen BY HAND, and every offset set: the
 	# PRESET_CENTER helper bakes absolute offsets out of whatever size the
@@ -105,34 +111,37 @@ func _build() -> void:
 	_gate.offset_right = 0
 	_gate.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_gate.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_gate.offset_top = 90 # below the reticle, out of the fight's way
-	_gate.offset_bottom = 90
+	# Pushed down into the lower third: well clear of the reticle and of whoever
+	# is being fought, since the lesson is read WHILE the bandit is circling.
+	# Not further — the dialog box owns the very bottom of the screen.
+	_gate.offset_top = POPUP_DROP
+	_gate.offset_bottom = POPUP_DROP
 	_gate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_gate)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 2)
-	vbox.custom_minimum_size.x = 460 # room for a sentence without it going thin
+	vbox.add_theme_constant_override("separation", 1)
+	vbox.custom_minimum_size.x = POPUP_WIDTH
 	UiTheme.body(_gate).add_child(vbox)
 
 	_title = Label.new()
-	_title.add_theme_font_size_override("font_size", 15)
+	_title.add_theme_font_size_override("font_size", 12)
 	_title.add_theme_color_override("font_color", Color(1, 1, 1, 0.55))
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_title)
 
 	_button = Label.new()
-	_button.add_theme_font_size_override("font_size", 34)
+	_button.add_theme_font_size_override("font_size", 25)
 	_button.add_theme_color_override("font_color", GOLD)
 	_button.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_button)
 
 	_hint = Label.new()
-	_hint.add_theme_font_size_override("font_size", 16)
+	_hint.add_theme_font_size_override("font_size", 13)
 	_hint.add_theme_color_override("font_color", Color(0.93, 0.93, 0.95))
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint.custom_minimum_size.x = 460
+	_hint.custom_minimum_size.x = POPUP_WIDTH
 	vbox.add_child(_hint)
 
 	# same corner and colour as the quest heading, one line below it

@@ -398,7 +398,12 @@ mixed pile.
   button for whatever device is in hand, and one line saying what the thing
   does — `popup: {title, body}` on the gate step, drawn by
   `scripts/ui/tutorial/tutorial_overlay.gd`. Nothing to dismiss, and it never
-  takes the controls off the player the way a dialog box would. There is no
+  takes the controls off the player the way a dialog box would. Its size and
+  placement are two dials, `POPUP_WIDTH` and `POPUP_DROP` (how far below the
+  middle of the screen it sits) — everything else about the box sizes itself to
+  its text. It is deliberately small and low: the lesson is read WHILE a bandit
+  is circling, so the box stays out of the reticle and off the fight. Judge it
+  with the `tutorial_popup` shot from `res://tests/preview_ui.tscn`. There is no
   and it TALKS with dialog: `tut_taunt` as the bandit that put you down opens
   its mouth, `tut_reinforcements` as its friends arrive, and `tut_mayor` when
   the villager sees you off. A step's line plays first and its popup follows,
@@ -489,6 +494,35 @@ mixed pile.
   drives) toward the target, so when it lets go the player carries on from
   where the shot ended instead of being snapped somewhere. It takes no input
   away — the dialog box already does that.
+- THE SHOT IS A HIGH ANGLE, looking down on the pair of them: `FRAME_PITCH_DEG`
+  is stated outright rather than worked out from where the speaker's face is.
+  Only the YAW follows them. A pitch derived from an aim point is whatever the
+  geometry happens to make — level ground nearly always, and a different shot for
+  every character's height and every distance the player stopped at.
+- The camera also PULLS IN, borrowing the pawn's `spring_length` and handing it
+  back when the shot ends (`_tick_spring`, which is why nothing else in the game
+  may own that property). The distance is sized off the speaker's own height
+  (`FRAME_SPRING_PER_METRE`): a 2.40 m King and a 1.85 m villager framed from one
+  fixed distance cannot both fill the shot.
+- THE SPEAKER TURNS TO FACE THE PLAYER while the box is up
+  (`NpcInteractable.turn_toward`, nudged from here every frame). Without it they
+  answer you with their back turned — an NPC is a prop facing whichever way it
+  was dropped into the level, and the player walks up from wherever they like, so
+  being talked to from behind was the ORDINARY case. Note the yaw is
+  `atan2(-x, -z) + PI`, the same as `Enemy.face_toward`: these rigs are modelled
+  facing +Z, so the plain look-at yaw turns their back to you.
+- Where the camera looks and how tall the speaker is are both MEASURED off the
+  body, not constants — `NpcInteractable.look_anchor()` / `body_height()`, taken
+  once from the meshes. The old flat 1.5 m was the King's waist. That code has to
+  cope with both layouts in the world: the interactable is either the NPC's own
+  root with the body under it (the blacksmith) or a child at the NPC's origin
+  (the King, and every built NPC), so it measures itself first and its parent
+  second — and only when the parent is a character, or a sibling arrangement
+  would measure the whole island.
+- Eyeballing it: `godot --path . res://tests/preview_dialog_camera.tscn` (NO
+  `--headless`) stands the player in front of each talking character, TURNED
+  AWAY as the world leaves them, and saves the shot each conversation opens on.
+  A preview that stood them already facing you would prove nothing.
 - Purely local and cosmetic: where one player's camera points changes nothing
   anyone else can see.
 
