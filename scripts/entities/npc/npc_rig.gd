@@ -37,8 +37,15 @@ const BIND_SETS := {
 	# No shoulders in the torso set: they swing with the arms, and letting them
 	# claim the top of the chest would knead the whole body every stride.
 	"body": ["Hips", "Spine", "Chest", "UpperChest", "Neck"],
-	"arms": ["UpperChest", "LeftShoulder", "LeftUpperArm", "LeftLowerArm", "LeftHand",
-			"RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand"],
+	# No CLAVICLES either, and for the mirror of the reason above: a clavicle runs
+	# from the spine out to the shoulder joint, so its segment lies along the
+	# inner half of the sleeve and claims it -- and a clavicle barely rotates in
+	# these clips while the upper arm swings the whole way. That splits one rigid
+	# sleeve between a bone that moves and a bone that does not, and the voxels
+	# tear apart into a sawtooth at the shoulder. A voxel arm swings whole,
+	# shoulder cap included.
+	"arms": ["UpperChest", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+			"RightUpperArm", "RightLowerArm", "RightHand"],
 	# Head only, never Neck: Head is a child of Neck, so it already inherits the
 	# neck's motion, and binding it whole keeps a voxel skull from shearing.
 	"head": ["Head"],
@@ -393,14 +400,33 @@ static func _layout(def: NpcDefinition, parts: Dictionary) -> Dictionary:
 		"head_y": neck_y + head_h * voxel_scale * 0.25,
 		"arm_y": lerpf(hip_y, neck_y, 0.75),
 		"hand_x": def.height * 0.28,
+		"arm_thick": def.height * 0.08,
 		"leg_x": def.height * 0.06,
 		"shoulder_x": def.height * 0.09,
 	}
 	_measure_arms(layout, parts, part_xf)
 	_measure_legs(layout, parts, part_xf)
+	# Where the arm hangs FROM. Half the arm's own thickness outside the torso's
+	# edge, because that is the pivot an arm can be rotated down to the
+	# character's side about and land flush against the body rather than inside
+	# it: swung a quarter turn, a bar pivoted at `p` sweeps out the slab
+	# [p - thickness/2, p + thickness/2].
+	#
+	# Getting this from the ART rather than from the human rig's proportions is
+	# the whole point. A voxel character is a third as wide as it is tall and the
+	# human it borrows its skeleton from is not, so a shoulder placed at the
+	# human's shoulder-to-hand ratio lands INSIDE the chest -- and an arm pivoting
+	# in the middle of the chest spends every clip ploughing through it.
+	var torso_x: float = layout["hand_x"] * 0.35
 	if parts.has("body"):
 		var torso := _mirrored_points(parts["body"]["verts"], part_xf["body"])
-		layout["shoulder_x"] = maxf(_half_width(torso) * 0.5, 0.01)
+		torso_x = maxf(_half_width(torso), 0.01)
+		layout["shoulder_x"] = maxf(torso_x * 0.5, 0.01)
+	# Never past the hand: a character with stubby arms on a broad body would
+	# otherwise put the shoulder outboard of its own fist and turn the arm inside
+	# out.
+	layout["arm_root_x"] = minf(torso_x + layout["arm_thick"] * 0.5,
+			layout["hand_x"] * 0.75)
 	# The Y landmarks feed a piecewise remap, which needs them strictly rising.
 	var floor_y := 0.0
 	for key in ["hip_y", "arm_y", "neck_y", "head_y", "crown"]:
@@ -408,8 +434,12 @@ static func _layout(def: NpcDefinition, parts: Dictionary) -> Dictionary:
 		layout[key] = floor_y
 	return layout
 
-## Arm height and reach, read off the outer quarter of the arms model -- the
-## part that actually sticks out past the torso.
+## Arm height, reach and thickness, read off the outer quarter of the arms model
+## -- the part that actually sticks out past the torso.
+##
+## Only the outer quarter, and that matters for the thickness: an arms model
+## carries a reference copy of the torso through its middle (see the occlusion
+## pass in `rig`), so measured whole it is as thick as a chest.
 static func _measure_arms(layout: Dictionary, parts: Dictionary, part_xf: Dictionary) -> void:
 	if not parts.has("arms"):
 		return
@@ -419,14 +449,19 @@ static func _measure_arms(layout: Dictionary, parts: Dictionary, part_xf: Dictio
 		return
 	var sum := 0.0
 	var count := 0
+	var lo := INF
+	var hi := -INF
 	for p in points:
 		if absf(p.x) >= reach * 0.75:
 			sum += p.y
 			count += 1
+			lo = minf(lo, p.y)
+			hi = maxf(hi, p.y)
 	# The bone wants to sit inside the hand rather than on its outer face.
 	layout["hand_x"] = reach * 0.85
 	if count > 0:
 		layout["arm_y"] = sum / count
+		layout["arm_thick"] = maxf(hi - lo, 0.01)
 
 ## Where the legs stand, so the leg bones land inside them rather than on the
 ## model's centre line.
@@ -542,18 +577,28 @@ static func _reproportion(skeleton: Skeleton3D, layout: Dictionary) -> void:
 	var y_to: Array[float] = [0.0, layout["hip_y"], layout["arm_y"], layout["neck_y"],
 			layout["head_y"], layout["crown"]]
 	var k := {
-		"arm": _ratio(layout["hand_x"], ref["hand_x"]),
 		"leg": _ratio(layout["leg_x"], ref["leg_x"]),
 		"body": _ratio(layout["shoulder_x"], ref["shoulder_x"]),
 	}
+	# The arm is fitted at TWO points -- the shoulder and the hand -- where the
+	# other chains get away with one scale. One factor can only ever put the hand
+	# in the right place OR the shoulder, and the human rig it is scaled from has
+	# its shoulders a quarter of the way out to its hands; a voxel character,
+	# being nearly as wide as its arms are long, needs them most of the way out.
+	# Scaled to land the hands, its shoulders end up buried in its chest.
+	var arm_from: Array[float] = [0.0, ref["upper_arm_x"], ref["hand_x"]]
+	var arm_to: Array[float] = [0.0, layout["arm_root_x"], layout["hand_x"]]
 	var depth: float = _ratio(layout["crown"], ref["crown"])
 
 	var fitted := {}
 	for i in skeleton.get_bone_count():
 		var g: Transform3D = src[i]
 		var chain: String = _chain_of(skeleton, i)
+		# Sign carries the side: the ladder is measured on the left and mirrored.
+		var x: float = signf(g.origin.x) * _remap(absf(g.origin.x), arm_from, arm_to) \
+				if chain == "arm" else g.origin.x * k[chain]
 		fitted[i] = Transform3D(g.basis, Vector3(
-				g.origin.x * k[chain],
+				x,
 				_remap(g.origin.y, y_from, y_to),
 				g.origin.z * depth))
 	for i in skeleton.get_bone_count():
@@ -577,6 +622,7 @@ static func _reference_landmarks(skeleton: Skeleton3D, src: Dictionary) -> Dicti
 		# above it, so allow for that when scaling depth and total height.
 		"crown": crown * 1.07,
 		"hand_x": _bone_x(skeleton, src, "LeftHand", 0.74),
+		"upper_arm_x": _bone_x(skeleton, src, "LeftUpperArm", 0.19),
 		"leg_x": _bone_x(skeleton, src, "LeftUpperLeg", 0.10),
 		"shoulder_x": _bone_x(skeleton, src, "LeftShoulder", 0.015),
 	}

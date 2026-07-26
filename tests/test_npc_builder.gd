@@ -28,6 +28,8 @@ func _ready() -> void:
 	_check_armor_fits_what_it_covers()
 	_check_armor_recolours()
 	_check_reproportioning()
+	for category in NpcRig.list_categories():
+		_check_arms_swing_clear_of_the_body(category)
 	_check_rebuild_is_stable()
 	_check_parts_line_up_in_depth()
 	_check_build_is_once()
@@ -428,6 +430,72 @@ func _check_reproportioning() -> void:
 	for mi: MeshInstance3D in visual.skeleton.find_children("*", "MeshInstance3D", false, false):
 		top = maxf(top, mi.mesh.get_aabb().end.y)
 	_expect(absf(top - 1.6) < 0.02, "the assembled NPC is %.3f tall, expected 1.6" % top)
+	_drop(visual)
+
+## An arm brought down to the character's side must land BESIDE the torso, not
+## inside it -- and it must come down in one piece.
+##
+## Both halves of that were broken, and neither showed in the bind pose, which is
+## the only pose a still frame of the builder ever displays. A voxel character is
+## a third as wide as it is tall where the human rig its skeleton comes from is
+## not, so an arm chain scaled by a single factor to land the hands put the
+## shoulder joint a good way INSIDE the chest: every clip then swung the arms
+## through the body, and the hands hung in the hips where the two met in front.
+## Moving the joint out then handed the inner sleeve to the clavicle, which
+## barely rotates while the upper arm swings the whole way, and one rigid sleeve
+## split between them tore into a sawtooth at the shoulder.
+##
+## Both are checked as geometry rather than by eye: where the joint is, and
+## whether one sleeve rides one bone.
+func _check_arms_swing_clear_of_the_body(category: String) -> void:
+	var visual := _spawn(_definition_for(category))
+	if not _expect(visual.skeleton != null, "%s arm-fit test built no skeleton" % category):
+		_drop(visual)
+		return
+	var body := _mesh_named(visual, "body")
+	var arms := _mesh_named(visual, "arms")
+	if body == null or arms == null:
+		_drop(visual)
+		return
+
+	# Measured off the rigged character rather than out of the layout it was
+	# rigged from: what is being asserted is where the joint ENDED UP, and a
+	# landmark read back from the dictionary that placed it would agree with
+	# itself whatever it said.
+	var torso_x: float = body.mesh.get_aabb().end.x
+	# The arms mesh keeps only real arm by this point -- the reference torso
+	# through its middle belongs to the body and has been dropped -- so its
+	# height is the thickness of the arm itself.
+	var thick: float = arms.mesh.get_aabb().size.y
+	var joint := visual.skeleton.find_bone("LeftUpperArm")
+	if not _expect(joint >= 0, "%s rigged without a LeftUpperArm bone" % category):
+		_drop(visual)
+		return
+	var root_x: float = absf(visual.skeleton.get_bone_global_rest(joint).origin.x)
+	# Swung down to the side, an arm sweeps out the slab half its own thickness
+	# either side of the joint it hangs from. The near edge of that slab is what
+	# must clear the torso.
+	_expect(root_x - thick * 0.5 >= torso_x - 0.001,
+			("%s hangs its arms from x=%.3f, so swung down they reach in to %.3f "
+			+ "and the torso only ends at %.3f -- the arms will swing through the chest")
+					% [category, root_x, root_x - thick * 0.5, torso_x])
+	# ...and not so far out that the shoulder leaves the body behind.
+	_expect(root_x <= torso_x + thick,
+			"%s hangs its arms from x=%.3f, clear off the side of a torso ending at %.3f"
+					% [category, root_x, torso_x])
+
+	# One sleeve, one bone. A clavicle's segment runs from the spine out to the
+	# shoulder joint, straight along the inner sleeve, so it will happily claim
+	# half of it -- and then hold it still while the rest of the arm swings.
+	var arrays := arms.mesh.surface_get_arrays(0)
+	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+	var riding := {}
+	for i in range(0, bones.size(), 4):
+		riding[visual.skeleton.get_bone_name(bones[i])] = true
+	for bone: String in riding:
+		_expect(not bone.ends_with("Shoulder"),
+				"%s binds part of its arms to %s, a bone that barely moves while the arm swings"
+						% [category, bone])
 	_drop(visual)
 
 ## The builder's preview re-rigs the same skeleton on every edit, so rigging

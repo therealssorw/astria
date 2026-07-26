@@ -920,6 +920,36 @@ mixed pile.
 - `NpcVisual._adapt_hips` rebases the clips' Hips position track per NPC — it
   was authored around a human pelvis and would otherwise yank a short-legged
   voxel NPC up to Rouge's hip height.
+- The ARM is fitted at TWO points where every other chain gets away with one
+  scale, and that is what keeps a character's arms outside its own chest. Height
+  is remapped through shared landmarks and width is one factor per chain, but a
+  single factor can only ever land the HAND or the SHOULDER, not both — and a
+  voxel character is a third as wide as it is tall where the human rig it
+  borrows its skeleton from is not. Scaled to land the hands, its shoulder joint
+  came out a good way INSIDE the torso, so every clip swung the arms through the
+  body and the hands hung down in the hips where the two met in front. So
+  `arm_root_x` is measured off the ART — the torso's own half-width plus half
+  the arm's thickness, which is the pivot an arm can swing DOWN about and land
+  flush beside the body rather than in it — and the chain is remapped piecewise
+  through [0, shoulder, hand] exactly the way heights already are.
+- No CLAVICLES in `BIND_SETS["arms"]`, for the mirror of the reason there are no
+  shoulders in the body set. A clavicle runs from the spine out to the shoulder
+  joint, so once the joint moved out its segment lay along the inner half of the
+  sleeve and claimed it — and a clavicle barely rotates in these clips while the
+  upper arm swings the whole way. One rigid sleeve split between a bone that
+  moves and a bone that does not tore into a sawtooth at the shoulder. A voxel
+  arm swings whole, shoulder cap included.
+- What is LEFT is inherent and worth knowing before chasing it: rigid voxel
+  blocks with no gap between them interpenetrate slightly wherever a joint bends
+  — at the elbow and wrist inside a limb, and where the head meets the shoulders.
+  The art is drawn flush on purpose (a gap reads as a floating head in the bind
+  pose), so short of authoring joint clearance into the models there is nothing
+  to fix there. The bind pose is clean; only bent joints show it.
+- Only ever judged in MOTION. Every one of the faults above is invisible in the
+  bind pose, which is the only pose a still frame of the builder shows — the
+  T-posed character looked perfect the entire time its arms were pivoting inside
+  its chest. `tests/preview_npc_armor.tscn` and a posed render are what catch
+  this class of thing; the bind pose alone will not.
 - A rigged part is BOTH skinned and POINTED at the skeleton
   (`mi.skeleton = NodePath("..")`). A code-made `MeshInstance3D` starts with
   that path empty and being a child of the `Skeleton3D` does not fill it in, so
@@ -953,7 +983,11 @@ mixed pile.
   is idempotent, that building twice still leaves one of everything, that
   colours reach the mesh, and that a saved NPC reloads as a talkable scene —
   plus that Rouge still builds his own rig and full clip set, and that the
-  player's own body builds, animates and can hold a sword.
+  player's own body builds, animates and can hold a sword. It also checks, for
+  every set, that an arm swung down to the character's side clears the torso and
+  that one sleeve rides one bone — measured off the RIGGED skeleton rather than
+  out of the layout that placed it, or the assertion would only be agreeing with
+  itself.
 
 ## The player's body
 
