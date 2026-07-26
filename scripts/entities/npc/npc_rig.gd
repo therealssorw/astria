@@ -31,14 +31,33 @@ const MODEL_EXTS := ["gltf", "glb", "obj", "res", "scn", "tscn"]
 ## Which bones each slot is allowed to bind to. Restricting per slot is what
 ## stops the arms model's centre section (which lives inside the torso) from
 ## grabbing an arm bone and flying off with it.
+##
+## KEEP THESE SHORT. Every bone in a set is another pivot cutting the art into
+## another rigid slab, and a slab shears against its neighbour on every frame it
+## is animated -- a body bound to five bones is a torso in four pieces sliding
+## on each other, which is what made a walking villager look like it was coming
+## apart. A humanoid rig offers far more joints than voxel art this coarse has
+## any use for; the torso here is seven voxels tall and does not want four
+## hinges in it. Adding a bone back is a visible cost, not a free improvement.
 const BIND_SETS := {
-	"feet": ["Hips", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes",
-			"RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"],
-	# No shoulders in the torso set: they swing with the arms, and letting them
-	# claim the top of the chest would knead the whole body every stride.
-	"body": ["Hips", "Spine", "Chest", "UpperChest", "Neck"],
-	"arms": ["UpperChest", "LeftShoulder", "LeftUpperArm", "LeftLowerArm", "LeftHand",
-			"RightShoulder", "RightUpperArm", "RightLowerArm", "RightHand"],
+	# Toes left out: a boot two voxels long has nothing to flex, and the joint
+	# only ever sheared the front of it off the back.
+	"feet": ["Hips", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+			"RightUpperLeg", "RightLowerLeg", "RightFoot"],
+	# One hinge, at the waist: below it the torso rides the hips, above it the
+	# chest. Spine/UpperChest/Neck used to sit in here too and bought nothing
+	# except three more places for the body to come apart.
+	#
+	# No shoulders either: they swing with the arms, and letting them claim the
+	# top of the chest would knead the whole body every stride.
+	"body": ["Hips", "Chest"],
+	# UpperChest is NOT for the arms themselves -- it is what catches the copy of
+	# the torso every arms model carries, so that section stays put instead of
+	# grabbing an arm bone and flying off with it. The hands are left out on
+	# purpose: a voxel fist has no knuckles to bend, and a held item hangs off a
+	# BoneAttachment3D on RightHand, which does not care how the mesh is skinned.
+	"arms": ["UpperChest", "LeftUpperArm", "LeftLowerArm",
+			"RightUpperArm", "RightLowerArm"],
 	# Head only, never Neck: Head is a child of Neck, so it already inherits the
 	# neck's motion, and binding it whole keeps a voxel skull from shearing.
 	"head": ["Head"],
