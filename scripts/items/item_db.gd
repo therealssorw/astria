@@ -5,9 +5,18 @@ extends RefCounted
 ##
 ##   "item_id": {
 ##       "name": "Shown to the player",
+##       "level": <rank — see below>,
 ##       "price": <buy cost in gold>,
 ##       "icon": "res://Assets/Textures/Items/<group>/<file>.png",
 ##   }
+##
+## EVERY item carries a "level": it is the item's rank, and for anything you
+## can swing it is also its damage. FISTS ARE LEVEL 0 (an empty hand is
+## FIST_LEVEL, which is what an item with no level of its own falls back to),
+## so the bare-handed numbers on player.gd are the baseline and each level is
+## worth another CombatLevels.DAMAGE_PER_WEAPON_LEVEL of them. That is the
+## whole ladder — see scripts/combat/combat_levels.gd, which owns the maths and
+## is the only place allowed to.
 ##
 ## Optional per-item keys:
 ##   "sell"  — override the sell price instead of using SELL_RATIO
@@ -33,11 +42,17 @@ extends RefCounted
 
 const SELL_RATIO := 0.5
 
+## An empty hand. Everything is measured from here: the exported damage on
+## player.gd is what a level 0 fist deals, and an item that forgets to declare
+## a level is worth no more than punching.
+const FIST_LEVEL := 0
+
 const SWORD_MODEL := "res://Assets/Models/Items/Weapons/Swords/tony_sword.fbx"
 
 const ITEMS := {
 	"wooden_sword": {
 		"name": "Wooden Sword",
+		"level": 1,
 		"price": 20,
 		"desc": "A splintered practice blade.",
 		"icon": "res://Assets/Textures/Items/Weapons/wooden_sword.png",
@@ -46,6 +61,7 @@ const ITEMS := {
 	},
 	"copper_sword": {
 		"name": "Copper Sword",
+		"level": 2,
 		"price": 50,
 		"desc": "Soft metal, but it holds an edge.",
 		"icon": "res://Assets/Textures/Items/Weapons/copper_sword.png",
@@ -54,6 +70,7 @@ const ITEMS := {
 	},
 	"iron_sword": {
 		"name": "Iron Sword",
+		"level": 3,
 		"price": 100,
 		"desc": "Forge-work worth carrying.",
 		"icon": "res://Assets/Textures/Items/Weapons/iron_sword.png",
@@ -98,6 +115,17 @@ static func item_name(id: String) -> String:
 
 static func description(id: String) -> String:
 	return str(ITEMS.get(id, {}).get("desc", ""))
+
+## This item's rank. An empty hand, an unknown id and an item that never
+## declared one all come out as FIST_LEVEL — punching — so a missing level is
+## never a free upgrade.
+static func level_of(id: String) -> int:
+	return int(ITEMS.get(id, {}).get("level", FIST_LEVEL))
+
+## How a level reads on screen — one wording, so the bag, the shop and anything
+## added later can never label the same rank two different ways.
+static func level_label(id: String) -> String:
+	return "Lv %d" % level_of(id)
 
 ## The item's art, or null when it has none / the file is missing — callers
 ## fall back to the item's name so a bad path never breaks a screen.

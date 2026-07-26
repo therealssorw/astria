@@ -178,7 +178,8 @@ func _build_give() -> void:
 	_title.text = "Cheats  ›  Give item"
 	for id: String in ItemDb.ITEMS:
 		var held := GameStats.item_count(id)
-		_add_row(ItemDb.item_name(id), "carrying %d" % held,
+		_add_row("%s   %s" % [ItemDb.item_name(id), ItemDb.level_label(id)],
+				"carrying %d" % held,
 				func() -> void: Net.request_cheat_give(id), ItemDb.icon(id),
 				ItemDb.description(id))
 	_add_row("‹ Back", "", func() -> void:

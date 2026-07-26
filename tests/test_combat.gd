@@ -92,6 +92,8 @@ func _run() -> void:
 	await _test_stance()
 	print("=== enemy ===")
 	await _test_enemy()
+	print("=== levels ===")
+	await _test_levels()
 	print("COMBATTEST RESULT=%s (%d failures)" % ["PASS" if fails == 0 else "FAIL", fails])
 	get_tree().quit(1 if fails > 0 else 0)
 
@@ -410,3 +412,99 @@ func _test_enemy() -> void:
 			"%.1f dmg" % (before - e.health))
 	e.free()
 	await get_tree().process_frame
+
+## Weapons have levels, enemies have levels, and exactly one place multiplies
+## the two together. The number that must never drift is the FIRST one here:
+## bare-handed against an ordinary bandit is the game as it was tuned, and
+## everything else in this section is measured against it.
+func _test_levels() -> void:
+	for id: String in ItemDb.ITEMS:
+		ok(ItemDb.ITEMS[id].has("level"), "%s declares a level" % id,
+				ItemDb.level_label(id))
+	ok(ItemDb.FIST_LEVEL == 0 and ItemDb.level_of("") == ItemDb.FIST_LEVEL,
+			"an empty hand is level 0")
+	ok(ItemDb.level_of("no_such_item") == ItemDb.FIST_LEVEL,
+			"an unknown item is worth no more than punching")
+	ok(ItemDb.level_of("wooden_sword") == 1 and ItemDb.level_of("copper_sword") == 2
+			and ItemDb.level_of("iron_sword") == 3, "the swords rank 1 / 2 / 3")
+	ok(about(CombatLevels.damage_mult(ItemDb.FIST_LEVEL,
+			CombatLevels.BASE_ENEMY_LEVEL), 1.0, 0.0001),
+			"fists against an ordinary enemy scale nothing at all")
+	ok(CombatLevels.damage_mult(1, 1) > 1.0
+			and CombatLevels.damage_mult(2, 1) > CombatLevels.damage_mult(1, 1)
+			and CombatLevels.damage_mult(3, 1) > CombatLevels.damage_mult(2, 1),
+			"each level of weapon hits harder than the last")
+	ok(CombatLevels.damage_mult(3, 3) < CombatLevels.damage_mult(3, 1),
+			"a higher-level enemy shrugs more of the same blade off")
+	ok(CombatLevels.level_of_target(null) == CombatLevels.BASE_ENEMY_LEVEL,
+			"anything with no level of its own is an ordinary target")
+
+	# ...and now through the real swing, with the level read off the SERVER's
+	# own hotbar — the only copy of it a swing is ever allowed to believe.
+	var a := _spawn_player(1, Vector3.ZERO)
+	var e := _spawn_enemy()
+	await get_tree().process_frame
+	e.global_position = Vector3(0, 0, 1.0)
+	ok(e.level == CombatLevels.BASE_ENEMY_LEVEL, "a bandit is level 1",
+			"level=%d" % e.level)
+	ok(CombatLevels.level_of_target(a) == CombatLevels.BASE_ENEMY_LEVEL,
+			"a player defends as an ordinary target, whatever they carry")
+
+	var had_entry: bool = Net.players.has(1)
+	var saved: Variant = Net.players.get(1)
+	var fists := _swing_damage(a, e)
+	ok(about(fists, a.light_damage, 0.01), "bare-handed deals the exported jab",
+			"%.2f vs %.2f" % [fists, a.light_damage])
+	var by_level := {}
+	for id in ["wooden_sword", "copper_sword", "iron_sword"]:
+		Net.players[1] = {"hotbar": [id], "hot_slot": 0}
+		ok(Net.held_of(1) == id, "the server sees %s in hand" % id)
+		by_level[id] = _swing_damage(a, e)
+	ok(by_level["wooden_sword"] > fists
+			and by_level["copper_sword"] > by_level["wooden_sword"]
+			and by_level["iron_sword"] > by_level["copper_sword"],
+			"a bandit dies faster the better the blade",
+			"fists %.1f -> %.1f -> %.1f -> %.1f" % [fists, by_level["wooden_sword"],
+					by_level["copper_sword"], by_level["iron_sword"]])
+	ok(about(by_level["iron_sword"], a.light_damage
+			* CombatLevels.damage_mult(3, CombatLevels.BASE_ENEMY_LEVEL), 0.01),
+			"the swing uses the shared curve, not one of its own",
+			"%.2f" % by_level["iron_sword"])
+
+	# a tougher enemy takes the same blade better, without any stat of its own
+	# being touched
+	e.level = 3
+	var vs_tough := _swing_damage(a, e)
+	ok(vs_tough < by_level["iron_sword"] and vs_tough > fists,
+			"a level 3 enemy eats some of the level 3 blade", "%.2f" % vs_tough)
+	e.level = CombatLevels.BASE_ENEMY_LEVEL
+
+	# damage only: a jab with the best weapon in the game is still a jab, so
+	# what rocks an enemy back never changes with what you are carrying
+	e.stagger_left = 0.0
+	_swing_damage(a, e)
+	ok(e.stagger_left <= 0.0, "a levelled jab still doesn't stagger")
+
+	if had_entry:
+		Net.players[1] = saved
+	else:
+		Net.players.erase(1)
+	a.free()
+	e.free()
+	await get_tree().process_frame
+
+## One light punch at a bandit stood in front of the player, through the real
+## server trace — returns the health it actually cost.
+func _swing_damage(a: Player, e: Enemy) -> float:
+	e.health = 1000.0
+	e.state = Enemy.CombatState.RETREAT
+	e.stagger_left = 0.0
+	a.attack_is_heavy = false
+	a.combo_index = 0
+	a.hit_actors = {}
+	var dir := e.global_position - a.global_position
+	dir.y = 0
+	a.attack_face_dir = dir.normalized()
+	_silence(e)
+	a._do_attack_trace()
+	return 1000.0 - e.health

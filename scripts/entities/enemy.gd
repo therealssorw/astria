@@ -13,6 +13,14 @@ extends CharacterBody3D
 
 # --- Stats: all tunable per-instance in the inspector (select the Enemy
 # node in the scene and edit under "Enemy" — overrides these defaults) ---
+@export_group("Level")
+## This enemy's rank, which is how much a weapon has to out-class it before it
+## starts dying faster (`CombatLevels`). Level 1 is the ORDINARY enemy — every
+## bandit in the game — and at that level nothing is scaled at all: the
+## exported numbers below are exactly what it has and exactly what it takes,
+## against a level 0 fist. Raising it here is the one dial that makes something
+## tougher without touching a single stat.
+@export var level := CombatLevels.BASE_ENEMY_LEVEL
 @export_group("Health")
 @export var max_health := 100.0
 @export_range(0.0, 1.0) var knockback_resistance := 0.6

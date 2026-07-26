@@ -156,7 +156,7 @@ func _fill_buy_rows() -> void:
 			continue
 		var price := ItemDb.buy_price(id)
 		var owned := GameStats.item_count(id)
-		var label := ItemDb.item_name(id)
+		var label := "%s   %s" % [ItemDb.item_name(id), ItemDb.level_label(id)]
 		if owned > 0:
 			label += "   (carrying %d)" % owned
 		_add_row(id, label, "%d gold" % price,
@@ -169,7 +169,7 @@ func _fill_sell_rows() -> void:
 			continue
 		any = true
 		var count := GameStats.item_count(id)
-		var label := ItemDb.item_name(id)
+		var label := "%s   %s" % [ItemDb.item_name(id), ItemDb.level_label(id)]
 		if count > 1:
 			label += "   x%d" % count
 		_add_row(id, label, "%d gold" % ItemDb.sell_price(id), GOLD, _sell.bind(id))

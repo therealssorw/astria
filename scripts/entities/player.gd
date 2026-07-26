@@ -980,6 +980,11 @@ func _do_attack_trace() -> void:
 		damage *= combo_finisher_mult
 		knockback *= combo_finisher_mult
 		launch *= combo_finisher_mult
+	# What is actually in this pawn's hand, read off the SERVER's own hotbar
+	# (Net.held_of), never off anything the client said. Fists are level 0 and
+	# the numbers above are theirs, so this is 0 -> no change at all for a
+	# bare-handed swing; each level of weapon multiplies it up from there.
+	var wield_level := ItemDb.level_of(Net.held_of(peer_id))
 
 	var origin := server_body_pos() + Vector3.UP * 1.0
 	var fwd := attack_face_dir
@@ -1016,11 +1021,16 @@ func _do_attack_trace() -> void:
 			hit_actors[e] = true
 			var away := flat if flat.length_squared() > 0.001 else fwd
 			var kb := away * knockback + Vector3.UP * launch
+			# The level fight, resolved per target: a tougher enemy eats more of
+			# the weapon's edge. Knockback stays untouched on purpose, so which
+			# hits rock an enemy back never changes with what you carry.
+			var dealt: float = damage * CombatLevels.damage_mult(
+					wield_level, CombatLevels.level_of_target(e))
 			# `self` goes along so a parry can stagger whoever swung
 			if e is Player:
-				e.server_take_damage(damage, kb, peer_id, self)
+				e.server_take_damage(dealt, kb, peer_id, self)
 			else:
-				e.take_damage(damage, kb, peer_id, self)
+				e.take_damage(dealt, kb, peer_id, self)
 
 # ---------------- slide / dive ----------------
 

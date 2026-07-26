@@ -607,6 +607,47 @@ mixed pile.
   `godot --path . res://tests/preview_held_item.tscn` (NO `--headless` — it
   renders). It writes `user://hold_preview.png` for eyeballing the grip.
 
+## Levels
+
+- EVERY item has a `"level"` in `ItemDb.ITEMS` — it is the item's rank, and for
+  anything you swing it is also its damage. Today: wooden sword 1, copper 2,
+  iron 3. FISTS ARE LEVEL 0 (`ItemDb.FIST_LEVEL`), which is also what an empty
+  hand, an unknown id and an item that forgot the key all come out as, so a
+  missing level is never a free upgrade. Every enemy has a `level` too (an
+  `@export` on `enemy.gd`) and every bandit in the game is level 1.
+- The maths lives in exactly ONE file, `scripts/combat/combat_levels.gd`, and
+  nothing else may invent a curve of its own or two weapons will disagree about
+  what a level is worth. It is two ladders that never have to know about each
+  other: `weapon_power(level)` (fists = 1.0, +35% a level) over
+  `enemy_toughness(level)` (an ordinary level 1 enemy = 1.0, +35% a level
+  above), multiplied into the swing's damage.
+- Both baselines are 1.0 today ON PURPOSE. Fists against a bandit scale
+  *nothing*, so the exported numbers on `player.gd` and `enemy.gd` are still
+  literally what happens — "base the stats off fists" and "the bandits are
+  level 1" are the same statement — and a weapon is the first thing that ever
+  moves that fraction. It is why the whole system could be added without
+  retuning a single fight.
+- ONLY DAMAGE SCALES. Knockback is deliberately left alone: which hits rock an
+  enemy back (`Enemy.flinch_knockback`, the combo ender's
+  `combo_finisher_mult`) is a readability promise to the player, and a good
+  weapon must not quietly turn every jab into a stagger.
+- Server-authoritative like the rest of combat: `_do_attack_trace` (server
+  only) reads the level off `Net.held_of(peer_id)` — the server's OWN hotbar —
+  and the target's level off the server's own pawn. Nothing in a swing request
+  says what is in the hand.
+- A target with no `level` at all counts as an ordinary one, so PvP is defended
+  exactly as it always was and only the attacker's weapon matters.
+- Making something tougher is now ONE number: raise its `level`. Do not start
+  scaling health or damage by hand alongside it, or the two systems will fight.
+- The level shows on screen wherever an item is named — shop rows, the bag
+  tooltip, the cheat menu's give list — through `ItemDb.level_label()`, so the
+  wording can never drift apart between them.
+- Test: the `=== levels ===` section of `--headless res://tests/test_combat.tscn`
+  — every catalogue item declaring one, the curve's shape, and then real swings
+  through `_do_attack_trace` with the server's bar loaded: bare hands dealing
+  precisely `light_damage`, each blade beating the last, a level 3 enemy eating
+  part of a level 3 blade, and a levelled jab still not staggering.
+
 ## Development cheats
 
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —

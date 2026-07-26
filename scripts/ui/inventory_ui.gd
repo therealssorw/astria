@@ -228,7 +228,8 @@ func _draw_item(host: Control, id: String, count_text := "") -> void:
 	# the name only stands in for missing art; the tooltip always names it
 	name_label.text = "" if icon.texture else ItemDb.item_name(id)
 	count.text = count_text
-	host.tooltip_text = "%s\n%s" % [ItemDb.item_name(id), ItemDb.description(id)]
+	host.tooltip_text = "%s   %s\n%s" % [ItemDb.item_name(id),
+			ItemDb.level_label(id), ItemDb.description(id)]
 
 func _refresh_items() -> void:
 	var ids := GameStats.owned_ids()
