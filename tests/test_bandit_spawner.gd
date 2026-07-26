@@ -73,9 +73,44 @@ func _run() -> void:
 	_expect(absf(buried.y - FLOOR_Y) < 0.4,
 			"a buried camp put its bandit at y=%.2f instead of on the floor" % buried.y)
 
+	_check_counting_survives_a_corpse(camp)
+
 	if _failures == 0:
 		print("SPAWNTEST RESULT=PASS")
 		get_tree().quit(0)
 	else:
 		print("SPAWNTEST RESULT=FAIL (%d problems)" % _failures)
 		get_tree().quit(1)
+
+## Counting what is alive has to cope with the dead, which is the entire point
+## of it — and it did not.
+##
+## `_spawned` is an `Array[Node]`, and a bandit that has died is a FREED object
+## still sitting in it. A freed object cannot be passed as a `Node`: pruning the
+## list with `Array.filter` and a `func(b: Node)` made the typed parameter reject
+## it, `filter` gave up and returned an untyped EMPTY array, and assigning that
+## back blew up with
+##   Trying to assign an array of type "Array" to a variable of type "Array[Node]"
+## That aborted `_alive_count` every time, so once one bandit had died the camp
+## never spawned again. It needed a corpse to happen, which is why it looked
+## intermittent.
+func _check_counting_survives_a_corpse(camp: BanditSpawner) -> void:
+	var live := Node3D.new()
+	var doomed := Node3D.new()
+	add_child(live)
+	add_child(doomed)
+	var listed: Array[Node] = [live, doomed]
+	camp.set("_spawned", listed)
+	remove_child(doomed)
+	doomed.free()
+
+	var count: Variant = camp.call("_alive_count")
+	if not _expect(count != null,
+			"_alive_count returned nothing with a freed bandit in the list — it errored out"):
+		return
+	_expect(int(count) == 1,
+			"_alive_count says %s bandits are alive; one of the two was freed" % count)
+	var left: Array = camp.get("_spawned")
+	_expect(left.size() == 1 and left[0] == live,
+			"the freed bandit was not pruned out of the spawner's list")
+	live.queue_free()

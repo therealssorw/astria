@@ -39,9 +39,24 @@ func _ready() -> void:
 	timer.start()
 	get_tree().create_timer(initial_delay).timeout.connect(_try_spawn)
 
+## Drops the bandits that are gone and says how many are left.
+##
+## Walked by hand rather than with `Array.filter`, and the element is Variant
+## rather than Node ON PURPOSE. This list is exactly where FREED bandits pile
+## up, and a freed object cannot be passed as a `Node`: the typed parameter
+## rejects it, `filter` gives up and hands back an untyped EMPTY array, and
+## assigning that to an `Array[Node]` dies with
+##   Trying to assign an array of type "Array" to a variable of type "Array[Node]"
+## -- which took the spawner down with it, so no camp ever refilled. It only
+## happened once a bandit had actually died, which is the one case this function
+## exists for. Anything that prunes freed objects out of a typed array has to
+## avoid naming their type.
 func _alive_count() -> int:
-	_spawned = _spawned.filter(func(b: Node) -> bool:
-		return is_instance_valid(b) and not b.get("dead"))
+	var alive: Array[Node] = []
+	for bandit: Variant in _spawned:
+		if is_instance_valid(bandit) and not bandit.get("dead"):
+			alive.append(bandit)
+	_spawned = alive
 	return _spawned.size()
 
 func _try_spawn() -> void:
