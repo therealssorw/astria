@@ -259,12 +259,16 @@ mixed pile.
   learn to swing at something that moves; the heavy and lock-on are taught
   against it standing still; then it wakes all the way up for a 1v1, and only
   when that is won does the rest of the raid arrive.
-- Nobody is hit through a box they cannot close. A wave that arrives talking
-  carries `await_dialog: true`: it lands STILL and the step waits for the line
-  to be read before anything is switched on. A gate likewise waits for the
-  action to FINISH (`FINISH_GRACE`, capped so holding block cannot stall it)
-  before the next line starts, so nothing talks over the swing it just asked
-  for.
+- THE TUTORIAL DOES NOT TALK. It teaches with POPUPS: a control name, the
+  button for whatever device is in hand, and one line saying what the thing
+  does — `popup: {title, body}` on the gate step, drawn by
+  `scripts/ui/tutorial/tutorial_overlay.gd`. Nothing to dismiss, and it never
+  takes the controls off the player the way a dialog box would. There is no
+  story in it and no `tut_*` dialog any more; the intro cutscene's two lines
+  are the only spoken words left in the whole sequence.
+- A gate still waits for the action to FINISH (`FINISH_GRACE`, capped so
+  holding block cannot stall it) before moving on, so the next popup does not
+  replace the last one while the swing it asked for is still playing.
 - Measured, hands off the controls: the first punch lands 3.7s in, it circles
   about one and a half times around you in 15s, and three punches cost 16 hp.
   The dials are `held_circle_mult` (how fast it orbits), `hold_attack_period`
@@ -304,14 +308,9 @@ mixed pile.
   HELD, so tapping it only ever jabbed and the gate never opened. Hence also
   `gate_is_hold()`, which makes the prompt read "HOLD <button>" instead of the
   button alone.
-- All the spoken text is `tut_*` in DialogData: rewriting those `text` fields
-  rewrites the tutorial. Keep the `auto` beats (they are what makes a line play
-  by itself) and keep the ids. The bandit's `tut_taunt` lands straight after
-  the cutscene's "where even am I?" — it is the answer to that question, and
-  the reason your head hurts.
-- A step's line waits its turn: `_say` queues behind whatever is already
-  talking, because a wave and the gate after it arrive in the same frame and
-  the taunt would otherwise be cut off mid-word by the first instruction.
+- Rewriting a lesson is rewriting its `popup` in `TutorialData.STEPS`. The
+  banners (`banner`) are the other text: one line under the quest heading
+  during the parts that are just a fight.
 - There is no hand-off at the end and no quest: the last bandit going down IS
   the end, and you are put on the real island. The villager who used to walk
   over was removed with it.

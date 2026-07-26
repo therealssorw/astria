@@ -48,7 +48,9 @@ func _ready() -> void:
 
 	root.add_child(NPC_PROMPTS.new())
 	root.add_child(QUEST_TRACKER.new())
-	root.add_child(TUTORIAL_OVERLAY.new())
+	var tut_overlay: Control = TUTORIAL_OVERLAY.new()
+	tut_overlay.name = "TutorialOverlay" # found by name from the tutorial test
+	root.add_child(tut_overlay)
 	root.add_child(SCOREBOARD.new())
 	_build_death_overlay(root)
 

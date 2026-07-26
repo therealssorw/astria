@@ -4,22 +4,25 @@ extends RefCounted
 ## Changing the lesson is changing this table — `tutorial_system.gd` only walks
 ## it, and nothing else in the game knows what step 3 is.
 ##
+## The tutorial does not TALK. It teaches with popups: a control name, the
+## button for whatever you are holding, and a line saying what the thing does.
+## No conversation, no story, nothing to dismiss and nothing that takes the
+## controls off you while it is up.
+##
 ## Every step is one dictionary with a "kind":
 ##
 ##   "wait_ready" — hold until that player's client says the intro cutscene is
 ##                  over. Nothing moves before the player can see.
 ##   "wave"       — spawn `count` bandits around the spawn, switched on to that
-##                  step's `ai` level. `await_dialog: true` holds the step open
-##                  until its line has been read, so a wave that arrives
-##                  talking cannot start hitting you mid-sentence.
-##   "gate"       — teach ONE button. Its `dialog` plays first (see DialogData),
-##                  then the prompt goes up and the step waits until the player
-##                  really does it. `action` is the input map name; the server
-##                  watches for the real thing (a swing, a raised guard) rather
-##                  than believing a "I pressed it" message, except where it
-##                  cannot see it — those carry `client_gate: true`, and the
-##                  worst a patched client wins there is skipping its own
-##                  lesson.
+##                  step's `ai` level.
+##   "gate"       — teach ONE button. Its `popup` goes up (title / body) with
+##                  the button drawn from the input map, and the step waits
+##                  until the player really does it. `action` is the input map
+##                  name; the server watches for the real thing (a swing, a
+##                  raised guard) rather than believing a "I pressed it"
+##                  message, except where it cannot see it — those carry
+##                  `client_gate: true`, and the worst a patched client wins
+##                  there is skipping its own lesson.
 ##   "clear"      — no prompt, no pause: fight. Ends when every bandit spawned
 ##                  so far is dead.
 ##   "end"        — out of the copy and onto the real island; it is torn down.
@@ -83,32 +86,39 @@ const DAMAGE_MULT := 0.4
 const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
 
-	# ONE bandit for the whole lesson, switched on a piece at a time.
-	# It lands STILL and says its piece first — its taunt comes straight after
-	# "where even am I?", and being punched through a box you cannot close is
-	# not a fight anybody lost fairly. Then it can circle and punch, on a slow
-	# count, and the first thing you are taught is the answer to it.
-	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "still",
-			"dialog": "tut_taunt", "await_dialog": true},
-	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block",
-			"ai": "attacker", "patience": 14.0},
+	# ONE bandit for the whole lesson, switched on a piece at a time. First it
+	# can only circle and punch, on a slow count, so the first thing you are
+	# taught is the answer to it.
+	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "attacker"},
+	{"id": "teach_block", "kind": "gate", "action": "block", "ai": "attacker",
+			"patience": 14.0, "popup": {
+				"title": "Block",
+				"body": "Hold it to keep your guard up. A blocked hit costs you"
+						+ " almost nothing, but only from the front."}},
 
 	# it stops throwing punches and lets you learn what to do back — still
 	# circling, so the first thing you swing at is a target that moves
-	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack",
-			"ai": "circler"},
-	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "dialog": "tut_heavy",
-			"ai": "still"},
-	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "dialog": "tut_lock_on",
-			"client_gate": true, "ai": "still"},
+	{"id": "teach_attack", "kind": "gate", "action": "attack", "ai": "circler",
+			"popup": {
+				"title": "Attack",
+				"body": "Swing. Keep going and the punches chain, and the third"
+						+ " one lands harder than the first two."}},
+	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "ai": "still",
+			"popup": {
+				"title": "Heavy attack",
+				"body": "HOLD the attack button instead of tapping it. It hits"
+						+ " far harder and rocks them out of what they were doing."}},
+	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "client_gate": true,
+			"ai": "still", "popup": {
+				"title": "Lock on",
+				"body": "Fixes the camera on your target so you circle them"
+						+ " instead of losing them. Press it again to let go."}},
 
 	# everything it knows, one on one, with no interruptions left
 	{"id": "duel", "kind": "clear", "ai": "full", "banner": "One on one. Finish him."},
 
-	# and only then the rest of the raid. They arrive STILL and wait for their
-	# own line to finish before any of them may touch you.
-	{"id": "reinforcements", "kind": "wave", "count": 3, "ai": "still",
-			"dialog": "tut_reinforcements", "await_dialog": true},
+	# and only then the rest of the raid
+	{"id": "reinforcements", "kind": "wave", "count": 3, "ai": "full"},
 	{"id": "clear_raid", "kind": "clear", "ai": "full", "banner": "Drive them out."},
 	{"id": "leave", "kind": "end"},
 ]
@@ -130,20 +140,6 @@ static func index_of(step_id: String) -> int:
 		if str(STEPS[i]["id"]) == step_id:
 			return i
 	return -1
-
-## Short line under the prompt telling you what the button is FOR. The button
-## itself is drawn from the input map, so this never names a key.
-static func gate_hint(step_id: String) -> String:
-	match step_id:
-		"teach_attack":
-			return "Swing"
-		"teach_block":
-			return "Hold to guard"
-		"teach_lock_on":
-			return "Lock on"
-		"teach_heavy":
-			return "A heavy swing — tapping it only jabs"
-	return ""
 
 ## How much of a bandit a step switches on.
 static func hold_for(step: Dictionary) -> Enemy.Hold:

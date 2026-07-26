@@ -12,8 +12,8 @@ extends Node
 ## on a fresh copy; and a gate nobody answers gives in rather than trapping the
 ## player in a lesson that is hitting them.
 ##
-## A wave that arrives talking is checked too: those bandits must be held still
-## until their line has been read, so nobody is punched mid-sentence.
+## Every gate must carry the popup that teaches its control: the tutorial does
+## not talk, so a gate with nothing to show is a gate that teaches nothing.
 ##
 ## The gates are worked with REAL input events. That matters: the heavy gate
 ## used to be unpassable by tapping the button, which left three bandits frozen
@@ -126,6 +126,17 @@ class Runner:
 		var held := _my_bandits()
 		if held.is_empty():
 			return "%s has nothing to fight" % step_id
+		# every gate must actually TEACH something: the popup is the whole
+		# lesson now that the tutorial does not talk
+		var popup: Dictionary = step.get("popup", {})
+		if str(popup.get("title", "")) == "" or str(popup.get("body", "")) == "":
+			return "%s has no popup explaining the control" % step_id
+		# ...and it is actually ON SCREEN, which is a different claim
+		var overlay := get_tree().current_scene.find_child("TutorialOverlay", true, false)
+		if overlay == null:
+			return "the HUD has no tutorial overlay"
+		if not await _until(overlay.showing_popup, 120):
+			return "%s never put its popup on screen" % step_id
 		# each lesson switches the bandits down to exactly what it teaches
 		# against: a metronome for the block gate, a dummy for the swings
 		for b in held:
@@ -199,45 +210,15 @@ class Runner:
 			_fail("the copy of the island has no collision")
 			return
 
-		# 2. nothing moves until the cutscene says the player can see
+		# 2. nothing moves until the cutscene says the player can see. It
+		#    reports that for itself at the end, so this waits it out the way a
+		#    player does rather than faking the hand-off.
 		await tree.physics_frame
 		if not _my_bandits().is_empty():
 			_fail("bandits attacked during the cutscene")
 			return
-		Net.report_tutorial_ready()
-
-		# 2b. the bandit arrives talking, and must be STILL until its line has
-		#     been read — no punching anyone through a box they cannot close
-		if not await _until(func() -> bool: return _step_id() == "first_bandit", 600):
-			_fail("the first bandit never arrived (at '%s')" % _step_id())
-			return
-		for b in _my_bandits():
-			if b.hold_mode != Enemy.Hold.STILL:
-				_fail("the bandit was not held still while it talked")
-				return
-		# the camera frames whoever is speaking, and the bars come in with them
-		if not await _until(func() -> bool: return Cinematic.is_framing(), 600):
-			_fail("nothing framed the bandit while it was talking")
-			return
-		var talk_began := Time.get_ticks_msec()
-		if not await _until(func() -> bool: return Cinematic.bar_amount() > 0.9, 120):
-			_fail("the cinematic bars never came in for the bandit's line")
-			return
-		var speaker: Node3D = _my_bandits()[0]
-		var rig: Node3D = pawn.get("cam_rig")
-		if not await _until(func() -> bool: return _camera_off_by(rig, pawn, speaker) < 0.35, 300):
-			_fail("the camera never turned to face the bandit (off by %.0f deg)"
-					% rad_to_deg(_camera_off_by(rig, pawn, speaker)))
-			return
-
-		# ...and the line being read is what lets the lesson start, NOT the
-		# patience valve giving up on it
-		if not await _until(func() -> bool: return _step_id() != "first_bandit", 900):
-			_fail("the bandit's line never finished")
-			return
-		var talked := float(Time.get_ticks_msec() - talk_began) / 1000.0
-		if talked >= TutorialData.GATE_PATIENCE - 2.0:
-			_fail("the taunt ran out its patience (%.1fs) instead of just being read" % talked)
+		if not await _until(func() -> bool: return not IntroCutscene.is_playing(), 2400):
+			_fail("the intro cutscene never finished")
 			return
 
 		# 3. ONE bandit, switched on a piece at a time. Block first, against an
