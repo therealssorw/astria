@@ -363,11 +363,40 @@ func _unhandled_input(event: InputEvent) -> void:
 		# press aimed at a panel would leave the cursor freed behind it
 		if not _ui_wants_cursor():
 			_free_cursor = not _free_cursor
-	elif _free_cursor and event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+	elif _hotbar_event(event):
+		pass # handled: something walked the bar
+	elif _free_cursor and event is InputEventMouseButton \
+			and (event as InputEventMouseButton).pressed \
+			and not _is_wheel(event as InputEventMouseButton):
 		# clicking back into the world takes the pointer again: Esc alone as the
-		# way home is how a loose cursor turned into a stuck one
+		# way home is how a loose cursor turned into a stuck one. A SCROLL is not
+		# a click and must not count — it walks the hotbar instead.
 		_free_cursor = false
 		_recapture_frames = 2
+
+## Walking the hotbar — wheel, ] and [, R1 and L1 — read as EVENTS, and the ONLY
+## place it happens. It used to be polled with is_action_just_pressed on the
+## physics step, which cannot carry the wheel: a wheel press and its release land
+## in the same frame, so a poll either misses the notch or sees it twice. Once the
+## wheel is in the input map every device has to come through here, or a notch
+## would be counted by both paths. Returns true when it took the event.
+func _hotbar_event(event: InputEvent) -> bool:
+	if ui_open or dead:
+		return false # an open panel owns the wheel — it may be scrolling a list
+	var step := 0
+	if event.is_action_pressed("hotbar_next"):
+		step = 1
+	elif event.is_action_pressed("hotbar_prev"):
+		step = -1
+	if step == 0:
+		return false
+	_step_hotbar(step)
+	get_viewport().set_input_as_handled()
+	return true
+
+func _is_wheel(event: InputEventMouseButton) -> bool:
+	return event.button_index == MOUSE_BUTTON_WHEEL_UP \
+			or event.button_index == MOUSE_BUTTON_WHEEL_DOWN
 
 func _physics_process(delta: float) -> void:
 	_time += delta
@@ -442,20 +471,18 @@ func _local_tick(delta: float) -> void:
 	_animate(delta)
 	_net_send(delta)
 
-## R1/L1 (or ] and [) walk the hotbar selection, and use_item uses whatever
-## that slot holds. Both are requests: the server owns the bar and decides what
-## using an item does, so nothing is applied here.
+## use_item uses whatever the held slot holds. WALKING the bar is not here — it
+## is event-driven in _hotbar_event, because the wheel cannot be polled. Both are
+## requests: the server owns the bar and decides what using an item does, so
+## nothing is applied here.
 func _handle_hotbar_input() -> void:
-	var step := 0
-	if Input.is_action_just_pressed("hotbar_next"):
-		step += 1
-	if Input.is_action_just_pressed("hotbar_prev"):
-		step -= 1
-	if step != 0:
-		var slots: int = Net.HOTBAR_SLOTS
-		Net.request_hotbar_select(posmod(GameStats.hot_slot + step, slots))
 	if Input.is_action_just_pressed("use_item"):
 		Net.request_use_item()
+
+## Ask for the slot `step` along, wrapping. One place, so the wheel and the
+## buttons cannot drift apart on what "next" means.
+func _step_hotbar(step: int) -> void:
+	Net.request_hotbar_select(posmod(GameStats.hot_slot + step, Net.HOTBAR_SLOTS))
 
 ## Owner-only presentation: HUD cue timers and the camera kick from impacts.
 func _tick_local_fx(delta: float) -> void:

@@ -16,6 +16,7 @@ extends Control
 
 const OUT_DIR := "user://ui_preview"
 const TUTORIAL_OVERLAY := preload("res://scripts/ui/tutorial/tutorial_overlay.gd")
+const INVENTORY := preload("res://scripts/ui/inventory_ui.gd")
 ## Frames to let a screen settle before the shot — the dialog box types itself
 ## in, so a shot on frame one catches an empty panel.
 const SETTLE := 45
@@ -82,6 +83,23 @@ func _ready() -> void:
 	GameStats.quest_kills = 0
 	GameStats.changed.emit()
 	tracker.queue_free()
+
+	# The inventory, with a bag to look at. It reads the GameStats mirror and
+	# nothing else, so filling that in IS the setup — no server, and nothing is
+	# claimed to one. Building it here is also the only check that the draggable
+	# slots construct at all.
+	var inv: CanvasLayer = INVENTORY.new()
+	add_child(inv)
+	GameStats.items = {"wooden_sword": 1, "copper_sword": 1, "iron_sword": 2,
+			"flimsy_helmet": 1, "flimsy_chestplate": 1, "copper_helmet": 1}
+	GameStats.hotbar = ["iron_sword", "", "flimsy_helmet", "", "", "", "", "", ""]
+	GameStats.hot_slot = 0
+	GameStats.coins = 240
+	GameStats.changed.emit()
+	inv._toggle() # open it; there is no pawn here, which it copes with
+	await _shot("inventory")
+	inv._toggle()
+	inv.queue_free()
 
 	print("PREVIEW saved=", ProjectSettings.globalize_path(OUT_DIR))
 	get_tree().quit()
