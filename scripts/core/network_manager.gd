@@ -507,7 +507,7 @@ func _server_cheat_tutorial(id: int) -> void:
 	pawn.net_teleport(pos)
 	if id != 1:
 		rpc_id(id, "cl_force_position", pos)
-	# a restart has nobody to report in for it, so the lesson starts at once
+	# no cutscene is playing to say "I can see now", so the city starts at once
 	Tutorial.server_report_ready(id)
 	_trade_reply(id, "Tutorial restarted.", true)
 
@@ -1126,7 +1126,7 @@ func cl_tutorial_step(step_id: String) -> void:
 func cl_tutorial_leave() -> void:
 	Tutorial.client_leave()
 
-## CLIENT -> server: I am standing in the world, the lesson can start.
+## CLIENT -> server: my intro cutscene is over, the city can start moving.
 func report_tutorial_ready() -> void:
 	if not active:
 		return

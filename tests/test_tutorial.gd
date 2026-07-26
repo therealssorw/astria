@@ -3,7 +3,7 @@ extends Node
 ##   godot --headless --path . res://tests/test_tutorial.tscn
 ## Hosts a listen server in-process and walks the whole lesson: joining puts
 ## the player on their own copy of the starter island rather than the real one,
-## nothing moves until the client reports in, and then the fight is
+## nothing moves until the intro cutscene reports in, and then the fight is
 ## built up a piece at a time — one bandit that can only punch you (and really
 ## does) while block is taught, the same bandit completely still while the
 ## swings are taught, a full duel, and only then the rest of the raid. Each
@@ -213,7 +213,16 @@ class Runner:
 			_fail("the copy of the island has no collision")
 			return
 
-		# 2. the bandits wait for the player's own client to report in
+		# 2. nothing moves until the cutscene says the player can see. It
+		#    reports that for itself at the end, so this waits it out the way a
+		#    player does rather than faking the hand-off.
+		await tree.physics_frame
+		if not _my_bandits().is_empty():
+			_fail("bandits attacked during the cutscene")
+			return
+		if not await _until(func() -> bool: return not IntroCutscene.is_playing(), 2400):
+			_fail("the intro cutscene never finished")
+			return
 
 		# 3. ONE bandit, switched on a piece at a time. Block first, against an
 		#    enemy that can do nothing but punch you on a slow count.

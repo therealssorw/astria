@@ -44,6 +44,30 @@ extends RefCounted
 const END := ""
 
 const DIALOGS := {
+	# The intro cutscene talks to nobody: IntroCutscene plays these two on its
+	# own, the first over the black screen and the second once the island has
+	# faded up. They are separate conversations because the fade happens
+	# BETWEEN them — the cutscene waits for the first to close.
+	"intro_wake": {
+		"start": "ugh",
+		"lines": {
+			"ugh": {
+				"text": "Ugh.\nmy head feels awful",
+				"auto": 1.8,
+				"goto": END,
+			},
+		},
+	},
+	"intro_where": {
+		"start": "where",
+		"lines": {
+			"where": {
+				"text": "where even am I?",
+				"auto": 2.0,
+				"goto": END,
+			},
+		},
+	},
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",

@@ -94,7 +94,9 @@ mixed pile.
   loose with no way back into the game.
 - A panel says it wants the pointer by joining the group `"ui_panel"` (in its
   `_ready`) and answering `is_open()`. That is the whole contract — a new panel
-  never touches the mouse mode itself.
+  never touches the mouse mode itself. The intro cutscene is in the group too:
+  it wants the cursor loose for the same reason a panel does, and its own
+  recapture used to be skipped entirely when it ended before the pawn existed.
 - Esc frees the pointer only when nothing is open; an open panel owns Esc and
   closes with it. Clicking in the world takes the pointer back, and that click
   is swallowed (`_recapture_frames`) so it isn't also a punch.
@@ -208,12 +210,40 @@ mixed pile.
   must set its anchors and all four offsets by hand. The tutorial popup was
   centring itself inside nothing and hanging half off the left edge.
 
+## Intro cutscene
+
+- Loading into the island opens on a black screen: you hear your own head
+  complain, the world fades up over ~4.5s, and then you ask where you are.
+  `IntroCutscene` (autoload, `scripts/ui/cutscene/intro_cutscene.gd`) owns the
+  black rect and the timing; the two lines are ordinary DialogData entries
+  (`intro_wake`, `intro_where`) so all writing still happens in one file.
+- Three hooks, nothing else: `world.gd` calls `arm()` from `_ready` (before a
+  frame of the island is drawn, which is the whole point — arming it later
+  would flash the world first), `player.gd` calls `on_local_pawn_ready()` for
+  the local pawn, and `main_menu.gd` calls `abort()` so a drop mid-cutscene
+  never leaves the menu behind a black screen. Only an armed cutscene plays, so
+  a respawn cannot replay it; it runs once per load into the world.
+- It is purely local and cosmetic — nothing about it is networked. The server
+  spawns the pawn exactly as always and the player is simply frozen (`ui_open`)
+  and hidden behind the rect until it ends.
+- Two lines and not one conversation because the fade happens BETWEEN them: the
+  cutscene waits on `DialogSystem.closed` for the first before fading.
+- A dialog line may carry `"auto": <seconds>` — it shows no button, waits that
+  long after typing, and follows its `goto` by itself, which is how the
+  monologue plays hands-free (interact still hurries it along). That is a
+  general DialogData feature, not cutscene-only.
+- Test: `--headless res://tests/test_intro_cutscene.tscn` (prints
+  `INTROTEST RESULT=PASS/FAIL`) — it runs the sequence at `Engine.time_scale`
+  8 against a stand-in pawn and checks each beat, plus that a later pawn does
+  not replay it.
+
 ## The tutorial
 
-- What happens: you load onto the starter island while it is being raided, you
-  are taught one fighting button at a time with the bandits switched on a piece
-  at a time to suit, and when the last of them is down you are put on the REAL
-  island. It runs on every join.
+- What happens: you wake up (intro cutscene) on the starter island while it is
+  being raided, you are taught one fighting button at a time while the fight is
+  held still, and when the last bandit is down a villager walks over and sends
+  you to the mayor. Then you are put on the REAL island. It runs on every join,
+  right after the cutscene reports in.
 - Each player gets their OWN copy of the starter island — the "cloned world".
   A copy IS the island: the same `Island1` mesh at the same transform with the
   spawn marker in the same place on it, instanced at
@@ -262,7 +292,8 @@ mixed pile.
   does — `popup: {title, body}` on the gate step, drawn by
   `scripts/ui/tutorial/tutorial_overlay.gd`. Nothing to dismiss, and it never
   takes the controls off the player the way a dialog box would. There is no
-  story in it, no `tut_*` dialog and no spoken word anywhere in it.
+  story in it and no `tut_*` dialog any more; the intro cutscene's two lines
+  are the only spoken words left in the whole sequence.
 - A gate still waits for the action to FINISH (`FINISH_GRACE`, capped so
   holding block cannot stall it) before moving on, so the next popup does not
   replace the last one while the swing it asked for is still playing.
@@ -315,7 +346,7 @@ mixed pile.
   `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
   lesson: joining lands on a copy and not the real island, the copy has the
   island's geometry, its spawn and its collision, nothing moves until the
-  client reports in, the block lesson really throws a punch, the punch lesson
+  cutscene reports in, the block lesson really throws a punch, the punch lesson
   really stands still, the duel is one on one with everything switched on,
   reinforcements come after it, finishing leaves no copy and no bandits behind,
   the cheat restarts it on a fresh copy, and an unanswered gate gives in
@@ -336,13 +367,14 @@ mixed pile.
   to whoever is speaking. Reusable by anything, not cutscene-only.
 - Two switches on purpose. `focus(node)` / `unfocus()` turns the camera onto a
   character and brings the bars in with them; `hold_bars(true/false)` is bars
-  alone, for a scene with nobody in it to look at. Bars show while EITHER is
-  on. Nothing calls `hold_bars` today — the intro cutscene that used to is
-  gone — but it is the other half of the switch and costs two lines.
+  alone, for a scene with nobody in it to look at (the intro monologue). Bars
+  show while EITHER is on, so a cutscene that opens a conversation halfway
+  through does not flap them.
 - `DialogSystem.start(id, speaker_node)` is what drives it: pass the node that
   is talking and it gets framed for as long as the box is up. NpcInteractable
-  passes itself, which is the only caller today. A line with NO speaker node
-  gets neither bars nor a camera move.
+  passes itself; the tutorial passes the bandit. Lines with NO speaker node
+  (the player's own head, which is what the teaching lines are) deliberately
+  get neither bars nor a camera move: those are instructions, not scenes.
 - It only NUDGES the pawn's own camera rig (the same yaw and pitch the mouse
   drives) toward the target, so when it lets go the player carries on from
   where the shot ended instead of being snapped somewhere. It takes no input
@@ -513,13 +545,15 @@ mixed pile.
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —
   `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
   (everything in `ItemDb.ITEMS`; picking one asks the server for a copy),
-  "Teleport" (everything in `TeleportData.DESTINATIONS`) and "Start tutorial".
-  Adding a cheat is one row in `_build_root`.
-- "Start tutorial" goes through the server like everything else, and is a real
-  restart: a fresh copy of the island with its own bandits.
+  "Teleport" (everything in `TeleportData.DESTINATIONS`), "Cutscene" (start it
+  from black, or end one that is playing) and "Start tutorial". Adding a cheat
+  is one row in `_build_root`.
+- The cutscene rows do NOT go through the server: a cutscene is one player's
+  screen and nothing else. "Start tutorial" does, and is a real restart — a
+  fresh copy of the island with its own bandits.
 - A conversation does not keep the menu shut (the box is closed on the way in).
   Half of what these cheats are for is getting out of something that is talking
-  to you — an NPC, or a gate you cannot find the button for.
+  to you — a tutorial line, a cutscene, a gate you cannot find the button for.
 - It is editor-only at BOTH ends: the menu doesn't build unless
   `OS.has_feature("editor")`, and every `Net._server_cheat_*` refuses unless the
   SERVER is an editor run (`Net.cheats_allowed`). So an exported dedicated
