@@ -1,3 +1,4 @@
+@tool
 class_name NpcDefinition
 extends Resource
 ## Everything the NPC Builder saves about one NPC. It is pure data: hand it to
@@ -6,6 +7,16 @@ extends Resource
 ##
 ## Authored with the "NPC Builder" tab in the editor; the tool writes one of
 ## these next to a ready-to-place scene. Editing the .tres by hand works too.
+##
+## @tool IS LOAD-BEARING, and not because anything here wants to run in the
+## editor. When the editor loads a .tres whose script is not a tool script it
+## attaches a PLACEHOLDER instance: the exported properties still hold their
+## values, but every method call fails with "Attempt to call a method on a
+## placeholder instance". So `get_part()` threw for any NPC placed in a level,
+## NpcRig collected no parts, and the NPC came out as a correctly proportioned
+## skeleton with nothing on it -- while the builder's own preview, whose
+## definition is a live `NpcDefinition.new()` rather than a loaded file, looked
+## perfect. Same for [NpcPart]: it is reached through these methods.
 
 ## Slot order is also stacking order: feet on the ground, body on the feet,
 ## head on the body. Arms share the body's base -- the arms model is a T-bar

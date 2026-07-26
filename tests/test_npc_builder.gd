@@ -28,6 +28,7 @@ func _ready() -> void:
 	_check_build_is_once()
 	_check_colours()
 	_check_save_roundtrip()
+	_check_definition_scripts_run_in_the_editor()
 	_check_rouge_still_builds()
 
 	# Reported so an assertion loop that silently found nothing to do cannot
@@ -360,6 +361,27 @@ func _check_save_roundtrip() -> void:
 
 	for path in [res_path, scene_path]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+## The one thing about a built NPC that a headless run cannot see for itself.
+##
+## An NpcDefinition placed in a level is LOADED FROM DISK, and the editor gives
+## a loaded resource whose script is not a tool script a PLACEHOLDER instance:
+## the exported properties are all there, but every method call dies with
+## "Attempt to call a method on a placeholder instance". NpcRig reaches its
+## parts through `get_part()`, so a placed NPC collected nothing and came out
+## as a correctly proportioned skeleton with no body -- while the builder's own
+## preview, whose definition is a live `NpcDefinition.new()`, looked perfect.
+##
+## Nothing in a --headless run is a placeholder, so this is checked as the
+## invariant it is rather than by rigging something.
+func _check_definition_scripts_run_in_the_editor() -> void:
+	for path in ["res://scripts/entities/npc/npc_definition.gd",
+			"res://scripts/entities/npc/npc_part.gd"]:
+		var script := load(path) as Script
+		if _expect(script != null, "%s did not load as a script" % path):
+			_expect(script.is_tool(),
+					"%s is not @tool — the editor will hand placed NPCs a placeholder "
+					% path + "definition and they will rig as bare skeletons")
 
 ## The refactor that gave NPCs their rig also rewrote Rouge's base class.
 func _check_rouge_still_builds() -> void:

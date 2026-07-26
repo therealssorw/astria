@@ -1,8 +1,13 @@
+@tool
 class_name NpcPart
 extends Resource
 ## One slot of a built NPC: which voxel model fills it, how it is coloured, and
 ## the nudges the NPC Builder lets you dial in when a part was not modelled in
 ## quite the same place as the rest.
+##
+## @tool for the same load-bearing reason as [NpcDefinition]: these ride inside
+## a loaded .tres, and without it the editor hands back a placeholder whose
+## `duplicate_part()` cannot be called.
 
 ## res:// path to the part model (a Goxel glTF export under
 ## Assets/Models/Entity/Humanoid/VoxelNpc/Parts/<Slot>/).

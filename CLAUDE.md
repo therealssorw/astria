@@ -684,6 +684,18 @@ mixed pile.
   model, skeleton and mesh set over the first, which is what made an NPC look
   like its meshes overlapped. To skip the clip library for a static preview,
   set `build_clips = false` BEFORE adding the node.
+- `NpcDefinition` and `NpcPart` MUST stay `@tool`, and it has nothing to do
+  with wanting to run in the editor. A resource the editor LOADS FROM DISK gets
+  a PLACEHOLDER instance when its script is not a tool script: the exported
+  properties are all present, but every method call dies with "Attempt to call
+  a method on a placeholder instance". `NpcRig.rig()` reaches its parts through
+  `def.get_part(slot)`, so an NPC dragged into a level collected no parts at
+  all and came out as a correctly proportioned skeleton with no body — while
+  the builder's preview, whose definition is a live `NpcDefinition.new()` and
+  not a loaded file, looked perfect. Any new Resource whose methods are called
+  from tool code (a builder, an `@tool` node like `NpcCharacter`) needs the
+  same. Nothing in a headless run is ever a placeholder, so the test asserts
+  `is_tool()` directly rather than trying to rig one.
 - Test: `--headless res://tests/test_npc_builder.tscn` (prints
   `NPCTEST RESULT=PASS/FAIL`). It rigs every part model in the library, checks
   the bind sets, that animation still moves the reshaped bones, that re-rigging
