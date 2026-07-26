@@ -133,6 +133,19 @@ mixed pile.
 - No new animation: `_animate` already replicates `ratio = speed / walk_speed`,
   and `HumanoidVisual.tick` picks the run clip and scales stride rate from it.
 
+## Combat: lock-on
+
+- Lock-on is ALWAYS the player's own press (MMB / R3) — nothing locks on for
+  them. Swinging near an enemy used to grab the nearest one silently
+  (`_auto_lockon`, within `auto_lockon_range`), which stole the aim of a swing
+  meant to miss and quietly turned you to face someone you had not chosen.
+- So `lock_target` is set in exactly one place, `_update_lockon`, and the
+  server only ever honours the target the client claims with its swing — no
+  copy of the aiming rule lives on the server side.
+- Everything that reads `lock_target` (the swing's facing, the lunge, the
+  guaranteed hit inside `locked_hit_bonus`, the camera tracking, the red HUD
+  ring) is therefore a reward for locking on deliberately, not a default.
+
 ## Technical notes
 
 - Rendering: GL Compatibility; physics: Jolt. Main scene: `scenes/world.tscn`.

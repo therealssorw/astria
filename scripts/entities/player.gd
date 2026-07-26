@@ -122,7 +122,6 @@ extends CharacterBody3D
 @export var lockon_cone_deg := 55.0
 @export var lockon_range := 15.0         # 1500
 @export var lockon_break_range := 20.0   # 2000
-@export var auto_lockon_range := 5.5     # 550
 ## How snappily the locked camera tracks the target (higher = stiffer).
 @export var lock_camera_speed := 8.0
 ## The lock only tracks while the target is within this half-angle of the
@@ -776,7 +775,6 @@ func _handle_attack_input(delta: float) -> void:
 		cached_press_heavy = false
 		holding_attack = true
 		hold_time = 0.0
-		_auto_lockon()
 	if holding_attack:
 		hold_time += delta
 		if hold_time >= heavy_attack_hold_time:
@@ -991,11 +989,6 @@ func _do_attack_trace() -> void:
 			else:
 				e.take_damage(damage, kb, peer_id, self)
 
-func _auto_lockon() -> void:
-	var nearest := _nearest_target(auto_lockon_range)
-	if nearest:
-		lock_target = nearest
-
 # ---------------- slide / dive ----------------
 
 func _handle_slide_input() -> void:
@@ -1106,18 +1099,6 @@ func _pick_lockon_target() -> Node3D:
 			best_dist = dist
 			best = e
 	return best if best else nearest
-
-func _nearest_target(max_range: float) -> Node3D:
-	var best: Node3D = null
-	var best_dist := max_range
-	for e: Node3D in _lockon_candidates():
-		if not is_instance_valid(e) or e.get("dead"):
-			continue
-		var d := global_position.distance_to(e.global_position)
-		if d <= best_dist:
-			best_dist = d
-			best = e
-	return best
 
 func _gamepad_look(delta: float) -> void:
 	var x := Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
