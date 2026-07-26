@@ -175,6 +175,11 @@ var stamina: float
 var blocking := false
 var dead := false
 var ui_open := false # set by the inventory UI; freezes combat/movement input
+## The player let the pointer go with Esc, with no panel asking for it.
+var _free_cursor := false
+## Ticks left to swallow the click that took the pointer back, so clicking into
+## the window doesn't also throw a punch.
+var _recapture_frames := 0
 ## >0: parried or guard broken — no attacking, no guard, barely any movement.
 var stagger_time := 0.0
 ## When the guard last went UP (the parry window is measured from here).
@@ -332,7 +337,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.relative.length_squared() > 0.5:
 			look_input_time = _time
 	elif event.is_action_pressed("ui_cancel"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
+		# an open panel owns Esc — it closes with it, and the pointer comes back
+		# on its own. The pawn only uses Esc to let go when nothing is up, or a
+		# press aimed at a panel would leave the cursor freed behind it
+		if not _ui_wants_cursor():
+			_free_cursor = not _free_cursor
+	elif _free_cursor and event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		# clicking back into the world takes the pointer again: Esc alone as the
+		# way home is how a loose cursor turned into a stuck one
+		_free_cursor = false
+		_recapture_frames = 2
 
 func _physics_process(delta: float) -> void:
 	_time += delta
@@ -345,9 +359,34 @@ func _physics_process(delta: float) -> void:
 		if multiplayer.is_server():
 			_server_sim_tick(delta)
 
+## The pointer has ONE owner. It is visible while a panel wants it or while the
+## player let it go with Esc, and captured every other tick. Panels used to set
+## the mode themselves on open and on close, so any pair that ran out of order —
+## a shop opening over a dialog that then closed, a panel closed by something
+## other than its own key — left the cursor loose with no way back. Re-asserting
+## it every tick means a stray release repairs itself the next frame.
+func _tick_mouse_mode() -> void:
+	if not get_window().has_focus():
+		return # alt-tabbed away: the pointer belongs to whatever is in front
+	var want := Input.MOUSE_MODE_VISIBLE if _free_cursor or _ui_wants_cursor() \
+			else Input.MOUSE_MODE_CAPTURED
+	if Input.mouse_mode != want:
+		Input.mouse_mode = want
+
+## True while any open panel needs the pointer. Panels declare themselves by
+## joining the "ui_panel" group and answering `is_open()`, so this never has to
+## know which panels exist — a new one only has to join the group.
+func _ui_wants_cursor() -> bool:
+	for panel in get_tree().get_nodes_in_group("ui_panel"):
+		if panel.has_method("is_open") and panel.is_open():
+			return true
+	return false
+
 # ---------------- owner simulation ----------------
 
 func _local_tick(delta: float) -> void:
+	_tick_mouse_mode()
+	_recapture_frames = maxi(0, _recapture_frames - 1)
 	if dead:
 		velocity.x = 0
 		velocity.z = 0
@@ -361,7 +400,9 @@ func _local_tick(delta: float) -> void:
 		_update_lockon(delta)
 		_camera_assist(delta)
 		_handle_hotbar_input()
-		if stagger_time <= 0.0: # helpless: no guard, no swings, no slides
+		# helpless: no guard, no swings, no slides — and nothing on the frame the
+		# pointer came back, or that click lands as a punch
+		if stagger_time <= 0.0 and _recapture_frames <= 0:
 			_handle_block()
 			_handle_attack_input(delta)
 			_handle_slide_input()

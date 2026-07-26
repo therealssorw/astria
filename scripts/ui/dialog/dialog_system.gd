@@ -47,6 +47,7 @@ var _player: Node
 func _ready() -> void:
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("ui_panel") # the pawn frees the pointer for whatever is open
 	_build()
 	_root.visible = false
 	set_process(false)
@@ -78,7 +79,6 @@ func start(id: String, speaker_node: Node3D = null) -> bool:
 	_player = _local_player()
 	if is_instance_valid(_player):
 		_player.set("ui_open", true)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	opened.emit(id)
 	_show_line(str(convo.get("start", "")))
 	return true
@@ -101,7 +101,6 @@ func close() -> void:
 	if is_instance_valid(_player):
 		_player.set("ui_open", false)
 	_player = null
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	closed.emit(was)
 
 # ---------------- conversation flow ----------------

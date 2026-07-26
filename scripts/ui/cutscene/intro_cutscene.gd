@@ -33,6 +33,7 @@ func _ready() -> void:
 	# read against the black, not covered by it
 	layer = 19
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("ui_panel") # the pawn frees the pointer while this is playing
 	_rect = ColorRect.new()
 	_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_rect.color = Color.BLACK
@@ -83,6 +84,11 @@ func abort() -> void:
 func is_playing() -> bool:
 	return _playing
 
+## Answers the "ui_panel" group. A cutscene wants the pointer loose for the same
+## reason a panel does: a stray mouse nudge must not spin the camera behind it.
+func is_open() -> bool:
+	return _playing or _armed
+
 ## How black the screen is: 1 while the world is hidden, 0 once it is fully up.
 func darkness() -> float:
 	return _rect.color.a if _rect.visible else 0.0
@@ -104,10 +110,9 @@ func _on_dialog_closed(id: String) -> void:
 
 func _fade_up() -> void:
 	# the box let go of the player when it closed, but the fade is still
-	# cutscene — hold onto them, and keep the cursor free so a stray mouse
-	# nudge cannot spin the camera while the island appears
+	# cutscene — hold onto them. The cursor stays free on its own: the pawn keeps
+	# it loose for as long as is_open() says the cutscene is running
 	_freeze(true)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_tween = create_tween()
 	_tween.tween_property(_rect, "color:a", 0.0, FADE_TIME).set_trans(Tween.TRANS_SINE)
 	_tween.tween_interval(AFTER_FADE_PAUSE)
@@ -129,8 +134,6 @@ func _finish() -> void:
 	_rect.color = Color.BLACK # reset for the next time we load in
 	Cinematic.hold_bars(false)
 	_freeze(false)
-	if get_tree().get_first_node_in_group("local_player") != null:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	# the tutorial city waits for this: nothing swings at a player who is still
 	# looking at a black screen
 	if was_playing:

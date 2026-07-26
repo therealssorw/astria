@@ -50,6 +50,7 @@ var panel_bar_slots: Array[Button] = [] # the same nine slots inside the window
 
 func _ready() -> void:
 	layer = 5
+	add_to_group("ui_panel") # the pawn frees the pointer for whatever is open
 	_build_hotbar()
 	_build_panel()
 	GameStats.changed.connect(_refresh_items)
@@ -68,10 +69,13 @@ func _on_item_used(_item_id: String, message: String) -> void:
 func _input(_event: InputEvent) -> void:
 	pass # toggling is polled in _process so it can't be swallowed by focus
 
+## Answers the "ui_panel" group: the panel wants the pointer while it is up.
+func is_open() -> bool:
+	return open
+
 func _toggle() -> void:
 	open = not open
 	panel_root.visible = open
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
 	if not is_instance_valid(player):
 		var players := get_tree().get_nodes_in_group("local_player")
 		player = players[0] if players.size() > 0 else null
@@ -89,6 +93,8 @@ func _process(delta: float) -> void:
 			and not DialogSystem.is_open() and not ShopSystem.is_open() \
 			and not CheatMenu.is_open():
 		_toggle()
+	elif open and Input.is_action_just_pressed("ui_cancel"):
+		_toggle() # Esc closes it, like every other panel
 	if open:
 		gold_label.text = "Gold: %d" % GameStats.coins
 	if open and stats_content.visible:

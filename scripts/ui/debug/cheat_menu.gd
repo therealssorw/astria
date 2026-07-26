@@ -41,6 +41,7 @@ func _ready() -> void:
 		return
 	layer = 30 # above the shop and the dialog box
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("ui_panel") # the pawn frees the pointer for whatever is open
 	_build()
 	_root.visible = false
 	Net.trade_result.connect(_on_result)
@@ -77,7 +78,6 @@ func open() -> void:
 	_root.visible = true
 	if is_instance_valid(_player):
 		_player.set("ui_open", true)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh()
 
 func close() -> void:
@@ -88,7 +88,6 @@ func close() -> void:
 	if is_instance_valid(_player):
 		_player.set("ui_open", false)
 	_player = null
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _input(event: InputEvent) -> void:
 	if not _open:

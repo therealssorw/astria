@@ -85,6 +85,26 @@ mixed pile.
   it is what keeps that split in one place. Panels still swallow an interact
   press they ignore, or it reaches the NPC standing behind them.
 
+## The mouse pointer
+
+- NOTHING sets `Input.mouse_mode` except `player.gd::_tick_mouse_mode`, which
+  re-asserts it every tick: visible while a panel wants it or the player let it
+  go with Esc, captured otherwise. Panels used to capture and release it
+  themselves on open/close, and any pair that ran out of order left the cursor
+  loose with no way back into the game.
+- A panel says it wants the pointer by joining the group `"ui_panel"` (in its
+  `_ready`) and answering `is_open()`. That is the whole contract — a new panel
+  never touches the mouse mode itself. The intro cutscene is in the group too:
+  it wants the cursor loose for the same reason a panel does, and its own
+  recapture used to be skipped entirely when it ended before the pawn existed.
+- Esc frees the pointer only when nothing is open; an open panel owns Esc and
+  closes with it. Clicking in the world takes the pointer back, and that click
+  is swallowed (`_recapture_frames`) so it isn't also a punch.
+- The tick leaves the pointer alone while the window is unfocused, or alt-tabbing
+  out would drag it back into the game.
+- The main menu and a dropped connection still show the cursor directly — there
+  is no local pawn then, so nothing is re-asserting anything.
+
 ## Movement: sliding
 
 - Slide and jump share a button on purpose, and there is no standing slide:

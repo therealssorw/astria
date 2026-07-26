@@ -35,6 +35,7 @@ var _player: Node
 func _ready() -> void:
 	layer = 21 # above the dialog box
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("ui_panel") # the pawn frees the pointer for whatever is open
 	_build()
 	_root.visible = false
 	set_process(false)
@@ -59,7 +60,6 @@ func open(id: String) -> bool:
 	_player = _local_player()
 	if is_instance_valid(_player):
 		_player.set("ui_open", true)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_hint.text = _default_hint()
 	_flash_left = 0.0
 	_refresh()
@@ -76,7 +76,6 @@ func close() -> void:
 	if is_instance_valid(_player):
 		_player.set("ui_open", false)
 	_player = null
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	closed.emit(was)
 
 func _on_dialog_action(dialog_id: String, action: String) -> void:
