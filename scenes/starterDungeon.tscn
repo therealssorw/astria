@@ -1,27 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://1h1ve1kcpl4y"]
+[gd_scene format=3 uid="uid://1h1ve1kcpl4y"]
 
-[ext_resource type="PackedScene" uid="uid://rfokpu6gdv76" path="res://Assets/Models/World/Dungeons/StarterDungeon/StarterDungeon.glb" id="1_riy51"]
-[ext_resource type="Script" path="res://scripts/world/dungeon/dungeon_walls.gd" id="2_walls"]
+[ext_resource type="PackedScene" uid="uid://dd0ph0lvtmq1j" path="res://Assets/Models/World/Dungeons/StarterDungeon/dungeon1.glb" id="1_riy51"]
 
 [node name="Minidungeon" type="Node3D" unique_id=967743086]
 
-[node name="StarterDungeon" parent="." unique_id=163147392 instance=ExtResource("1_riy51")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -11.667471, 41.484924, -58.6528)
-
-[node name="PlayerSpawn" type="Area3D" parent="StarterDungeon" unique_id=1974997941]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.450251, 2.534687, -1.2780685)
-
-[node name="Room1Enterence" type="Area3D" parent="StarterDungeon" unique_id=1797558492]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.068166, 1.074997, -12.718266)
-
-[node name="EnemySpawn" type="Area3D" parent="StarterDungeon" unique_id=1067056528]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.590454, 2.090866, -39.567894)
-
-[node name="Room2Enterence" type="Area3D" parent="StarterDungeon" unique_id=1417375421]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19.355904, 1.7994766, -45.30333)
-
-[node name="BossAndEnemyEnterence" type="Area3D" parent="StarterDungeon" unique_id=500430441]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 66.90959, 2.7944298, -32.799133)
-
-[node name="Walls" type="Node3D" parent="StarterDungeon" unique_id=884210077]
-script = ExtResource("2_walls")
+[node name="dungeon1" parent="." unique_id=1928130242 instance=ExtResource("1_riy51")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 11.690286, 77.70784, -62.666824)

@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://rfokpu6gdv76"
-path="res://.godot/imported/StarterDungeon.glb-46b0de4cbbfa3aea62aad41eb3dc627c.scn"
+uid="uid://dd0ph0lvtmq1j"
+path="res://.godot/imported/dungeon1.glb-878f52413a28dfaaf29c7b7796a453d0.scn"
 
 [deps]
 
-source_file="res://Assets/Models/World/Dungeons/StarterDungeon/StarterDungeon.glb"
-dest_files=["res://.godot/imported/StarterDungeon.glb-46b0de4cbbfa3aea62aad41eb3dc627c.scn"]
+source_file="res://Assets/Models/World/Dungeons/StarterDungeon/dungeon1.glb"
+dest_files=["res://.godot/imported/dungeon1.glb-878f52413a28dfaaf29c7b7796a453d0.scn"]
 
 [params]
 
