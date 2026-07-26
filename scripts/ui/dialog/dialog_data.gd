@@ -123,7 +123,7 @@ Don't worry, we'll put you down.",
 				],
 			},
 			"standing": {
-				"text": "You look way better than you should be after taking out those thugs.",
+				"text": "You look way better than you should be after taking out those thugs.\nI'm surprised you're even standing.",
 				"answers": [
 					{"text": "Who even were they?", "goto": "thugs"},
 					{"text": "What should I do now?", "goto": "mayor"},
@@ -132,12 +132,11 @@ Don't worry, we'll put you down.",
 			# back to the question it was asked from, so the other one is still
 			# there to ask
 			"thugs": {
-				"text": "They're thugs who keep raiding our village.
-Sadly, I'm sure they'll come back.",
+				"text": "They're the thugs who keep raiding our village.\nI'm sure they'll be back.",
 				"goto": "standing",
 			},
 			"mayor": {
-				"text": "Head to the King. I'm sure he'll reward you for this fight.",
+				"text": "Head to the King.\nTell him what just happened so he knows everything is safe.",
 				"answers": [
 					{"text": "Sounds good!", "goto": END},
 				],

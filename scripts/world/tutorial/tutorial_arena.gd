@@ -31,8 +31,19 @@ signal villager_arrived
 ## Whose copy this is. Set by the tutorial system right after instancing.
 var owner_peer := 0
 
-## Bandits arrive in a ring this far out, and the villager from a little beyond.
+## How far out the first bandit arrives, and the villager from a little beyond.
 const BANDIT_RING := 7.5
+## Reinforcements arrive CLOSER than that. They turn up in the middle of a fight
+## the player is already winning, so they have to be on you rather than a walk
+## away — at the first bandit's distance the raid arriving read as three figures
+## standing about in the distance.
+const REINFORCEMENT_RING := 5.0
+## Half-width of the arc a wave is spread across, centred on where the player is
+## looking. The camera's horizontal field is about 100 degrees at this FOV, so
+## this keeps every bandit of a wave ON SCREEN as it arrives. They used to be
+## dealt around a full ring by golden angle, which put some of them squarely
+## behind you — an enemy you never saw arrive is not a lesson, it is an ambush.
+const WAVE_ARC_DEG := 32.0
 const VILLAGER_START := 16.0
 ## How close the villager gets before it says its piece.
 const VILLAGER_REACH := 2.4
@@ -64,15 +75,31 @@ func _build_collision() -> void:
 func player_spawn() -> Vector3:
 	return ($Island1/PlayerSpawn as Node3D).global_position
 
-## Bandits come at you from around the spawn. Positions are worked out at
-## spawn time and dropped onto the terrain, rather than being markers placed by
-## hand — the ground under a copy is a whole island, and a marker hanging in
-## the air (or buried) is not something you would notice until a bandit fell
-## through the world.
-func bandit_spawn(i: int) -> Vector3:
-	var ang := float(i) * 2.3999632 # golden angle: a spread-out ring, not a line
-	var reach := BANDIT_RING + fposmod(float(i) * 0.618, 1.0) * 3.0
-	return _ground_at(player_spawn() + Vector3(cos(ang), 0.0, sin(ang)) * reach)
+## Where a wave of `count` bandits arrives: spread across an arc IN FRONT of
+## `facing`, `reach` away from `from`, so the player watches them turn up instead
+## of discovering one behind them. A single bandit lands dead ahead.
+##
+## Measured off where the player actually IS and which way they are looking, not
+## off the spawn marker: reinforcements come after a duel the player has been
+## circling through, and by then the marker is wherever they happened to start.
+##
+## Positions are worked out at spawn time and dropped onto the terrain rather
+## than placed as markers by hand — the ground under a copy is a whole island,
+## and a marker left hanging in the air (or buried) is not something you would
+## notice until a bandit fell through the world.
+func wave_spawns(count: int, from: Vector3, facing: Vector3, reach: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var flat := Vector3(facing.x, 0.0, facing.z)
+	if flat.length_squared() < 0.0001:
+		flat = Vector3.FORWARD
+	var base := atan2(flat.x, flat.z)
+	var arc := deg_to_rad(WAVE_ARC_DEG)
+	for i in count:
+		# -arc .. +arc across the wave; one on its own goes straight ahead
+		var t := 0.0 if count <= 1 else (float(i) / float(count - 1)) * 2.0 - 1.0
+		var ang := base + t * arc
+		out.append(_ground_at(from + Vector3(sin(ang), 0.0, cos(ang)) * reach))
+	return out
 
 ## Drop a point onto the terrain. Characters are excluded, or someone standing
 ## on the spot puts the next bandit on their head.
@@ -118,11 +145,16 @@ func _process(delta: float) -> void:
 	_villager.global_position = _ground_at(_villager.global_position + step)
 	_face(pawn)
 
+## Turn her toward the player. NOT look_at: that points a node's -Z at the
+## target, and these rigs are modelled facing +Z, so look_at walked her over
+## backwards and then talked to the player with her back turned. Same yaw as
+## Enemy.face_toward, +PI and all.
 func _face(pawn: Node3D) -> void:
-	var at := Vector3(pawn.global_position.x, _villager.global_position.y,
-			pawn.global_position.z)
-	if at.distance_to(_villager.global_position) > 0.05:
-		_villager.look_at(at, Vector3.UP)
+	var to := pawn.global_position - _villager.global_position
+	to.y = 0.0
+	if to.length_squared() < 0.0025:
+		return
+	_villager.rotation.y = atan2(-to.x, -to.z) + PI
 
 func _owner_pawn() -> Node3D:
 	for p in get_tree().get_nodes_in_group("player"):

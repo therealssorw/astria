@@ -294,6 +294,18 @@ class Runner:
 		if dummy.global_position.distance_to(stood_at) > 0.35:
 			_fail("the bandit was not completely still for the heavy lesson")
 			return
+
+		# A HELD bandit cannot be HURT either. Three gates of practice swings would
+		# otherwise leave it nearly dead before the duel it exists for, and the
+		# "one on one" the tutorial promises would be over in a punch. Checked
+		# mid-lesson, where it is provably still held — after a gate is passed the
+		# step may already have moved on and let go of it.
+		var full_health: float = dummy.health
+		dummy.take_damage(40.0, Vector3.ZERO, ME)
+		if dummy.health != full_health:
+			_fail("a held bandit lost %.1f health during a lesson"
+					% [full_health - dummy.health])
+			return
 		why = await _pass_gate("teach_heavy", "attack_heavy")
 		if why != "":
 			_fail(why)
@@ -314,7 +326,22 @@ class Runner:
 			if b.hold_mode != Enemy.Hold.NONE:
 				_fail("the duel left the bandit still held back")
 				return
+		# ...and once it is a real fight, it bleeds like one
+		var duellist: Node3D = _my_bandits()[0]
+		var before_hit: float = duellist.health
+		duellist.take_damage(12.0, Vector3.ZERO, ME)
+		if duellist.health >= before_hit:
+			_fail("the duel's bandit is still invulnerable")
+			return
 		_kill_all_bandits()
+
+		# A tutorial bandit pays nothing: the lesson runs on every join and can be
+		# restarted from the cheat menu, so it must not be a gold mine.
+		await tree.physics_frame
+		var drops := tree.current_scene.get_node_or_null("Drops")
+		if drops != null and drops.get_child_count() > 0:
+			_fail("a tutorial bandit dropped %d piles of gold" % drops.get_child_count())
+			return
 
 		# 3c. and only then the rest of the raid
 		# they arrive talking and hold still until the line is read, so give
@@ -325,6 +352,25 @@ class Runner:
 		if _my_bandits().size() != 3:
 			_fail("expected three more bandits, found %d" % _my_bandits().size())
 			return
+		# The raid arrives IN FRONT of the player and closer than the first bandit
+		# did: every one of them has to be on screen as it turns up, and standing
+		# on you rather than a walk away. Measured against the server's own copy of
+		# where that player is and which way they are looking.
+		var facing: Vector3 = pawn.server_facing()
+		for b: Node3D in _my_bandits():
+			var to: Vector3 = b.global_position - pawn.server_body_pos()
+			to.y = 0.0
+			var away: float = to.length()
+			if away > TutorialArena.REINFORCEMENT_RING + 2.0:
+				_fail("a reinforcement arrived %.1f m off, past the %.1f m ring"
+						% [away, TutorialArena.REINFORCEMENT_RING])
+				return
+			var off_deg: float = rad_to_deg(Vector2(facing.x, facing.z).angle_to(
+					Vector2(to.x, to.z)))
+			if absf(off_deg) > TutorialArena.WAVE_ARC_DEG + 6.0:
+				_fail("a reinforcement arrived %.0f deg off the player's view"
+						% off_deg)
+				return
 		_kill_all_bandits()
 
 		# 4. the raid being beaten IS the end: no quest, no hand-off

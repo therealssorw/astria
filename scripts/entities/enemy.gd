@@ -782,6 +782,19 @@ func take_damage(amount: float, knockback: Vector3, attacker := 0,
 		_source: Node = null) -> float:
 	if puppet or dead:
 		return 0.0
+	# A HELD bandit cannot be hurt. It is a demonstration dummy while the lesson
+	# it is standing in for is being taught — three gates' worth of practice
+	# swings would otherwise leave it nearly dead before the duel it exists for,
+	# and the "one on one" the tutorial promises would be over in a punch.
+	# It still FLINCHES and still makes a noise: a swing that lands has to feel
+	# like it landed, or the attack lesson teaches nothing. Nothing is held by
+	# the time the duel starts (Hold.NONE), so the real fight is a real fight.
+	if hold_mode != Hold.NONE:
+		aggroed = true
+		_damage_fx(Player.Guard.HIT)
+		if attacker != 0 and attacker == multiplayer.get_unique_id():
+			Player.local_hit_feedback(get_tree(), Player.Guard.HIT)
+		return 0.0
 	aggroed = true # getting hit always wakes it up
 	var blocked := state == CombatState.BLOCK and not attacking \
 			and stagger_left <= 0.0 and _guard_covers(knockback)
@@ -861,10 +874,15 @@ func _damage_fx(result: int) -> void:
 
 func _die(attacker: int) -> void:
 	Net.server_record_enemy_kill(String(name), attacker) # scoreboard + tells clients
-	# drop the pile a step to the side so the corpse doesn't lie on top of it
-	var side := randf() * TAU
-	Net.server_spawn_gold(global_position + Vector3(cos(side), 0, sin(side)) * 0.7,
-			randi_range(gold_min, maxi(gold_min, gold_max)))
+	# A tutorial bandit pays nothing. The lesson is not a source of income — it
+	# runs on every join and it can be restarted from the cheat menu, so paying
+	# out would make it the cheapest gold in the game. `owner_peer` is what says
+	# this one belongs to somebody's private copy of the island.
+	if owner_peer == 0:
+		# drop the pile a step to the side so the corpse doesn't lie on top of it
+		var side := randf() * TAU
+		Net.server_spawn_gold(global_position + Vector3(cos(side), 0, sin(side)) * 0.7,
+				randi_range(gold_min, maxi(gold_min, gold_max)))
 	net_die() # local presentation on the host
 	get_tree().create_timer(despawn_delay).timeout.connect(func() -> void:
 		if is_instance_valid(self):

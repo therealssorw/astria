@@ -26,7 +26,6 @@ const POPUP_DROP := 190.0
 const POPUP_WIDTH := 340.0
 
 var _gate: PanelContainer
-var _title: Label
 var _button: Label
 var _hint: Label
 var _banner: Label
@@ -82,10 +81,14 @@ func _update_gate(step: Dictionary) -> void:
 		return
 	var action := str(step.get("action", ""))
 	var button := InputDevice.action_label(TutorialData.gate_action_binding(action)).to_upper()
-	_title.text = str(popup.get("title", "")).to_upper()
 	# "HOLD X" rather than "X": a heavy swing and a jab are the same button, and
 	# a player who taps it gets a jab and no idea why nothing happened
-	_button.text = ("HOLD  " + button) if TutorialData.gate_is_hold(action) else button
+	var press := ("HOLD  " + button) if TutorialData.gate_is_hold(action) else button
+	# WHAT it is and WHICH BUTTON on one line, in one voice: "BLOCK — HOLD RIGHT
+	# MOUSE". The name used to sit on a line of its own above the button, which
+	# read as a heading for the box rather than as part of the instruction.
+	var title := str(popup.get("title", "")).to_upper()
+	_button.text = "%s  —  %s" % [title, press] if title != "" else press
 	_hint.text = str(popup.get("body", ""))
 
 func _update_banner(step: Dictionary) -> void:
@@ -124,14 +127,10 @@ func _build() -> void:
 	vbox.custom_minimum_size.x = POPUP_WIDTH
 	UiTheme.body(_gate).add_child(vbox)
 
-	_title = Label.new()
-	_title.add_theme_font_size_override("font_size", 12)
-	_title.add_theme_color_override("font_color", Color(1, 1, 1, 0.55))
-	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(_title)
-
+	# One gold line carrying the control's name AND its button — there is no
+	# separate heading, on purpose (see _update_gate).
 	_button = Label.new()
-	_button.add_theme_font_size_override("font_size", 25)
+	_button.add_theme_font_size_override("font_size", 22)
 	_button.add_theme_color_override("font_color", GOLD)
 	_button.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(_button)

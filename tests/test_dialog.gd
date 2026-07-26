@@ -103,6 +103,12 @@ func _blacksmith() -> bool:
 	if not _check(DialogSystem.start("blacksmith"), "the blacksmith has no conversation"):
 		return false
 	_skip_typing()
+	# He opens on his GIFT while the armor is still outstanding — which is what a
+	# fresh player meets, and what this test sees, because "outstanding" is the
+	# server's record and there is no server here. Taking it comes back to the
+	# greeting, so the way out is one line further in than it used to be.
+	if _pick("Thank you"):
+		_skip_typing()
 	if not _check(_pick("leave now"), "the blacksmith has no way out of the conversation"):
 		return false
 	_skip_typing()

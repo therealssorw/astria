@@ -347,6 +347,23 @@ mixed pile.
   `IntroCutscene` (autoload, `scripts/ui/cutscene/intro_cutscene.gd`) owns the
   black rect and the timing; the two lines are ordinary DialogData entries
   (`intro_wake`, `intro_where`) so all writing still happens in one file.
+- YOU GET UP OFF THE FLOOR as the black lifts. The pawn plays `get_up`
+  (`Assets/Animations/Humanoid/Cutscene/GettingUp/`) and THE FADE IS THE LENGTH
+  OF THAT CLIP, so the screen clears at the moment the player finishes standing
+  rather than on an unrelated count — retrimming the clip retimes the wake-up.
+  `FADE_TIME` is only the fallback for a pawn built without it.
+- The clip is played through `HumanoidVisual.play_scripted`, which is the general
+  way to put a clip on a body the pawn has no STATE for: `tick()` runs every frame
+  off the pawn's own state and would otherwise replace it before its first frame
+  was drawn. It owns the body for the clip's own length and hands it back by
+  itself, so nothing has to remember to cancel it.
+- The FBX ships two takes and the loader picks the 8.60s one, of which only the
+  middle is the animation — hence the `slice` in `CLIPS` (see the comment there).
+  Judge it with `godot --path . res://tests/preview_get_up.tscn` (NO
+  `--headless`), which SEEKS the clip at four points and photographs each: flat
+  on the floor through to up on both feet. Do not step such a preview by counting
+  frame-sized deltas — a windowed run of an empty scene goes far faster than
+  60 fps, and the clip was a third through when the counter said it had finished.
 - Three hooks, nothing else: `world.gd` calls `arm()` from `_ready` (before a
   frame of the island is drawn, which is the whole point), `player.gd` calls
   `on_local_pawn_ready()` for the local pawn, and `main_menu.gd` calls
@@ -411,8 +428,8 @@ mixed pile.
   learn to swing at something that moves; the heavy and lock-on are taught
   against it standing still; then it wakes all the way up for a 1v1, and only
   when that is won does the rest of the raid arrive.
-- It TEACHES with POPUPS: a control name, the
-  button for whatever device is in hand, and one line saying what the thing
+- It TEACHES with POPUPS: the control's name and its button on ONE gold line
+  ("BLOCK — HOLD RIGHT MOUSE"), and one line under it saying what the thing
   does — `popup: {title, body}` on the gate step, drawn by
   `scripts/ui/tutorial/tutorial_overlay.gd`. Nothing to dismiss, and it never
   takes the controls off the player the way a dialog box would. Its size and
@@ -441,6 +458,22 @@ mixed pile.
   one. That is the ONLY thing softened about them — same reach, wind-up and
   timings — so what you learn there is what the island does, at a price a
   first fight can afford.
+- A HELD bandit cannot be HURT (`Enemy.take_damage` returns early on any
+  `hold_mode` but NONE). Three gates' worth of practice swings otherwise left the
+  first bandit nearly dead before the duel it exists for, and the "one on one"
+  the lesson promises was over in a punch. It still flinches and still grunts —
+  a swing that lands has to feel like it landed, or the attack lesson teaches
+  nothing — and nothing is held once the duel starts, so the real fight is real.
+- Tutorial bandits PAY NOTHING (`_die` skips the drop when `owner_peer != 0`).
+  The lesson runs on every join and restarts from the cheat menu, so a payout
+  would be the cheapest gold in the game.
+- A WAVE ARRIVES IN FRONT OF YOU, and any wave after the first arrives closer
+  (`TutorialArena.wave_spawns`, `REINFORCEMENT_RING`, `WAVE_ARC_DEG`). Bandits
+  used to be dealt around a full ring by golden angle from the spawn MARKER,
+  which put some of them squarely behind you and the rest wherever you happened
+  to start — an enemy you never saw arrive is an ambush, not a lesson. The arc is
+  centred on the server's own copy of where that player is and which way they are
+  looking, never a claim from the client.
 - A gate holds the BANDITS, never the player: you can walk and look around
   while the lesson waits. It opens on the real action, read off the server's
   own copy of the pawn (`attacking` / `attack_is_heavy` / `blocking`), so it
@@ -1155,6 +1188,18 @@ mixed pile.
   without the line every part drew its bind pose while the bones underneath
   animated perfectly — every built NPC in the game was a T-posed statue, and no
   bone-level assertion could see it. The test now checks the path itself.
+- AN NPC ANIMATES ITSELF, off its own movement: `NpcCharacter._process` measures
+  its own ground speed and hands it to `HumanoidVisual.tick_motion`, which picks
+  the pose and the stride rate. Nothing was ticking a placed NPC's visual at all,
+  so every villager and King in the world stood in whatever pose its
+  AnimationPlayer loaded with, and the tutorial's villager slid across the island
+  without moving her legs. Measuring rather than being told means anything that
+  MOVES an NPC gets the walk for free — the tutorial arena just changes her
+  position, as it always did.
+- Anything that turns an NPC to face something uses `atan2(-x, -z) + PI`, the
+  same as `Enemy.face_toward`: these rigs are modelled facing +Z, so a plain
+  `look_at` turns their back to whoever they are looking at. That is what had the
+  tutorial's villager walk over backwards.
 - A visual builds itself when it enters the tree, and never twice. `_ready`
   fires in the editor too: `HumanoidVisual` has no `@tool`, but that only
   governs scripts the editor loads with a scene — tool code that says
