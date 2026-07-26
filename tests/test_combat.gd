@@ -472,11 +472,18 @@ func _test_levels() -> void:
 			"%.2f" % by_level["iron_sword"])
 
 	# a tougher enemy takes the same blade better, without any stat of its own
-	# being touched
+	# being touched. Both halves are measured against the SAME level 3 enemy:
+	# the weapon ladder is deliberately shallower than the enemy one, so an iron
+	# sword is not asked to out-damage a punch thrown at something three levels
+	# weaker — only to beat bare hands against the thing in front of it.
 	e.level = 3
 	var vs_tough := _swing_damage(a, e)
-	ok(vs_tough < by_level["iron_sword"] and vs_tough > fists,
-			"a level 3 enemy eats some of the level 3 blade", "%.2f" % vs_tough)
+	Net.players[1] = {"hotbar": [""], "hot_slot": 0}
+	var fists_vs_tough := _swing_damage(a, e)
+	ok(vs_tough < by_level["iron_sword"] and vs_tough > fists_vs_tough,
+			"a level 3 enemy eats some of the level 3 blade",
+			"%.2f, against %.2f bare-handed" % [vs_tough, fists_vs_tough])
+	Net.players[1] = {"hotbar": ["iron_sword"], "hot_slot": 0}
 	e.level = CombatLevels.BASE_ENEMY_LEVEL
 
 	# damage only: a jab with the best weapon in the game is still a jab, so
