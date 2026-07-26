@@ -42,6 +42,9 @@ var _page := 0
 ## >= 0 while a finished page is being held before the next one is typed.
 ## -1 with pages left means it is waiting for a press instead.
 var _page_left := -1.0
+## Line ids already read in THIS conversation, so a loop back to one of them
+## brings its choices back without saying it all again. Cleared by `start`.
+var _read := {}
 var _player: Node
 
 func _ready() -> void:
@@ -72,6 +75,7 @@ func start(id: String, speaker_node: Node3D = null) -> bool:
 	var convo: Dictionary = DialogData.get_conversation(id)
 	dialog_id = id
 	_lines = convo.get("lines", {})
+	_read = {} # a fresh conversation says everything again, including the opener
 	_speaker.text = str(convo.get("speaker", ""))
 	_speaker.visible = _speaker.text != ""
 	_root.visible = true
@@ -112,6 +116,17 @@ func _show_line(line_id: String) -> void:
 	_line_id = line_id
 	var line: Dictionary = _lines[line_id]
 	_clear_answers()
+	# Coming BACK to a line already read — every "goto" that returns to the
+	# question you branched off — keeps the answer you just finished reading on
+	# screen and only brings the choices back. Retyping the same paragraph each
+	# time round the loop reads as though the NPC forgot they had said it, and
+	# it makes the reply you actually asked for disappear as you finish it.
+	if _read.has(line_id):
+		_typing = false
+		_page_left = -1.0
+		_build_answers(line)
+		return
+	_read[line_id] = true
 	# A "\n" in a line is a PAGE BREAK, not a line break: the box clears and
 	# types the next part in the same breath, the way the two halves of the
 	# intro monologue read. Wrapping is the Label's job, not the writer's.

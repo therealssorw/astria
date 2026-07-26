@@ -388,11 +388,22 @@ mixed pile.
   to it, holds a beat (the line's `auto`, or a press), then wipes and types the
   rest in the same box. It is how the intro's "Ugh." lands before "my head
   feels awful". Never use it for wrapping — the box wraps by itself.
+- A `goto` back to a line already read in this conversation does NOT say it
+  again: the reply you just finished stays on screen and only the choices come
+  back (`_read` in `dialog_system.gd`, cleared per conversation). Every branch
+  in the game ends by returning to the question it came from, and retyping that
+  question each time read as though the NPC had forgotten saying it — worse, it
+  wiped the answer you had actually asked for as you finished reading it.
+  Reopening the conversation later types everything afresh.
 - All conversation text lives in `scripts/ui/dialog/dialog_data.gd` — the file
   header documents the format (speaker / start / lines, each line with `text`
   plus either `answers` or a plain `goto`; `goto: END` closes the box). An
   answer may carry `"action"`, which the `DialogSystem.action_triggered` signal
   reports so gameplay code (shops, quests) can hook in.
+- Test: `--headless res://tests/test_dialog.tscn` (prints
+  `DIALOGTEST RESULT=PASS/FAIL`) — needs no server, since a conversation is
+  local. It walks down a branch and back out of it, which is the loop-back rule
+  above, and checks reopening still says everything.
 - `DialogSystem` (autoload) owns the box: semi-transparent black panel,
   typewriter reveal with the looping keyboard clatter in
   `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
