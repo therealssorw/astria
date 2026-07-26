@@ -117,6 +117,16 @@ mixed pile.
   bubble — and it means something. The greys mean nothing, which is their job.
   The cheat menu and the tutorial popup pass gold as their `edge` on purpose:
   neither is an ordinary screen.
+- WHERE THE CONTROLLER IS, is WHITE, and never gold — the one place the accent
+  is deliberately not used. In a grid, gold is already saying something about
+  the slots themselves (in the inventory it means "this one is on the hotbar",
+  and half the bag wears it), so a gold focus ring is one gold box among nine
+  and the cursor vanishes. The focused slot also draws a thicker ring OUTSIDE
+  its own rect and lifts itself above its neighbours with `z_index`
+  (`InventoryUi.FOCUS_EDGE` / `FOCUS_RING_OUT` / `FOCUS_Z`): a container paints
+  its children in tree order, so without the lift the slot drawn next covers
+  the edge and the ring loses a side. Any future grid a pad can walk should do
+  the same rather than trusting the theme's default focus box.
 - Behind and inside everything is one sheet of cracked paint,
   `Assets/Textures/UI/panel_grunge.jpg` — full strength as the backdrop behind
   an open panel (what used to be a flat black dim), and at `PANEL_GRAIN` over a
@@ -791,11 +801,53 @@ mixed pile.
   `dialog_id`, and give one dialog answer `"action": "open_shop"`. `ShopSystem`
   listens to `DialogSystem.action_triggered` and opens itself — no per-NPC code.
 - Armor is in the catalogue a PIECE at a time, and an armor item carries
-  `"armor"`: the slot it covers (`head`/`body`/`arms`/`feet`, the same four an
-  NPC's armor layer holds). `ItemDb.ARMOR_SETS` names the four that make each
-  suit, so "a full set" is one list rather than four ids written out wherever a
-  set is handed over or stocked — the forge's stock is built from it. What a
+  `"armor"`: the EQUIPMENT slot it is worn in — one of `ItemDb.EQUIP_SLOTS`
+  (`helmet` / `torso` / `pants`), the three the inventory's cross draws.
+  `ItemDb.ARMOR_SETS` names the three that make each suit, so "a full set" is
+  one list rather than three ids written out wherever a set is handed over or
+  stocked — the forge's stock and Bram's gift are both built from it. What a
   piece is WORTH is in "Levels" below.
+- AN EQUIPMENT SLOT IS NOT AN ART SLOT, and `ItemDb.EQUIP_COVERS` is the map
+  between them. A suit is modelled in the same four slots an NPC's armor layer
+  holds (`head`/`body`/`arms`/`feet`), but a CHESTPLATE is one item and puts on
+  both the body and the arms: a breastplate and the sleeves that come with it
+  are not two things anybody would strap on separately, and a pair of gauntlets
+  you could lose track of is an inventory slot nobody wanted. Three items still
+  cover all four plates, which `test_gift` asserts — merging must not quietly
+  drop one.
+
+## Equipping
+
+- RIGHT TRIGGER PUTS IT ON. `use_item` (F / R2) is the one button, and armor is
+  the only thing in the catalogue that does anything with it yet — pressing it
+  on a piece equips it, pressing it again on the same piece takes it off. There
+  is no separate equip button and no drag-and-drop, so one control both dresses
+  and undresses you.
+- Server-owned like the bag it comes out of. `Net.players[id]["equipped"]` is
+  armor slot -> item id; `Net._server_equip` is the only thing that writes it,
+  and it checks the item really is armor, that the player is really carrying
+  it, and takes the SLOT from the item rather than from the request. The client
+  sends `request_use_item()` and nothing else — it never says what it is
+  wearing.
+- What you have on rides BOTH syncs, and that is deliberate: privately in
+  `cl_purse` (so your own panel can draw it) and publicly in `_public_players`
+  next to `held` (so every other pawn can draw it on you). Armor is on your
+  back where everyone can see it, exactly like the sword in your hand.
+- Selling or losing a piece takes it off. `_drop_unowned_equipment`, called from
+  `_bag_changed`, is what stops "sell the breastplate, keep the protection".
+- The body really wears it: `PlayerVisual.set_armor` hangs the item's plates on
+  the character's own armor layer — the same four slots the NPC Builder's
+  "Wears armor" switch fills, in the colours the suit was painted in the Items
+  tab — and re-rigs. So recolouring a suit redresses every player wearing it.
+  It is a whole character rebuild, so it returns early unless something actually
+  changed; the registry re-syncs on every hotbar press.
+- Nothing about the armor layer moves a bone or a landmark (see "Armor on a
+  built NPC"), so putting a helmet on cannot make a player taller or change how
+  they fight. The protection is the level maths, server-side, and the plates are
+  only the picture of it.
+- The equipment cross draws from `GameStats.equipped`, and the slot's own name
+  ("Helmet", "Torso", "Pants") shows through only while it is empty. "R Hand"
+  mirrors the held hotbar slot; "L Hand" has nothing to put in it yet.
 
 ## Gifts
 
@@ -1037,10 +1089,10 @@ mixed pile.
   Applied in `Player.server_take_damage` to the HEALTH only, AFTER the guard has
   taken its cut and been charged for it: a plate stops a blow reaching you, it
   does not make holding a shield up cheaper.
-- CARRIED IS WORN, for now. Nothing equips yet (the inventory's equipment slots
-  are still decoration), so picking a piece up is what puts it on.
-  `Net.armor_levels` is the ONE function that has to change when equipping
-  arrives — everything downstream asks it rather than looking in a bag itself.
+- YOU HAVE TO PUT IT ON. Armor in the bag protects you from nothing;
+  `Net.armor_levels` adds up the three EQUIPMENT slots
+  (`Net.players[id]["equipped"]`), never the bag, so a mule carrying four
+  helmets is as naked as one carrying none.
 - WHAT THE LADDERS ARE TUNED TO, so a change to any number above can be checked
   against something: carrying a full level 1 set — wooden sword and all four
   flimsy pieces — you should be able to take on SIX level 0 enemies, or THREE

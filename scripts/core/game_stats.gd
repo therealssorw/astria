@@ -27,6 +27,11 @@ var quest_kills := 0
 ## everything else here it is a MIRROR — clearing it locally does not earn a
 ## second suit of armor, the server refuses.
 var gifts := {}
+## What you have ON, as armor slot (ItemDb.EQUIP_SLOTS) -> item id, "" for an
+## empty slot. The equipment cross in the inventory draws this. A MIRROR like
+## everything else here: putting an id in it dresses nobody and protects you
+## from nothing, it only makes your own panel lie until the next sync.
+var equipped := {}
 
 func item_count(id: String) -> int:
 	return int(items.get(id, 0))
@@ -36,6 +41,15 @@ func item_count(id: String) -> int:
 ## the player has never seen.
 func gift_taken(gift_id: String) -> bool:
 	return gift_id != "" and bool(gifts.get(gift_id, false))
+
+## The item worn in an armor slot, or "" — safe before the first purse sync.
+func equipped_in(slot: String) -> String:
+	return str(equipped.get(slot, ""))
+
+## Is this exact item on right now? What the bag grid ticks and what the use
+## reply is really saying.
+func is_equipped(item_id: String) -> bool:
+	return item_id != "" and equipped_in(ItemDb.armor_slot(item_id)) == item_id
 
 ## Carried item ids, in the order the server holds them.
 func owned_ids() -> Array:

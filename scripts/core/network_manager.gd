@@ -306,10 +306,12 @@ func _public_players() -> Dictionary:
 	var out := {}
 	for id in players:
 		var e: Dictionary = players[id]
-		# "held" is the one part of a bag everyone can see: it is in your hand,
-		# so every other pawn has to draw it. The rest of the bag stays private.
+		# "held" and "equipped" are the parts of a bag everyone can see: one is
+		# in your hand and the other is on your back, so every other pawn has to
+		# draw them. The rest of the bag stays private.
 		out[id] = {"name": e["name"], "kills": e["kills"], "deaths": e["deaths"],
-				"held": held_item(e)}
+				"held": held_item(e),
+				"equipped": (e.get("equipped", {}) as Dictionary).duplicate()}
 	return out
 
 ## This peer's pawn, or null if it has none right now. On the server this is
@@ -325,36 +327,21 @@ func held_of(id: int) -> String:
 		return held_item(entry)
 	return str(entry.get("held", ""))
 
-## Total armor level a peer has on: the BEST piece carried in each of the four
-## slots, added up. Nothing to do with the hotbar — armor is not something you
-## hold — and best-per-slot is what stops four helmets in a bag counting as a
-## suit.
-##
-## Read off the SERVER's own bag (`players[id].items`), like everything else a
-## client could gain by lying about. On a client this reads the mirror instead,
-## which is only ever used to show the number, never to decide a hit.
-##
-## Carried IS worn, for now: there is no equipment yet (the inventory's
-## equipment slots are still decoration), so picking a piece up is what puts it
-## on. When equipping arrives this is the one function that has to change —
-## everything downstream asks it rather than looking in a bag itself.
+## What a peer is WEARING, as armor slot -> item id. Works the same way
+## `held_of` does: on the server `players` is the real registry, on a client it
+## is the public copy — and what somebody has on IS public, because you can see
+## it on them.
+func equipment_of(peer_id: int) -> Dictionary:
+	return (players.get(peer_id, {}) as Dictionary).get("equipped", {})
+
+## Total armor level a peer has on: the levels of the pieces actually in the
+## three equipment slots, added up. One slot holds one piece, so a bag full of
+## helmets is worth exactly one helmet — and only when it is on your head.
 func armor_levels(peer_id: int) -> int:
-	var bag: Dictionary = {}
-	if players.has(peer_id):
-		bag = players[peer_id].get("items", {})
-	elif peer_id == multiplayer.get_unique_id():
-		bag = GameStats.items
-	var best := {}
-	for item_id: String in bag:
-		if int(bag[item_id]) <= 0:
-			continue
-		var slot := ItemDb.armor_slot(item_id)
-		if slot == "":
-			continue
-		best[slot] = maxi(int(best.get(slot, 0)), ItemDb.level_of(item_id))
 	var total := 0
-	for slot: String in best:
-		total += int(best[slot])
+	var worn := equipment_of(peer_id)
+	for slot: String in ItemDb.EQUIP_SLOTS:
+		total += ItemDb.level_of(str(worn.get(slot, "")))
 	return total
 
 ## The item in an entry's selected hotbar slot, or "".
@@ -371,9 +358,16 @@ func _make_entry(username: String) -> Dictionary:
 			"quest": "", # id of the quest being tracked, "" for none
 			"quest_kills": 0, # kills counted towards it, when it asks for kills
 			"gifts": {}, # GiftData ids already handed over, so none is given twice
+			"equipped": _empty_equipment(), # armor slot -> item id worn there
 			"seen": {}} # items already offered a hotbar slot (server-side only)
 	_refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
 	return entry
+
+func _empty_equipment() -> Dictionary:
+	var worn := {}
+	for slot: String in ItemDb.EQUIP_SLOTS:
+		worn[slot] = ""
+	return worn
 
 func _empty_hotbar() -> Array:
 	var bar := []
@@ -878,6 +872,7 @@ func _refill_hotbar(entry: Dictionary) -> void:
 func _bag_changed(id: int) -> void:
 	if players.has(id):
 		_refill_hotbar(players[id])
+		_drop_unowned_equipment(id)
 	_hotbar_changed(id)
 
 ## The bar moved: the owner gets the new bar privately, and everyone gets the
@@ -976,7 +971,53 @@ func _server_use_item(id: int) -> void:
 	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
 		_use_reply(id, "", "")
 		return
+	# Using a piece of armor is putting it on. It is the same button as using
+	# anything else on purpose — there is nothing else you would want to do with
+	# a helmet — and pressing it again with that piece already on takes it off,
+	# so one button both dresses and undresses you.
+	if ItemDb.is_armor(item_id):
+		_server_equip(id, item_id)
+		return
 	_use_reply(id, item_id, "")
+
+## SERVER: put `item_id` on, or take it off if it is already worn. Everything it
+## could be lied about is checked here — that the thing is armor, that the
+## player is really carrying it, and which slot it belongs in (the item says,
+## never the request).
+func _server_equip(id: int, item_id: String) -> void:
+	var entry: Dictionary = players[id]
+	var slot := ItemDb.armor_slot(item_id)
+	if slot == "" or int(entry["items"].get(item_id, 0)) <= 0:
+		return
+	var worn: Dictionary = entry.get("equipped", _empty_equipment())
+	var taking_off := str(worn.get(slot, "")) == item_id
+	worn[slot] = "" if taking_off else item_id
+	entry["equipped"] = worn
+	_equipment_changed(id)
+	_use_reply(id, item_id, ("Took off %s" if taking_off else "Equipped %s")
+			% ItemDb.item_name(item_id))
+
+## The armor a player has on changed: the owner gets the new set privately with
+## the rest of their purse, and EVERYONE gets the registry again, because what
+## you are wearing is drawn on your pawn for the whole server to see.
+func _equipment_changed(id: int) -> void:
+	_send_purse(id)
+	_sync_players()
+
+## SERVER: take off anything no longer in the bag. Called from _bag_changed, so
+## selling the breastplate you are wearing takes it off your back rather than
+## leaving you protected by an item you no longer own.
+func _drop_unowned_equipment(id: int) -> void:
+	var entry: Dictionary = players[id]
+	var worn: Dictionary = entry.get("equipped", _empty_equipment())
+	var changed := false
+	for slot: String in ItemDb.EQUIP_SLOTS:
+		var item_id := str(worn.get(slot, ""))
+		if item_id != "" and int(entry["items"].get(item_id, 0)) <= 0:
+			worn[slot] = ""
+			changed = true
+	if changed:
+		entry["equipped"] = worn
 
 func _use_reply(id: int, item_id: String, message: String) -> void:
 	if id == multiplayer.get_unique_id():
@@ -1025,14 +1066,15 @@ func _send_purse(id: int) -> void:
 	var quest := str(entry.get("quest", ""))
 	var quest_kills := int(entry.get("quest_kills", 0))
 	var gifts: Dictionary = entry.get("gifts", {})
+	var worn: Dictionary = entry.get("equipped", {})
 	if id == multiplayer.get_unique_id():
-		cl_purse(gold, items, bar, slot, quest, quest_kills, gifts)
+		cl_purse(gold, items, bar, slot, quest, quest_kills, gifts, worn)
 	else:
-		rpc_id(id, "cl_purse", gold, items, bar, slot, quest, quest_kills, gifts)
+		rpc_id(id, "cl_purse", gold, items, bar, slot, quest, quest_kills, gifts, worn)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
-		quest: String, quest_kills := 0, gifts := {}) -> void:
+		quest: String, quest_kills := 0, gifts := {}, equipped := {}) -> void:
 	GameStats.coins = gold
 	GameStats.items = items.duplicate(true) # never alias the server's dictionary
 	GameStats.hotbar = hotbar.duplicate()
@@ -1040,6 +1082,7 @@ func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
 	GameStats.quest = quest
 	GameStats.quest_kills = quest_kills
 	GameStats.gifts = gifts.duplicate()
+	GameStats.equipped = equipped.duplicate()
 	GameStats.changed.emit()
 
 # ---------------- state replication ----------------

@@ -88,22 +88,35 @@ class Runner:
 		for tier: String in ItemDb.ARMOR_SETS:
 			var slots := {}
 			var pieces: Array = ItemDb.ARMOR_SETS[tier]
-			if not _check(pieces.size() == ItemDb.ARMOR_SLOTS.size(),
-					"the %s suit has %d pieces, expected %d"
-							% [tier, pieces.size(), ItemDb.ARMOR_SLOTS.size()]):
+			if not _check(pieces.size() == ItemDb.EQUIP_SLOTS.size(),
+					"the %s suit has %d pieces, expected one per equipment slot (%d)"
+							% [tier, pieces.size(), ItemDb.EQUIP_SLOTS.size()]):
 				return false
+			# ...and between them they cover every slot of the suit's ART, which
+			# is the check that catches a piece being dropped rather than merged
+			# — three items still have to put on all four plates.
+			var covered := {}
 			for item_id: String in pieces:
 				if not _check(ItemDb.has(item_id), "%s names '%s', which is not an item"
 						% [tier, item_id]):
 					return false
 				var slot := ItemDb.armor_slot(item_id)
-				if not _check(ItemDb.ARMOR_SLOTS.has(slot),
-						"%s covers '%s', which is not an armor slot" % [item_id, slot]):
+				if not _check(ItemDb.EQUIP_SLOTS.has(slot),
+						"%s is worn in '%s', which is not an equipment slot" % [item_id, slot]):
 					return false
 				if not _check(not slots.has(slot),
 						"the %s suit has two pieces for '%s'" % [tier, slot]):
 					return false
 				slots[slot] = true
+				for art_slot: String in ItemDb.armor_covers(item_id):
+					if not _check(not covered.has(art_slot),
+							"the %s suit puts two items on '%s'" % [tier, art_slot]):
+						return false
+					covered[art_slot] = true
+			for art_slot: String in NpcDefinition.SLOTS:
+				if not _check(covered.has(art_slot),
+						"nothing in the %s suit covers '%s'" % [tier, art_slot]):
+					return false
 
 		# A suit is the same rank and the same price as the blade it is named
 		# for. That pairing is the whole shape of the ladder, and it is the kind
@@ -211,10 +224,10 @@ class Runner:
 							% [item_id, GameStats.item_count(item_id)]):
 				return false
 
-		# 4. and that is a full suit as far as the server is concerned, which is
-		# what turns it into protection
-		var levels := Net.armor_levels(1)
-		if not _check(levels == 4, "a full flimsy suit should be 4 armor levels, got %d" % levels):
+		# 4. carrying it protects you from NOTHING until you put it on
+		if not _check(Net.armor_levels(1) == 0,
+				"armor sitting in the bag should protect nobody, got %d levels"
+						% Net.armor_levels(1)):
 			return false
 
 		# 5. asking again gets nothing. This is the whole point of the record:
@@ -233,29 +246,101 @@ class Runner:
 				"Bram should open on his ordinary greeting once the armor is handed over"):
 			return false
 
-		# 7. wearing it really does reduce what a hit takes off. Driven through
+		# 7. putting it on, which is what the use button does
+		if not await _equipping(tree):
+			return false
+
+		# 8. wearing it really does reduce what a hit takes off. Driven through
 		# the server's own damage entry rather than the formula, so a suit that
 		# never reaches the health subtraction fails here.
 		return await _armor_softens_a_hit(tree, pawn)
 
+	## Right trigger on a piece of armor puts it on, and again takes it off.
+	## Driven through the ordinary use request, because that IS the feature —
+	## nothing else in the game equips anything.
+	func _equipping(tree: SceneTree) -> bool:
+		for item_id: String in ItemDb.ARMOR_SETS["flimsy"]:
+			if not await _use(tree, item_id):
+				return false
+			if not _check(GameStats.is_equipped(item_id), "using %s did not put it on" % item_id):
+				return false
+		if not _check(Net.armor_levels(1) == 3,
+				"a full flimsy suit worn should be 3 armor levels, got %d" % Net.armor_levels(1)):
+			return false
+
+		# It is on your back where everyone can see it, so it rides the PUBLIC
+		# registry — a peer that only ever sees that has to be able to draw it.
+		var seen: Dictionary = Net._public_players().get(1, {}).get("equipped", {})
+		if not _check(str(seen.get("torso", "")) == "flimsy_chestplate",
+				"what a player is wearing should be public, got %s" % str(seen)):
+			return false
+
+		# Using it again takes it off — one button both ways.
+		if not await _use(tree, "flimsy_helmet"):
+			return false
+		if not _check(not GameStats.is_equipped("flimsy_helmet"),
+				"using a piece already on should have taken it off"):
+			return false
+		if not _check(Net.armor_levels(1) == 2,
+				"taking the helmet off should drop a level, got %d" % Net.armor_levels(1)):
+			return false
+		if not await _use(tree, "flimsy_helmet"):
+			return false
+
+		# A chestplate is ONE item covering both the body and the arms, which is
+		# what makes three pieces a suit rather than four.
+		var covers := ItemDb.armor_covers("flimsy_chestplate")
+		if not _check(covers.has("body") and covers.has("arms") and covers.size() == 2,
+				"a chestplate should cover the body and the arms, got %s" % str(covers)):
+			return false
+		if not _check(ItemDb.armor_parts("flimsy_chestplate").size() == 2,
+				"a chestplate should put on two plates of its suit"):
+			return false
+
+		# Losing the item takes it off: selling the breastplate off your back
+		# must not leave you protected by something you no longer own.
+		var bag: Dictionary = Net.players[1]["items"]
+		bag.erase("flimsy_helmet")
+		Net._bag_changed(1)
+		await tree.physics_frame
+		if not _check(not GameStats.is_equipped("flimsy_helmet"),
+				"an item that left the bag should have come off with it"):
+			return false
+		bag["flimsy_helmet"] = 1
+		Net._bag_changed(1)
+		await tree.physics_frame
+		return await _use(tree, "flimsy_helmet")
+
+	## Selects the hotbar slot holding `item_id` and presses use on it.
+	func _use(tree: SceneTree, item_id: String) -> bool:
+		var slot := (Net.players[1]["hotbar"] as Array).find(item_id)
+		if not _check(slot >= 0, "'%s' never reached the hotbar" % item_id):
+			return false
+		Net.request_hotbar_select(slot)
+		await tree.physics_frame
+		Net.request_use_item()
+		await tree.physics_frame
+		return true
+
 	## The same blow with the suit on and with it gone. Nothing about this reads
 	## CombatLevels — it asks the pawn what a hit cost it.
 	func _armor_softens_a_hit(tree: SceneTree, pawn: Node3D) -> bool:
-		var bag: Dictionary = Net.players[1]["items"]
 		var armoured := await _hit_for(tree, pawn, 20.0)
-		var kept := bag.duplicate()
-		for item_id: String in ItemDb.ARMOR_SETS["flimsy"]:
-			bag.erase(item_id)
+		# Stripped by taking the suit OFF rather than by emptying the bag: what
+		# is worn is what protects you now, and a pawn still carrying the whole
+		# suit is the sharper version of this check.
+		var worn: Dictionary = Net.players[1]["equipped"].duplicate()
+		Net.players[1]["equipped"] = Net._empty_equipment()
 		var bare := await _hit_for(tree, pawn, 20.0)
-		Net.players[1]["items"] = kept
+		Net.players[1]["equipped"] = worn
 		if not _check(bare > 0.0, "an unarmoured pawn should take the whole blow"):
 			return false
 		if not _check(armoured < bare,
 				"armor should soften a hit: took %.2f in a suit, %.2f without" % [armoured, bare]):
 			return false
-		if not _check(is_equal_approx(armoured / bare, CombatLevels.armor_protection(4)),
+		if not _check(is_equal_approx(armoured / bare, CombatLevels.armor_protection(3)),
 				"a full flimsy suit let through %.3f of the blow, expected %.3f"
-						% [armoured / bare, CombatLevels.armor_protection(4)]):
+						% [armoured / bare, CombatLevels.armor_protection(3)]):
 			return false
 		return true
 

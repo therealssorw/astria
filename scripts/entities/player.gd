@@ -313,6 +313,10 @@ func _ready() -> void:
 	# peer draws the same thing in its hand
 	Net.player_list_changed.connect(_refresh_held_item)
 	_refresh_held_item()
+	# ...and so does the armor on its back, for the same reason: what you have
+	# on is something every other player can see.
+	Net.player_list_changed.connect(_refresh_armor)
+	_refresh_armor()
 	if is_local:
 		# only does anything on the first pawn of a fresh load into the world;
 		# the cutscene is what tells the tutorial the player can see
@@ -325,6 +329,15 @@ func _refresh_held_item() -> void:
 	if body_visual == null or not body_visual.has_method("set_held_item"):
 		return
 	body_visual.set_held_item(Net.held_of(peer_id))
+
+## Put the armor the SERVER says this player is wearing onto its body. Purely
+## visual, exactly like the held item: the plates change nothing about the
+## fight (Net.armor_levels is what combat reads, server-side), this only draws
+## what is already true.
+func _refresh_armor() -> void:
+	if body_visual == null or not body_visual.has_method("set_armor"):
+		return
+	body_visual.set_armor(Net.equipment_of(peer_id))
 
 func _make_nametag() -> void:
 	var tag := Label3D.new()

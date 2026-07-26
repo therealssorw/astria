@@ -90,96 +90,100 @@ const ITEMS := {
 	# --- armor ---
 	#
 	# The three suits in Assets/Data/Armor/, a piece at a time. An armor item
-	# carries "armor": the slot it covers, which is what makes four pieces a SET
-	# rather than four items — you cannot wear two helmets, so only the best
-	# piece per slot counts (see Net.armor_levels).
+	# carries "armor": the EQUIPMENT slot it is worn in — one of EQUIP_SLOTS,
+	# the same three the inventory's cross shows.
+	#
+	# That is deliberately NOT the same as the four slots the art is modelled in.
+	# A chestplate is ONE item and puts on both the body and the arms of its suit
+	# (EQUIP_COVERS), because a breastplate and the sleeves that come with it are
+	# not two things anybody would strap on separately.
 	#
 	# Its "level" is the same ladder as a sword's, and matched to the blade of
 	# the same name: flimsy sits with the wooden sword at 1, copper at 2, iron at
 	# 3. On a weapon a level is damage dealt; on armor it is damage NOT taken.
-	# Priced to match its blade too, per piece — so a full suit costs four
+	# Priced to match its blade too, per piece — so a full suit costs three
 	# swords.
 	"flimsy_helmet": {
-		"name": "Flimsy Helmet", "armor": "head", "level": 1, "price": 20,
+		"name": "Flimsy Helmet", "armor": "helmet", "level": 1, "price": 20,
 		"suit": SUITS["flimsy"],
 		"desc": "Dented, and a size too big.",
 	},
 	"flimsy_chestplate": {
-		"name": "Flimsy Chestplate", "armor": "body", "level": 1, "price": 20,
+		"name": "Flimsy Chestplate", "armor": "torso", "level": 1, "price": 20,
 		"suit": SUITS["flimsy"],
-		"desc": "The straps have been replaced more than once.",
-	},
-	"flimsy_gauntlets": {
-		"name": "Flimsy Gauntlets", "armor": "arms", "level": 1, "price": 20,
-		"suit": SUITS["flimsy"],
-		"desc": "Thin plate over older leather.",
+		"desc": "Plate and sleeves both. The straps have been replaced more than once.",
 	},
 	"flimsy_boots": {
-		"name": "Flimsy Boots", "armor": "feet", "level": 1, "price": 20,
+		"name": "Flimsy Boots", "armor": "pants", "level": 1, "price": 20,
 		"suit": SUITS["flimsy"],
 		"desc": "Scuffed through to the metal at the toe.",
 	},
 	"copper_helmet": {
-		"name": "Copper Helmet", "armor": "head", "level": 2, "price": 125,
+		"name": "Copper Helmet", "armor": "helmet", "level": 2, "price": 125,
 		"suit": SUITS["copper"],
 		"desc": "Soft, but it turns an edge once.",
 	},
 	"copper_chestplate": {
-		"name": "Copper Chestplate", "armor": "body", "level": 2, "price": 125,
+		"name": "Copper Chestplate", "armor": "torso", "level": 2, "price": 125,
 		"suit": SUITS["copper"],
 		"desc": "Beaten from one sheet, and heavy for it.",
 	},
-	"copper_gauntlets": {
-		"name": "Copper Gauntlets", "armor": "arms", "level": 2, "price": 125,
-		"suit": SUITS["copper"],
-		"desc": "Green at the knuckles already.",
-	},
 	"copper_boots": {
-		"name": "Copper Boots", "armor": "feet", "level": 2, "price": 125,
+		"name": "Copper Boots", "armor": "pants", "level": 2, "price": 125,
 		"suit": SUITS["copper"],
 		"desc": "Loud on stone, but they hold.",
 	},
 	"iron_helmet": {
-		"name": "Iron Helmet", "armor": "head", "level": 3, "price": 250,
+		"name": "Iron Helmet", "armor": "helmet", "level": 3, "price": 250,
 		"suit": SUITS["iron"],
 		"desc": "Forge-work worth wearing.",
 	},
 	"iron_chestplate": {
-		"name": "Iron Chestplate", "armor": "body", "level": 3, "price": 250,
+		"name": "Iron Chestplate", "armor": "torso", "level": 3, "price": 250,
 		"suit": SUITS["iron"],
 		"desc": "Plate thick enough to argue with a sword.",
 	},
-	"iron_gauntlets": {
-		"name": "Iron Gauntlets", "armor": "arms", "level": 3, "price": 250,
-		"suit": SUITS["iron"],
-		"desc": "Articulated, and barely worn in.",
-	},
 	"iron_boots": {
-		"name": "Iron Boots", "armor": "feet", "level": 3, "price": 250,
+		"name": "Iron Boots", "armor": "pants", "level": 3, "price": 250,
 		"suit": SUITS["iron"],
 		"desc": "You feel every step, and so does the ground.",
 	},
 }
 
-## The armor slots, in the order a suit is worn from the ground up. The same
-## four an NpcDefinition's armor layer holds, because they are the same pieces.
-const ARMOR_SLOTS := ["feet", "body", "arms", "head"]
+## Where a piece of armor is WORN, top to bottom — the equipment slots the
+## inventory's cross draws, and the keys of `Net.players[id].equipped`. The two
+## hand slots beside them are not armor and are not here.
+const EQUIP_SLOTS := ["helmet", "torso", "pants"]
 
-## A full suit, by tier. Kept here rather than written out wherever a set is
-## handed over or stocked, so "a full set" cannot come to mean four different
-## things in three files.
-const ARMOR_SETS := {
-	"flimsy": ["flimsy_boots", "flimsy_chestplate", "flimsy_gauntlets", "flimsy_helmet"],
-	"copper": ["copper_boots", "copper_chestplate", "copper_gauntlets", "copper_helmet"],
-	"iron": ["iron_boots", "iron_chestplate", "iron_gauntlets", "iron_helmet"],
+## What each equipment slot puts on, in NpcDefinition's own slot names. This is
+## the whole of "body and arms armor is one armor": the torso item wears both,
+## so there is no separate pair of gauntlets to lose track of.
+const EQUIP_COVERS := {
+	"helmet": ["head"],
+	"torso": ["body", "arms"],
+	"pants": ["feet"],
 }
 
-## Which armor slot an item covers, or "" when it is not armor.
+## A full suit, by tier. Kept here rather than written out wherever a set is
+## handed over or stocked, so "a full set" cannot come to mean three different
+## things in three files.
+const ARMOR_SETS := {
+	"flimsy": ["flimsy_boots", "flimsy_chestplate", "flimsy_helmet"],
+	"copper": ["copper_boots", "copper_chestplate", "copper_helmet"],
+	"iron": ["iron_boots", "iron_chestplate", "iron_helmet"],
+}
+
+## Which equipment slot an item is worn in, or "" when it is not armor.
 static func armor_slot(id: String) -> String:
 	return str(ITEMS.get(id, {}).get("armor", ""))
 
 static func is_armor(id: String) -> bool:
 	return armor_slot(id) != ""
+
+## The NpcDefinition slots an armor item covers — one for a helmet, two for a
+## chestplate. Empty for anything that is not armor.
+static func armor_covers(id: String) -> Array:
+	return (EQUIP_COVERS.get(armor_slot(id), []) as Array).duplicate()
 
 ## How a held model sits in the hand bone before per-item tweaks. The sword
 ## art runs up its own +Y with the grip at the origin, and a humanoid-profile
@@ -238,12 +242,30 @@ static func suit_of(id: String) -> ArmorDefinition:
 	return suit
 
 ## Which piece of that suit it is — the plate itself, with its model and the
-## colours the suit paints it.
+## colours the suit paints it. A chestplate covers two, so this is the FIRST of
+## them: it is what the item is PHOTOGRAPHED as, and a breastplate is a better
+## picture of "chestplate" than a pair of sleeves. Use `armor_parts` to put one
+## on, which needs all of them.
 static func armor_piece(id: String) -> NpcPart:
 	var suit := suit_of(id)
-	if suit == null:
+	var covers := armor_covers(id)
+	if suit == null or covers.is_empty():
 		return null
-	return suit.get_piece(armor_slot(id))
+	return suit.get_piece(str(covers[0]))
+
+## Every plate an armor item puts on, keyed by the NpcDefinition slot it goes
+## in — one entry for a helmet, two for a chestplate. This is what dresses a
+## character; `armor_piece` above is only for photographing the item.
+static func armor_parts(id: String) -> Dictionary:
+	var out := {}
+	var suit := suit_of(id)
+	if suit == null:
+		return out
+	for slot: String in armor_covers(id):
+		var piece := suit.get_piece(slot)
+		if piece != null and not piece.model_path.is_empty():
+			out[slot] = piece
+	return out
 
 ## The FILE an item's picture is a photograph of, or "" when it has no art at
 ## all. Held items are their held model; armor is the plate of its suit.

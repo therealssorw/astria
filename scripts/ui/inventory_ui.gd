@@ -30,6 +30,15 @@ const ITEM_ROWS := 4
 const HOTBAR_FRAME_PAD := 4
 
 const GOLD := Color(0.95, 0.79, 0.42)
+## How far the controller's focus ring sits outside the slot it is around, and
+## how far above its neighbours it is painted. The ring is deliberately drawn
+## OUTSIDE the box — inside, it is a third border in a grid of borders.
+const FOCUS_RING_OUT := 3
+const FOCUS_Z := 10
+## The one edge colour in the panel that means "you are here". Deliberately not
+## GOLD: gold means "on the hotbar" in this screen and most of the grid wears
+## it, so a gold focus ring is invisible among its neighbours.
+const FOCUS_EDGE := Color(1, 1, 1)
 const USE_FLASH_TIME := 2.0
 
 var panel_root: Control
@@ -47,6 +56,9 @@ var player: Node
 var item_slots: Array[Button] = []
 var bar_slots: Array[Panel] = []        # the always-on bar along the bottom
 var panel_bar_slots: Array[Button] = [] # the same nine slots inside the window
+## The equipment cross, keyed by ItemDb.EQUIP_SLOTS name (plus "hand" for the
+## one that mirrors whatever the hotbar has in hand).
+var equip_slots := {}
 
 func _ready() -> void:
 	layer = 5
@@ -136,6 +148,30 @@ func _slot_style(selected := false) -> StyleBoxFlat:
 	style.set_corner_radius_all(3)
 	return style
 
+## An equipment slot: a plain slot that draws whatever is worn in it, with the
+## slot's own name showing through while it is empty. `key` is an
+## ItemDb.EQUIP_SLOTS name, or "hand" for the one that mirrors the hotbar.
+func _equip_slot(key: String, label_text: String) -> Panel:
+	var p := _slot(label_text)
+	var hint := p.get_child(0) as Label
+	hint.name = "SlotHint"
+	_add_item_labels(p)
+	equip_slots[key] = p
+	return p
+
+## Fills the equipment cross from the mirror. Nothing here can equip anything —
+## the panel draws what the server has already decided (see Net._server_equip),
+## which is why there is no click handler on these.
+func _refresh_equipment() -> void:
+	for key: String in equip_slots:
+		var p: Panel = equip_slots[key]
+		var id := GameStats.held_id() if key == "hand" else GameStats.equipped_in(key)
+		_draw_item(p, id, "")
+		# the slot's name is a hint, so it steps aside once there is a thing in it
+		var hint := p.get_node_or_null("SlotHint") as Label
+		if hint != null:
+			hint.visible = id == ""
+
 func _slot(label_text := "") -> Panel:
 	var p := Panel.new()
 	p.custom_minimum_size = Vector2(SLOT_SIZE, SLOT_SIZE)
@@ -201,6 +237,14 @@ func _slot_button() -> Button:
 	b.focus_mode = Control.FOCUS_ALL
 	_add_item_labels(b)
 	_paint_slot(b, false)
+	# THE FOCUSED SLOT DRAWS ON TOP OF ITS NEIGHBOURS. A container paints its
+	# children in tree order, so the slots after this one paint over the edge
+	# this one is drawing — and on a controller that edge is the only thing
+	# saying where you are, so half of it going missing is the difference
+	# between a readable grid and a guess. z_index lifts the PAINT and nothing
+	# else; move_to_front would reorder the child and move the slot itself.
+	b.focus_entered.connect(func() -> void: b.z_index = FOCUS_Z)
+	b.focus_exited.connect(func() -> void: b.z_index = 0)
 	return b
 
 ## Repaint one slot's border: gold and thicker when it is the one in hand,
@@ -211,7 +255,22 @@ func _paint_slot(b: Button, selected: bool) -> void:
 	var hot := _slot_style(selected)
 	hot.border_color = GOLD if selected else Color(0.85, 0.85, 0.9)
 	b.add_theme_stylebox_override("hover", hot)
-	b.add_theme_stylebox_override("focus", hot)
+	# The focus ring is drawn thicker than the hover one and OUTSIDE the slot's
+	# own rect (expand margins), so it reads as a ring AROUND the box rather
+	# than as one more border among nine identical ones. That is only legible
+	# because the focused slot is lifted above its neighbours — see _slot_button.
+	#
+	# And it is never gold, however the slot is painted underneath. Gold already
+	# means "this one is on the bar" in here, and half the grid wears it — a
+	# gold focus ring is then one gold box among nine, which is exactly the
+	# thing you cannot find with a controller. White is the only edge in the
+	# panel that means "you are here".
+	var ring := _slot_style(selected)
+	ring.border_color = FOCUS_EDGE
+	ring.set_border_width_all(3)
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		ring.set_expand_margin(side, FOCUS_RING_OUT)
+	b.add_theme_stylebox_override("focus", ring)
 
 ## Fill a slot's icon/name/count from an item id ("" empties it).
 func _draw_item(host: Control, id: String, count_text := "") -> void:
@@ -241,6 +300,7 @@ func _refresh_items() -> void:
 		# a gold edge in the bag means "this one is on the bar somewhere"
 		_paint_slot(slot, id != "" and GameStats.hotbar.has(id))
 	_refresh_hotbar()
+	_refresh_equipment()
 
 ## Both copies of the bar — the one on screen and the one in the panel — draw
 ## from the same mirror, so they can never disagree.
@@ -366,9 +426,13 @@ func _build_inventory_tab() -> Control:
 	eq.columns = 3
 	eq.add_theme_constant_override("h_separation", 6)
 	eq.add_theme_constant_override("v_separation", 6)
-	eq.add_child(_spacer());          eq.add_child(_slot("Helmet"));  eq.add_child(_spacer())
-	eq.add_child(_slot("L Hand"));    eq.add_child(_slot("Torso"));   eq.add_child(_slot("R Hand"))
-	eq.add_child(_spacer());          eq.add_child(_slot("Pants"));   eq.add_child(_spacer())
+	# Three of the five are armor and fill themselves from what the server says
+	# is on; "R Hand" shows the hotbar slot in hand, which is the other thing
+	# you are visibly wearing. "L Hand" has nothing to put in it yet.
+	eq.add_child(_spacer());        eq.add_child(_equip_slot("helmet", "Helmet")); eq.add_child(_spacer())
+	eq.add_child(_slot("L Hand"));  eq.add_child(_equip_slot("torso", "Torso"))
+	eq.add_child(_equip_slot("hand", "R Hand"))
+	eq.add_child(_spacer());        eq.add_child(_equip_slot("pants", "Pants"));   eq.add_child(_spacer())
 	row.add_child(eq)
 
 	# The bag: the hotbar IS its top row (labelled and framed so it reads as
