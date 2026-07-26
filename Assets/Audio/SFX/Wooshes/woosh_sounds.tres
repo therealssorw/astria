@@ -1,10 +1,6 @@
-[gd_resource type="AudioStreamRandomizer" load_steps=2 format=3]
+[gd_resource type="AudioStreamRandomizer" format=3 uid="uid://dxuxnqmqx1ywe"]
 
-; Every attack swing (player + enemy) uses this one woosh. It stays wrapped in a
-; randomizer so repeated punches still get slight pitch variation instead of
-; sounding like the exact same sample looping.
-
-[ext_resource type="AudioStreamMP3" uid="uid://bai6cb47o23fj" path="res://Assets/Audio/SFX/Wooshes/u_u4pf5h7zip-woosh-345977.mp3" id="1_woosh_a"]
+[ext_resource type="AudioStream" uid="uid://bai6cb47o23fj" path="res://Assets/Audio/SFX/Wooshes/u_u4pf5h7zip-woosh-345977.mp3" id="1_woosh_a"]
 
 [resource]
 random_pitch = 1.1

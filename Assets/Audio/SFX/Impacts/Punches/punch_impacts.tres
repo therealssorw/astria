@@ -1,8 +1,8 @@
-[gd_resource type="AudioStreamRandomizer" load_steps=4 format=3]
+[gd_resource type="AudioStreamRandomizer" format=3 uid="uid://0xsbq0ab2wjm"]
 
-[ext_resource type="AudioStreamMP3" uid="uid://bhpkaw7s0s52v" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-04-383965.mp3" id="1_p04"]
-[ext_resource type="AudioStreamMP3" uid="uid://bylrdrkqrbfkm" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-02-123106.mp3" id="2_p02"]
-[ext_resource type="AudioStreamMP3" uid="uid://dd2xrhunu646r" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-140236.mp3" id="3_p14"]
+[ext_resource type="AudioStream" uid="uid://bhpkaw7s0s52v" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-04-383965.mp3" id="1_p04"]
+[ext_resource type="AudioStream" uid="uid://bylrdrkqrbfkm" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-02-123106.mp3" id="2_p02"]
+[ext_resource type="AudioStream" uid="uid://dd2xrhunu646r" path="res://Assets/Audio/SFX/Impacts/Punches/universfield-punch-140236.mp3" id="3_p14"]
 
 [resource]
 random_pitch = 1.06

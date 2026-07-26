@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://uj5rvb1182cu"
-path="res://.godot/imported/Island1.glb-981c015a65d3130a8e9a3b2908e9d899.scn"
+uid="uid://dq5dyh6t0ckww"
+path="res://.godot/imported/TownHall.gltf-d730c719effe97de9e8f3a154ff8a27b.scn"
 
 [deps]
 
-source_file="res://Assets/Models/World/Islands/StarterIsland/Island1.glb"
-dest_files=["res://.godot/imported/Island1.glb-981c015a65d3130a8e9a3b2908e9d899.scn"]
+source_file="res://Assets/Models/World/Islands/StarterIsland/Buildings/TownHall.gltf"
+dest_files=["res://.godot/imported/TownHall.gltf-d730c719effe97de9e8f3a154ff8a27b.scn"]
 
 [params]
 
@@ -39,7 +39,24 @@ import_script/path=""
 materials/extract=0
 materials/extract_format=0
 materials/extract_path=""
-_subresources={}
+_subresources={
+"meshes": {
+"TownHall_mesh": {
+"generate/lightmap_uv": 0,
+"generate/lods": 0,
+"generate/shadow_meshes": 0,
+"lods/normal_merge_angle": 20.0,
+"save_to_file/enabled": true,
+"save_to_file/fallback_path": "",
+"save_to_file/path": ""
+}
+},
+"nodes": {
+"PATH:Node/Layer_1": {
+"generate/physics": true
+}
+}
+}
 gltf/naming_version=2
 gltf/embedded_image_handling=1
 gltf/texture_map_mode=1

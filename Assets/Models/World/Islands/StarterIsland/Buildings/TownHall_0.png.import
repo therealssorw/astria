@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ccxm78xefrl6g"
-path.s3tc="res://.godot/imported/king_feet_0.png-08f732c9ae4ca06da4c889456aeec8f6.s3tc.ctex"
+uid="uid://b0hbqm7vjyiqw"
+path.s3tc="res://.godot/imported/TownHall_0.png-404c776cb6ea5c57d48f52e08d9cc3f2.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "6b70847060f3b80e7b39e1f7100e8c43"
+"md5": "9c827885abbbc5d1c0a0a8e3cf15c60d"
 }
 
 [deps]
 
-source_file="res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Feet/king_feet_0.png"
-dest_files=["res://.godot/imported/king_feet_0.png-08f732c9ae4ca06da4c889456aeec8f6.s3tc.ctex"]
+source_file="res://Assets/Models/World/Islands/StarterIsland/Buildings/TownHall_0.png"
+dest_files=["res://.godot/imported/TownHall_0.png-404c776cb6ea5c57d48f52e08d9cc3f2.s3tc.ctex"]
 
 [params]
 

@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bdb7i0ykf6md"
-path="res://.godot/imported/king_body_0.png-9461dbaa26adbca1f34077a16a0c61c5.ctex"
+path.s3tc="res://.godot/imported/king_body_0.png-9461dbaa26adbca1f34077a16a0c61c5.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "27ea79f13011b4201a339d68c8956704"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Body/king_body_0.png"
-dest_files=["res://.godot/imported/king_body_0.png-9461dbaa26adbca1f34077a16a0c61c5.ctex"]
+dest_files=["res://.godot/imported/king_body_0.png-9461dbaa26adbca1f34077a16a0c61c5.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +41,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

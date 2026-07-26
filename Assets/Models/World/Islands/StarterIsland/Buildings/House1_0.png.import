@@ -2,20 +2,20 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ccxm78xefrl6g"
-path.s3tc="res://.godot/imported/king_feet_0.png-08f732c9ae4ca06da4c889456aeec8f6.s3tc.ctex"
+uid="uid://c0a7l28bgx7vi"
+path.s3tc="res://.godot/imported/House1_0.png-3462aa3d533b284d8bdd5ba4400eaf86.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "6b70847060f3b80e7b39e1f7100e8c43"
+"md5": "453369f9ec9bbda677f5a57de9a21c35"
 }
 
 [deps]
 
-source_file="res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/King/Feet/king_feet_0.png"
-dest_files=["res://.godot/imported/king_feet_0.png-08f732c9ae4ca06da4c889456aeec8f6.s3tc.ctex"]
+source_file="res://Assets/Models/World/Islands/StarterIsland/Buildings/House1_0.png"
+dest_files=["res://.godot/imported/House1_0.png-3462aa3d533b284d8bdd5ba4400eaf86.s3tc.ctex"]
 
 [params]
 
