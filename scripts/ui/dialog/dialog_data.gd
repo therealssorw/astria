@@ -97,34 +97,39 @@ const DIALOGS := {
 	# answer that reports in carries `finish_quest`, which is only a REQUEST —
 	# the server checks you are actually standing in front of him.
 	"king": {
-		"speaker": "King Aldric",
+		"speaker": "The King",
 		"start": "greeting",
 		"lines": {
 			"greeting": {
-				"text": "So the sea gave one back. Word came ahead of you — a stranger on the shore, swinging at my bandits before they'd had their breakfast.\nCome closer. Let me hear it from you.",
+				"text": "Yes?\nWhat do you want?",
 				"answers": [
-					{"text": "I'm here, Your Majesty.", "goto": "reporting",
-							"action": "finish_quest:speak_to_king"},
-					{"text": "Who's asking?", "goto": "who"},
-				],
-			},
-			"who": {
-				"text": "Aldric. This hall, that harbour, and every stone between them. You are standing in the middle of all three.",
-				"answers": [
-					{"text": "Then I'll report properly. I'm here.", "goto": "reporting",
+					{"text": "I defeated the bandits.", "goto": "caravan",
 							"action": "finish_quest:speak_to_king"},
 				],
 			},
-			"reporting": {
-				"text": "Good. You'll find the smith down by the water — he has been losing iron to that camp for a season and complains to me about it weekly. Start there, and we'll see what you're worth.",
+			"caravan": {
+				"text": "Ah, very well.\nThey've been a sort of a problem.\nThey just recently raided our caravan.",
 				"answers": [
-					{"text": "I'll speak to him.", "goto": END},
-					{"text": "What's in it for me?", "goto": "pay"},
+					{"text": "I can help.", "goto": "hideout"},
 				],
 			},
-			"pay": {
-				"text": "Coin, eventually. Goodwill, immediately. Take the second and the first tends to follow.",
-				"goto": END,
+			# the three questions all come back here, so none of them is a dead
+			# end and "I'll do it now" is always the way out
+			"hideout": {
+				"text": "Then you must find their hideout and defeat them for our town.",
+				"answers": [
+					{"text": "Where do I find them?", "goto": "rumors"},
+					{"text": "During the fight I woke up with no memory. I don't even know who I am, or what village this is.", "goto": "rancor"},
+					{"text": "I'll do it now.", "goto": END},
+				],
+			},
+			"rumors": {
+				"text": "I've heard rumors that they're hiding alongside a mountain, but those are just rumors — I am quite honestly not sure.",
+				"goto": "hideout",
+			},
+			"rancor": {
+				"text": "You're right now in the town of Rancor.\nYour other question, I am unable to answer. All I know is we recently had a shipment of immigrants — you likely would have got here from that.",
+				"goto": "hideout",
 			},
 		},
 	},
