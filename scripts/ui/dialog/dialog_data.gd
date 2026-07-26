@@ -87,7 +87,7 @@ const DIALOGS := {
 			# out that takes the job, so the kill count is on the HUD the moment
 			# the box closes behind you
 			"hideout": {
-				"text": "Then you must find their hideout and defeat them for our town.\nTwenty-five of them, and the raids stop.",
+				"text": "Then you must find their hideout and defeat them for our town.\nBut first, here's some gold.\nGo to the blacksmith and buy yourself a sword.\nYou're gonna need it.",
 				"answers": [
 					{"text": "Where do I find them?", "goto": "rumors"},
 					{"text": "During the fight I woke up with no memory. I don't even know who I am, or what village this is.", "goto": "rancor"},
