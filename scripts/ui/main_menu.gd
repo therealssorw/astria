@@ -143,6 +143,9 @@ func _username_saved() -> bool:
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
+	# load first: Voice keeps its mode in this same file, and saving a fresh
+	# ConfigFile over the top would quietly wipe whatever else is in it
+	cfg.load(SETTINGS_PATH)
 	cfg.set_value("net", "username", name_edit.text.strip_edges())
 	cfg.set_value("net", "last_ip", ip_edit.text.strip_edges())
 	cfg.save(SETTINGS_PATH)
@@ -221,8 +224,20 @@ func _build_ui() -> void:
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(status_label)
 
+	box.add_child(_spacer(10))
+	box.add_child(_small_label("VOICE CHAT"))
+	# the one setting the menu owns besides the name, because it is also the one
+	# a player wants to decide BEFORE walking into a world with an open mic
+	var open_mic := CheckButton.new()
+	open_mic.text = "Open mic (talks when you do)"
+	open_mic.button_pressed = Voice.is_open_mic()
+	open_mic.toggled.connect(func(on: bool) -> void:
+		Voice.set_mode(Voice.Mode.OPEN_MIC if on else Voice.Mode.PUSH_TO_TALK))
+	box.add_child(open_mic)
+	box.add_child(_small_label("Off: hold V (L3 on a pad) to talk. M switches in game.\nOnly players standing near you can hear it."))
+
 	box.add_child(_spacer(8))
-	var controls := _small_label("WASD move  •  LMB punch (hold = heavy)  •  RMB block  •  MMB lock-on\nSPACE jump  •  CTRL slide (in air: dive)  •  TAB inventory  •  hold P scoreboard")
+	var controls := _small_label("WASD move  •  LMB punch (hold = heavy)  •  RMB block  •  MMB lock-on\nSPACE jump  •  CTRL slide (in air: dive)  •  TAB inventory  •  hold P scoreboard\nhold V talk  •  M mic mode")
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(controls)
 

@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://b6vqk2yn0wq8h"]
+
+[ext_resource type="Script" path="res://tests/preview_voice.gd" id="1_prev"]
+
+[node name="VoicePreview" type="Node3D"]
+script = ExtResource("1_prev")
+
+[node name="Players" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+
+[node name="Light" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7, 0.7, 0, -0.7, 0.7, 0, 6, 0)
