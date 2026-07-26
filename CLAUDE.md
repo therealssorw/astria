@@ -468,6 +468,12 @@ mixed pile.
   you are standing at to hand it in; `from` is the one it insists you are
   standing at to start it, and an empty `from` means only the SERVER hands that
   quest out.
+- A quest pays out with `reward_buys`: the id of an item, and finishing hands
+  you ItemDb's price for it. The reward is named as a THING you can now afford
+  ("a first sword"), never a number — a number in the table quietly stops being
+  a sword the moment the price moves, and prices live in ItemDb alone. Paying
+  happens in `_server_finish_quest`, once, because handing in is what clears the
+  quest: come back and you are no longer on it.
 - Finishing the tutorial puts you straight on `TutorialData.NEXT_QUEST`
   ("Speak to the King") as it puts you ashore, through
   `Net.server_grant_quest` — the server deciding, so there is nothing to

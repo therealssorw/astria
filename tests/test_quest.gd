@@ -205,7 +205,11 @@ class Runner:
 				"a quest should not hand in from 60 m away"):
 			return false
 
-		# 3. and it does at his feet
+		# 3. and it does at his feet, and it pays
+		var purse := int(GameStats.coins)
+		var reward := QuestData.reward_gold(quest)
+		if not _check(reward > 0, "the King's quest should pay something"):
+			return false
 		_place(pawn, npc.global_position + Vector3(1.5, 0, 0))
 		await tree.physics_frame
 		Net.request_finish_quest(quest)
@@ -213,12 +217,25 @@ class Runner:
 		if not _check(str(GameStats.quest) == "",
 				"talking to him at his feet should have finished the quest"):
 			return false
+		if not _check(int(GameStats.coins) == purse + reward,
+				"finishing should have paid %d, purse went %d -> %d"
+						% [reward, purse, GameStats.coins]):
+			return false
+		# the point of the reward: it covers a first sword at ItemDb's price
+		if not _check(int(GameStats.coins) >= ItemDb.buy_price("wooden_sword"),
+				"the reward should cover a wooden sword"):
+			return false
 
-		# 4. and handing in a quest you are not on changes nothing
+		# 4. and handing in a quest you are not on changes nothing — least of
+		# all paying again, which is what "the FIRST time you talk to him" means
+		var paid := int(GameStats.coins)
 		Net.request_finish_quest(quest)
 		await tree.physics_frame
 		if not _check(str(GameStats.quest) == "",
 				"finishing a quest you are not on should do nothing"):
+			return false
+		if not _check(int(GameStats.coins) == paid,
+				"handing in twice paid twice: %d -> %d" % [paid, GameStats.coins]):
 			return false
 
 		print("QUESTTEST king=", npc.global_position)

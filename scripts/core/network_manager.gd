@@ -429,7 +429,12 @@ func _server_finish_quest(id: int, quest_id: String) -> void:
 	var at := QuestData.done_at(quest_id)
 	if at == "" or not _near_npc(id, at):
 		return
-	_set_quest(id, "")
+	# paid once, because handing in is what clears the quest: come back and the
+	# check above sees you are not on it any more
+	var reward := QuestData.reward_gold(quest_id)
+	if reward > 0:
+		players[id]["gold"] = int(players[id].get("gold", 0)) + reward
+	_set_quest(id, "") # sends the purse, so the gold rides along with it
 
 ## Server-side code putting a player on a quest — the tutorial's hand-off. Not
 ## a request: this is the server deciding, so there is nothing to validate.

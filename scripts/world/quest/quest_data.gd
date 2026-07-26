@@ -27,6 +27,11 @@ const QUESTS := {
 		## `dialog_id` of the NPC you have to be STANDING AT to finish it. The
 		## conversation is local, so this is the half the server can check.
 		"done_at": "king",
+		## Finishing pays enough gold to buy this, whatever ItemDb says it costs
+		## today. The reward is "a first sword", not a number — writing 20 here
+		## would quietly stop being a sword the moment the price moved, and
+		## prices live in ItemDb alone (see "Items and shops").
+		"reward_buys": "wooden_sword",
 	},
 	## What the King sends you off with as the conversation ends ("I'll do it
 	## now."), so it is waiting on the HUD the moment you leave him.
@@ -107,6 +112,16 @@ static func done_at(id: String) -> String:
 	if not QUESTS.has(id):
 		return ""
 	return str(QUESTS[id].get("done_at", ""))
+
+## Gold paid for finishing: the catalogue price of whatever `reward_buys`
+## names, so the purse always covers it. 0 when the quest pays nothing.
+static func reward_gold(id: String) -> int:
+	if not QUESTS.has(id):
+		return 0
+	var buys := str(QUESTS[id].get("reward_buys", ""))
+	if buys == "" or not ItemDb.has(buys):
+		return 0
+	return ItemDb.buy_price(buys)
 
 ## Where the star should sit, or null when this quest's target is not in the
 ## level — a normal answer, not an error: a quest can be written here before
