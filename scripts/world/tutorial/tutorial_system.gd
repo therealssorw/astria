@@ -13,19 +13,19 @@ extends Node
 ## belong to, fight only that player, and are cleaned up with the copy.
 ##
 ## CLIENT — owns nothing but the screen. It instances its own copy of the arena
-## scene at the same coordinates (the way every peer loads the world scene),
-## plays the line the step names, and puts the button prompt up. It reports the
-## press for gates the server cannot see for itself, and the moment a line that
-## the bandits are waiting on has been read; everything else the server reads
-## off the requests the player is already sending it.
+## scene at the same coordinates (the way every peer loads the world scene) and
+## puts the step's control popup up. It reports the press for the one gate the
+## server cannot see for itself; everything else the server reads off the
+## requests the player is already sending it.
 ##
 ## A gate is deliberately NOT a pause menu: the bandits are held, the player is
 ## not. You can still walk, turn the camera and look at the thing about to hit
 ## you. It opens on the real action, so the lesson cannot be clicked through
-## without doing it — and then waits for that action to FINISH before the next
-## line starts, so nothing talks over the swing it just asked for.
+## without doing it — and then waits for that action to FINISH, so the next
+## popup does not replace the last one mid-swing.
 ##
-## All of the spoken text lives in DialogData under the `tut_*` ids.
+## The tutorial says nothing. What teaches is the popup on each gate step
+## (`TutorialData.STEPS`), drawn by scripts/ui/tutorial/tutorial_overlay.gd.
 
 ## Emitted on the client each time the step changes, for the HUD overlay.
 ## `step` is the step dictionary, empty when the tutorial is not running.
@@ -108,7 +108,7 @@ func server_end(id: int, graduate: bool) -> void:
 	if graduate:
 		Net.server_place_on_island(id)
 
-## The client's cutscene finished — from here the city may start moving.
+## The client is in the world and can see it — from here the fight may move.
 func server_report_ready(id: int) -> void:
 	var run: Dictionary = _runs.get(id, {})
 	if run.is_empty():

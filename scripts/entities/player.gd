@@ -307,8 +307,9 @@ func _ready() -> void:
 	Net.player_list_changed.connect(_refresh_held_item)
 	_refresh_held_item()
 	if is_local:
-		# only does anything on the first pawn of a fresh load into the world
-		IntroCutscene.on_local_pawn_ready()
+		# the tutorial holds its bandits until the player's own client is
+		# standing in the world; nothing else gates it now
+		Net.report_tutorial_ready.call_deferred()
 
 ## Put the hotbar item the SERVER says this player holds into its hand. Purely
 ## visual: the pawn asks nobody's permission to draw it, and the id is not

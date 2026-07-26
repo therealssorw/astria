@@ -12,11 +12,7 @@ extends CanvasLayer
 ## `Net.request_cheat_*`. The lists inside the pages come from the game's own
 ## data — ItemDb for "Give item", TeleportData for "Teleport" — so a new sword
 ## or a new destination shows up here the moment it is in the catalogue.
-##
-## "Start cutscene" is the one row that does NOT go through the server, because
-## a cutscene is one player's screen and nothing else: replaying your own intro
-## gains you nothing the server owns. Anything that touches game state still
-## has to ask.
+
 
 const GOLD := Color(0.95, 0.79, 0.42)
 const DIM := Color(0.78, 0.79, 0.84)
@@ -62,8 +58,7 @@ func _process(delta: float) -> void:
 			open()
 
 ## A conversation does NOT keep the menu shut: half of what these cheats are
-## for is getting out of something that is talking to you — a tutorial line, a
-## cutscene, a gate you cannot find the button for. The box is closed on the
+## for is getting out of something that is talking to you — an NPC, or a gate you cannot find the button for. The box is closed on the
 ## way in so the two are never both listening for the same press.
 func open() -> void:
 	if _open:
@@ -118,8 +113,6 @@ func _refresh() -> void:
 		_build_give()
 	elif _page == "teleport":
 		_build_teleport()
-	elif _page == "cutscene":
-		_build_cutscene()
 	else:
 		_build_root()
 	_set_hint(_default_hint(), Color(1, 1, 1, 0.38))
@@ -135,25 +128,10 @@ func _build_root() -> void:
 	_add_row("Teleport…", "", func() -> void:
 		_page = "teleport"
 		_refresh())
-	_add_row("Cutscene…", "", func() -> void:
-		_page = "cutscene"
-		_refresh())
 	# closes the menu first so you actually see the thing you asked for
 	_add_row("Start tutorial", "island raid", func() -> void:
 		close()
 		Net.request_cheat_tutorial())
-
-func _build_cutscene() -> void:
-	_title.text = "Cheats  ›  Cutscene"
-	_add_row("Start cutscene", "from black", func() -> void:
-		close()
-		IntroCutscene.replay())
-	_add_row("End cutscene", "skip to the end", func() -> void:
-		close()
-		IntroCutscene.abort())
-	_add_row("‹ Back", "", func() -> void:
-		_page = "root"
-		_refresh())
 
 ## Every place in TeleportData, whether or not it has been built yet — a
 ## destination with no anchor in the level answers with that, which is more

@@ -11,8 +11,8 @@ extends RefCounted
 ##
 ## Every step is one dictionary with a "kind":
 ##
-##   "wait_ready" — hold until that player's client says the intro cutscene is
-##                  over. Nothing moves before the player can see.
+##   "wait_ready" — hold until that player's client says it is standing in the
+##                  world. Nothing swings at somebody still loading.
 ##   "wave"       — spawn `count` bandits around the spawn, switched on to that
 ##                  step's `ai` level.
 ##   "gate"       — teach ONE button. Its `popup` goes up (title / body) with

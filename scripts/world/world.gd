@@ -17,8 +17,6 @@ func _ready() -> void:
 		_apply_fog(editor_fog)
 		return
 	_apply_fog(true)
-	# black out before the island is ever drawn — the intro plays over it
-	IntroCutscene.arm()
 	for mi: MeshInstance3D in $Island1.find_children("*", "MeshInstance3D", true, false):
 		mi.create_trimesh_collision()
 	# world is up on this peer: server spawns pawns, clients ask for theirs

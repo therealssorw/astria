@@ -24,7 +24,6 @@ DialogSystem="*res://scripts/ui/dialog/dialog_system.gd"
 ShopSystem="*res://scripts/ui/shop/shop_ui.gd"
 CheatMenu="*res://scripts/ui/debug/cheat_menu.gd"
 Cinematic="*res://scripts/ui/cutscene/cinematic.gd"
-IntroCutscene="*res://scripts/ui/cutscene/intro_cutscene.gd"
 Tutorial="*res://scripts/world/tutorial/tutorial_system.gd"
 
 [display]
