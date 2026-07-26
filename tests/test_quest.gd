@@ -222,6 +222,68 @@ class Runner:
 			return false
 
 		print("QUESTTEST king=", npc.global_position)
+		return await _kill_count(tree)
+
+	## The King's follow-up: a quest that counts kills instead of ending at
+	## somebody. The count belongs to the SERVER — a client saying it has killed
+	## twenty-five bandits has said nothing at all.
+	func _kill_count(tree: SceneTree) -> bool:
+		var quest := "kill_bandits"
+		var needed := QuestData.kills_needed(quest)
+		if not _check(needed > 0, "'%s' should be a counting quest" % quest):
+			return false
+		var tracker: Node = _tracker(tree)
+
+		# 1. kills while on no quest count towards nothing
+		Net.request_cheat_quest("")
+		await tree.physics_frame
+		Net.server_record_enemy_kill("Bandit_ghost", 1)
+		await tree.physics_frame
+		if not _check(GameStats.quest_kills == 0,
+				"a kill with no quest should not be counted"):
+			return false
+
+		# 2. on the quest, every kill moves the count, and the heading with it
+		Net.server_grant_quest(1, quest)
+		await tree.physics_frame
+		if not _check(GameStats.quest_kills == 0, "a fresh quest starts at zero"):
+			return false
+		for i in 3:
+			Net.server_record_enemy_kill("Bandit_%d" % i, 1)
+		await tree.physics_frame
+		if not _check(GameStats.quest_kills == 3,
+				"three kills should read 3, not %d" % GameStats.quest_kills):
+			return false
+		if not _check(str(tracker._label.text) == QuestData.progress_label(quest, 3),
+				"the heading reads '%s', expected the count with it" % tracker._label.text):
+			return false
+
+		# 3. taking a different quest starts from scratch, so kills never carry
+		# over from the quest before
+		Net.request_cheat_quest("bandit_camp")
+		await tree.physics_frame
+		if not _check(GameStats.quest_kills == 0,
+				"switching quest should reset the count"):
+			return false
+
+		# 4. the last kill finishes it: no `done_at`, so nobody to report to
+		Net.server_grant_quest(1, quest)
+		await tree.physics_frame
+		for i in needed - 1:
+			Net.server_record_enemy_kill("Bandit_run_%d" % i, 1)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == quest,
+				"one kill short should still be on the quest"):
+			return false
+		Net.server_record_enemy_kill("Bandit_last", 1)
+		await tree.physics_frame
+		if not _check(str(GameStats.quest) == "",
+				"the %dth kill should have finished the quest" % needed):
+			return false
+		if not _check(not tracker.visible, "the heading goes away with the quest"):
+			return false
+
+		print("QUESTTEST kill count=", needed)
 		return true
 
 	func _npc_with(tree: SceneTree, dialog_id: String) -> Node3D:

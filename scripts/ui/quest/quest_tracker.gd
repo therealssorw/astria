@@ -61,7 +61,8 @@ func _ready() -> void:
 func _refresh() -> void:
 	var quest := str(GameStats.quest)
 	visible = quest != ""
-	_label.text = QuestData.label(quest) if visible else ""
+	# a counting quest reads "Kill the bandits  7/25"; the rest just their name
+	_label.text = QuestData.progress_label(quest, GameStats.quest_kills) if visible else ""
 	queue_redraw()
 
 func _draw() -> void:

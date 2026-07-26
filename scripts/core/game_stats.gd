@@ -19,6 +19,9 @@ var hot_slot := 0       # which of those slots is in hand
 ## Id of the quest being tracked (see QuestData), "" when there is none. Drives
 ## the HUD heading and the star that leads you to it.
 var quest := ""
+## Kills counted towards that quest, when it is one that asks for them. The
+## server counts; this is the copy the heading reads as "7/25".
+var quest_kills := 0
 
 func item_count(id: String) -> int:
 	return int(items.get(id, 0))

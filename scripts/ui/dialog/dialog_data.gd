@@ -114,13 +114,16 @@ const DIALOGS := {
 				],
 			},
 			# the three questions all come back here, so none of them is a dead
-			# end and "I'll do it now" is always the way out
+			# end and "I'll do it now" is always the way out — and it is the way
+			# out that takes the job, so the kill count is on the HUD the moment
+			# the box closes behind you
 			"hideout": {
-				"text": "Then you must find their hideout and defeat them for our town.",
+				"text": "Then you must find their hideout and defeat them for our town.\nTwenty-five of them, and the raids stop.",
 				"answers": [
 					{"text": "Where do I find them?", "goto": "rumors"},
 					{"text": "During the fight I woke up with no memory. I don't even know who I am, or what village this is.", "goto": "rancor"},
-					{"text": "I'll do it now.", "goto": END},
+					{"text": "I'll do it now.", "goto": END,
+							"action": "start_quest:kill_bandits"},
 				],
 			},
 			"rumors": {

@@ -321,6 +321,7 @@ func _make_entry(username: String) -> Dictionary:
 	var entry := {"name": username, "kills": 0, "deaths": 0, "gold": 0,
 			"items": _starting_items(), "hotbar": _empty_hotbar(), "hot_slot": 0,
 			"quest": "", # id of the quest being tracked, "" for none
+			"quest_kills": 0, # kills counted towards it, when it asks for kills
 			"seen": {}} # items already offered a hotbar slot (server-side only)
 	_refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
 	return entry
@@ -439,11 +440,33 @@ func server_grant_quest(id: int, quest_id: String) -> void:
 	_set_quest(id, quest_id)
 
 ## Server: put a player on a quest ("" clears it) and push the change to them.
+## Changing quest always restarts the count: kills are progress towards the one
+## you are on, never a running total you could carry into the next quest.
 func _set_quest(id: int, quest_id: String) -> void:
 	if not players.has(id):
 		return
 	players[id]["quest"] = quest_id
+	players[id]["quest_kills"] = 0
 	_send_purse(id)
+
+## SERVER: `id` just killed a bandit. It only counts while they are on a quest
+## that asks for kills, and that quest finishes itself the moment the count is
+## reached — it has no `done_at`, so there is nobody to report back to.
+func _credit_quest_kill(id: int) -> void:
+	if not players.has(id):
+		return
+	var quest_id := str(players[id].get("quest", ""))
+	var needed := QuestData.kills_needed(quest_id)
+	if needed <= 0:
+		return
+	var done := int(players[id].get("quest_kills", 0)) + 1
+	players[id]["quest_kills"] = done
+	if done < needed:
+		_send_purse(id)
+		return
+	print("[Net] %s finished '%s' (%d kills)" % [players[id]["name"],
+			QuestData.label(quest_id), done])
+	_set_quest(id, "")
 
 ## Client -> server: I'd like to buy this. Never applied locally first.
 func request_buy(shop_id: String, item_id: String) -> void:
@@ -836,19 +859,21 @@ func _send_purse(id: int) -> void:
 	var bar: Array = entry.get("hotbar", _empty_hotbar())
 	var slot := int(entry.get("hot_slot", 0))
 	var quest := str(entry.get("quest", ""))
+	var quest_kills := int(entry.get("quest_kills", 0))
 	if id == multiplayer.get_unique_id():
-		cl_purse(gold, items, bar, slot, quest)
+		cl_purse(gold, items, bar, slot, quest, quest_kills)
 	else:
-		rpc_id(id, "cl_purse", gold, items, bar, slot, quest)
+		rpc_id(id, "cl_purse", gold, items, bar, slot, quest, quest_kills)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
-		quest: String) -> void:
+		quest: String, quest_kills := 0) -> void:
 	GameStats.coins = gold
 	GameStats.items = items.duplicate(true) # never alias the server's dictionary
 	GameStats.hotbar = hotbar.duplicate()
 	GameStats.hot_slot = hot_slot
 	GameStats.quest = quest
+	GameStats.quest_kills = quest_kills
 	GameStats.changed.emit()
 
 # ---------------- state replication ----------------
@@ -1125,6 +1150,7 @@ func server_record_enemy_kill(enemy_name: String, attacker: int) -> void:
 		print("[Net] %s slew %s" % [players[attacker]["name"], enemy_name])
 		players[attacker]["kills"] += 1
 		_sync_players()
+		_credit_quest_kill(attacker)
 	rpc("cl_enemy_died", enemy_name)
 
 @rpc("authority", "call_remote", "reliable")

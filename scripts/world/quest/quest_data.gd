@@ -28,6 +28,18 @@ const QUESTS := {
 		## conversation is local, so this is the half the server can check.
 		"done_at": "king",
 	},
+	## What the King sends you off with as the conversation ends ("I'll do it
+	## now."), so it is waiting on the HUD the moment you leave him.
+	"kill_bandits": {
+		"name": "Kill the bandits",
+		"target": "bandit_camp",
+		"height": 3.0,
+		"from": "king",
+		## Bandits to put down. A quest carrying `kills` is counted by the
+		## server (`Net._credit_quest_kill`) and finishes ITSELF the moment the
+		## count is reached — there is no `done_at`, so nobody to report back to.
+		"kills": 25,
+	},
 	"bandit_camp": {
 		"name": "Drive off the bandits",
 		"target": "bandit_camp",
@@ -53,6 +65,21 @@ static func label(id: String) -> String:
 	if not QUESTS.has(id):
 		return id
 	return str(QUESTS[id].get("name", id))
+
+## How many kills this quest asks for, or 0 when it is not that kind of quest.
+## The server is the only thing that counts them.
+static func kills_needed(id: String) -> int:
+	if not QUESTS.has(id):
+		return 0
+	return int(QUESTS[id].get("kills", 0))
+
+## What the HUD heading reads: the name, plus "7/25" while a quest is counting.
+## Formatting lives here so the heading has no idea which quests count.
+static func progress_label(id: String, kills: int) -> String:
+	var needed := kills_needed(id)
+	if needed <= 0:
+		return label(id)
+	return "%s  %d/%d" % [label(id), clampi(kills, 0, needed), needed]
 
 ## Group the quest's target wears. A `QuestAnchor` joins it from its own
 ## `_enter_tree`; a character already in the level joins it in the scene.
