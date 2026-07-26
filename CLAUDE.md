@@ -149,6 +149,27 @@ mixed pile.
 - Cinematic's letterbox bars stay pure black on purpose: they are the edge of
   the shot, not a surface with UI on it. They are the one exception the test
   below skips.
+- ANY SCROLLING LIST SETS `follow_focus = true` ON ITS ScrollContainer. Six rows
+  are on screen, the shop's stock and the cheat menu's item list are both longer
+  than that, and A PAD HAS NO WHEEL AND NO SCROLLBAR TO DRAG: the only way down
+  a list is the highlight walking there, so a view that does not follow it makes
+  the list simply END at row six for anyone on a controller, with the focus on
+  something they cannot see. It is one line and it is not optional.
+- A list rebuilt in the same frame it is re-focused needs an extra nudge:
+  `follow_focus` scrolls the instant focus lands, and rows built this frame have
+  not been sorted yet, so they all still claim to be at the top and the view
+  scrolls home while the highlight sits on row twelve. The shop asks again
+  (`ensure_control_visible`) one frame later, after the container has laid itself
+  out — see `_restore_focus`. A list that always re-focuses its FIRST row (the
+  cheat menu) needs none of this, because home is where the view belongs anyway.
+- Test: `--headless res://tests/test_menu_scroll.tscn` (prints
+  `SCROLLTEST RESULT=PASS/FAIL`) — walks the shop's stock down with REAL
+  `ui_down` events (the pad's d-pad and stick) and checks at EVERY step that the
+  highlighted row is still inside the visible window, and that the list really
+  scrolled rather than being tall enough to cheat. Needs no server: a shop panel
+  is local. Checked every step and not just at the end, because a list that
+  jumps a page at a time passes an end-state check while flickering the row you
+  are on off the top.
 - Test: `--headless res://tests/test_ui_theme.tscn` (prints
   `UITEST RESULT=PASS/FAIL`) — the three hexes, the sheet loading, the font
   really reaching a Control, a panel's structure (paint behind the content,
@@ -159,7 +180,9 @@ mixed pile.
   — it renders) opens the REAL shop, dialog box and quest corner over a
   stand-in world and
   saves a PNG of each, plus a swatch sheet of the three shades and the font at
-  every size the game uses, into `user://ui_preview`.
+  every size the game uses, into `user://ui_preview`. The shop is shot TWICE —
+  as opened, and after walking nine rows down it the way a pad walks it. If
+  `shop_scrolled.png` looks the same as `shop.png`, the list is stuck at the top.
 
 ## The mouse pointer
 

@@ -39,6 +39,18 @@ func _ready() -> void:
 
 	ShopSystem.open("blacksmith")
 	await _shot("shop")
+	# And again after walking down the stock the way a pad walks it: the list is
+	# longer than the six rows on screen, so this is the shot that shows the view
+	# following the highlight (see tests/test_menu_scroll.tscn, which measures
+	# it). A pad has no wheel and no scrollbar — if this shot is identical to the
+	# one above, the list is stuck at the top.
+	for _i in 9:
+		var down := InputEventAction.new()
+		down.action = "ui_down"
+		down.pressed = true
+		Input.parse_input_event(down)
+		await get_tree().process_frame
+	await _shot("shop_scrolled")
 	ShopSystem.close()
 
 	DialogSystem.start("blacksmith")

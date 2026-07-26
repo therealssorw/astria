@@ -299,6 +299,11 @@ func _build() -> void:
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(PANEL_W, ROW_H * 6)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# The list follows the highlight, for the reason the shop's does: "Give item"
+	# is every item in the catalogue and a pad cannot drag a scrollbar. Every page
+	# here focuses its FIRST row, so there is none of the shop's stale-rect
+	# trouble — the top is where the view belongs on a rebuild anyway.
+	scroll.follow_focus = true
 	vbox.add_child(scroll)
 	_rows = VBoxContainer.new()
 	_rows.add_theme_constant_override("separation", 3)

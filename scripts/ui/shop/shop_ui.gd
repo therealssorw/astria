@@ -26,6 +26,7 @@ var _purse: Label
 var _buy_tab: Button
 var _sell_tab: Button
 var _rows: VBoxContainer
+var _scroll: ScrollContainer
 var _hint: Label
 var _selling := false
 var _flash_left := 0.0
@@ -227,7 +228,15 @@ func _restore_focus() -> void:
 			buttons.append(c)
 	if buttons.is_empty():
 		return
-	buttons[clampi(_focus_row, 0, buttons.size() - 1)].grab_focus()
+	var row := buttons[clampi(_focus_row, 0, buttons.size() - 1)]
+	row.grab_focus()
+	# `follow_focus` scrolls the instant focus lands, and these rows were built
+	# this same frame — the container has not sorted them yet, so every one of
+	# them still says it is at the top and the view scrolls home while the
+	# highlight sits on row twelve. Ask again once they know where they are.
+	await get_tree().process_frame
+	if is_open() and is_instance_valid(row) and row.has_focus():
+		_scroll.ensure_control_visible(row)
 
 func _set_selling(on: bool) -> void:
 	if _selling == on:
@@ -288,14 +297,20 @@ func _build() -> void:
 	tabs.add_child(_sell_tab)
 	vbox.add_child(tabs)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(PANEL_W, ROW_H * 6)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	vbox.add_child(scroll)
+	_scroll = ScrollContainer.new()
+	_scroll.custom_minimum_size = Vector2(PANEL_W, ROW_H * 6)
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# THE LIST FOLLOWS THE HIGHLIGHT. Six rows are on screen and the stock is
+	# longer than that, and a gamepad has no scroll wheel and no scrollbar to
+	# drag: walking down past the sixth row moved the focus onto something the
+	# player could not see, so the shop simply ran out at row six for anyone on a
+	# controller.
+	_scroll.follow_focus = true
+	vbox.add_child(_scroll)
 	_rows = VBoxContainer.new()
 	_rows.add_theme_constant_override("separation", 3)
 	_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_rows)
+	_scroll.add_child(_rows)
 
 	var footer := HBoxContainer.new()
 	_hint = Label.new()
