@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://c2oteqcaemm3l"]
+
+[ext_resource type="Script" uid="uid://bdghot0bj7ino" path="res://scripts/entities/npc/npc_character.gd" id="1_6sjqk"]
+[ext_resource type="Resource" uid="uid://rocntasqtr3d" path="res://Assets/Data/Npcs/villager.tres" id="2_s7kpa"]
+
+[node name="Villager" type="Node3D" unique_id=1118195069]
+script = ExtResource("1_6sjqk")
+definition = ExtResource("2_s7kpa")

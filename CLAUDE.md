@@ -293,6 +293,28 @@ mixed pile.
   must set its anchors and all four offsets by hand. The tutorial popup was
   centring itself inside nothing and hanging half off the left edge.
 
+## Intro cutscene
+
+- Loading into the island opens on a black screen: you hear your own head
+  complain, the world fades up over ~4.5s, and then you ask where you are.
+  `IntroCutscene` (autoload, `scripts/ui/cutscene/intro_cutscene.gd`) owns the
+  black rect and the timing; the two lines are ordinary DialogData entries
+  (`intro_wake`, `intro_where`) so all writing still happens in one file.
+- Three hooks, nothing else: `world.gd` calls `arm()` from `_ready` (before a
+  frame of the island is drawn, which is the whole point), `player.gd` calls
+  `on_local_pawn_ready()` for the local pawn, and `main_menu.gd` calls
+  `abort()` so a drop mid-cutscene never leaves the menu behind a black screen.
+  Only an armed cutscene plays, so a respawn cannot replay it.
+- Its ending is also what tells the tutorial the player can see
+  (`Net.report_tutorial_ready`), so nothing swings at somebody still looking at
+  black.
+- It is purely local and cosmetic — nothing about it is networked.
+- Its black rect is exempt from the "nothing is painted black" theme test, for
+  the same reason Cinematic's bars are: it is the shot, not a surface with UI
+  on it.
+- Test: `--headless res://tests/test_intro_cutscene.tscn` (prints
+  `INTROTEST RESULT=PASS/FAIL`).
+
 ## The tutorial
 
 - What happens: you load onto the starter island while it is being raided, you
@@ -342,12 +364,17 @@ mixed pile.
   learn to swing at something that moves; the heavy and lock-on are taught
   against it standing still; then it wakes all the way up for a 1v1, and only
   when that is won does the rest of the raid arrive.
-- THE TUTORIAL DOES NOT TALK. It teaches with POPUPS: a control name, the
+- It TEACHES with POPUPS: a control name, the
   button for whatever device is in hand, and one line saying what the thing
   does — `popup: {title, body}` on the gate step, drawn by
   `scripts/ui/tutorial/tutorial_overlay.gd`. Nothing to dismiss, and it never
   takes the controls off the player the way a dialog box would. There is no
-  story in it, no `tut_*` dialog and no spoken word anywhere in it.
+  and it TALKS with dialog: `tut_taunt` as the bandit that put you down opens
+  its mouth, `tut_reinforcements` as its friends arrive, and `tut_mayor` when
+  the villager sees you off. A step's line plays first and its popup follows,
+  so the two are never on screen at once.
+- Nobody is hit through a box they cannot close: a wave that arrives talking
+  carries `await_dialog: true` and lands STILL until the line has been read.
 - A gate still waits for the action to FINISH (`FINISH_GRACE`, capped so
   holding block cannot stall it) before moving on, so the next popup does not
   replace the last one while the swing it asked for is still playing.
@@ -393,9 +420,10 @@ mixed pile.
 - Rewriting a lesson is rewriting its `popup` in `TutorialData.STEPS`. The
   banners (`banner`) are the other text: one line under the quest heading
   during the parts that are just a fight.
-- There is no hand-off at the end and no quest: the last bandit going down IS
-  the end, and you are put on the real island. The villager who used to walk
-  over was removed with it.
+- A villager walks over once the raid is beaten and points you at the King,
+  which is where `NEXT_QUEST` is sending you anyway. She is the NPC Builder's
+  `scenes/entities/npc/built/villager.tscn`, so recolouring her in the builder
+  recolours her here.
 - Test: `--headless res://tests/test_tutorial.tscn` (prints
   `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
   lesson: joining lands on a copy and not the real island, the copy has the

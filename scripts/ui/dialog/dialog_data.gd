@@ -44,6 +44,95 @@ extends RefCounted
 const END := ""
 
 const DIALOGS := {
+	# The intro cutscene talks to nobody: IntroCutscene plays these two on its
+	# own, the first over the black screen and the second once the island has
+	# faded up. They are separate conversations because the fade happens
+	# BETWEEN them — the cutscene waits for the first to close.
+	"intro_wake": {
+		"start": "ugh",
+		"lines": {
+			"ugh": {
+				"text": "Ugh.
+my head feels awful",
+				"auto": 1.8,
+				"goto": END,
+			},
+		},
+	},
+	"intro_where": {
+		"start": "where",
+		"lines": {
+			"where": {
+				"text": "where even am I?",
+				"auto": 2.0,
+				"goto": END,
+			},
+		},
+	},
+	# --- tutorial ---
+	# The tutorial TEACHES with popups (TutorialData.STEPS) and TALKS with
+	# these: the bandit that put you on the ground, its friends arriving, and
+	# the villager afterwards. The step table names them and nothing else does.
+	#
+	# The first thing anyone says to you, straight after "where even am I?" —
+	# and the answer to it: this is who put you down.
+	"tut_taunt": {
+		"speaker": "Bandit",
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "Still not down, huh?",
+				"auto": 1.5,
+				"goto": END,
+			},
+		},
+	},
+	# ...and its friends arriving once it is beaten.
+	"tut_reinforcements": {
+		"speaker": "Bandit",
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "This one's a fighter.
+Don't worry, we'll put you down.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	# The villager who walks over once the raid is beaten, and hands you on.
+	"tut_mayor": {
+		"speaker": "Villager",
+		"start": "alright",
+		"lines": {
+			"alright": {
+				"text": "Are you alright?",
+				"answers": [
+					{"text": "Yes, it's just my head.", "goto": "standing"},
+				],
+			},
+			"standing": {
+				"text": "You look way better than you should be after taking out those thugs.",
+				"answers": [
+					{"text": "Who even were they?", "goto": "thugs"},
+					{"text": "What should I do now?", "goto": "mayor"},
+				],
+			},
+			# back to the question it was asked from, so the other one is still
+			# there to ask
+			"thugs": {
+				"text": "They're thugs who keep raiding our village.
+Sadly, I'm sure they'll come back.",
+				"goto": "standing",
+			},
+			"mayor": {
+				"text": "Head to the King. I'm sure he'll reward you for this fight.",
+				"answers": [
+					{"text": "Sounds good!", "goto": END},
+				],
+			},
+		},
+	},
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",

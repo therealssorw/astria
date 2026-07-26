@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/world/tutorial/tutorial_arena.gd" id="1_arena"]
 [ext_resource type="PackedScene" uid="uid://bcp1r2wkvlu5k" path="res://Assets/Models/World/Islands/StarterIsland/Island1.glb" id="2_island"]
+[ext_resource type="PackedScene" uid="uid://c2oteqcaemm3l" path="res://scenes/entities/npc/built/villager.tscn" id="3_villager"]
 
 [node name="TutorialArena" type="Node3D"]
 script = ExtResource("1_arena")
@@ -11,3 +12,5 @@ transform = Transform3D(500, 0, 0, 0, 500, 0, 0, 0, 500, 14.0139475, 0, 35.03484
 
 [node name="PlayerSpawn" type="Marker3D" parent="Island1"]
 transform = Transform3D(0.9999997, 0, 0, 0, 0.9999997, 0, 0, 0, 0.9999997, 0.45381576, 0.1839312, -0.47876972)
+
+[node name="Villager" parent="." instance=ExtResource("3_villager")]

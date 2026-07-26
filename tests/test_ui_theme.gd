@@ -90,8 +90,9 @@ func _test_panel() -> void:
 	frame.free()
 
 ## Walks every screen that is actually live and fails on anything still painted
-## black. Cinematic's letterbox bars are the ONE exception and stay black on
-## purpose: they are the edge of the shot, not a surface with UI on it.
+## black. Two exceptions, and both for the same reason — they are the shot
+## rather than a surface with UI on it: Cinematic's letterbox bars, and the
+## intro cutscene's rect, which IS the black the world fades up out of.
 func _test_no_black() -> void:
 	var board: Control = (load("res://scripts/ui/scoreboard.gd") as Script).new()
 	add_child(board)
@@ -102,6 +103,8 @@ func _test_no_black() -> void:
 	var panels := 0
 	for node in _walk(get_tree().root):
 		if Cinematic != null and Cinematic.is_ancestor_of(node):
+			continue
+		if IntroCutscene != null and IntroCutscene.is_ancestor_of(node):
 			continue
 		if node is ColorRect:
 			panels += 1

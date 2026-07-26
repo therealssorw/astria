@@ -128,7 +128,7 @@ func server_report_pressed(id: int, step_id: String) -> void:
 	var step := _step_of(id)
 	if step.get("id", "") != step_id:
 		return
-	if bool(step.get("client_gate", false)):
+	if step.get("kind", "") == "talk" or bool(step.get("client_gate", false)) 			or bool(step.get("await_dialog", false)):
 		_advance(id)
 
 # ---------------- server: the walk through the table ----------------
@@ -230,10 +230,15 @@ func _enter_step(id: int, index: int) -> void:
 		"wave":
 			_spawn_wave(id, int(step.get("count", 1)), TutorialData.hold_for(step))
 			Net.tutorial_step(id, str(step["id"]))
-			_advance(id) # a wave is a beat, not a wait
+			# a wave is usually just a beat — but one that arrives talking waits
+			# for its own line to be read, so nobody is hit mid-sentence
+			if not bool(step.get("await_dialog", false)):
+				_advance(id)
 			return
 		"gate", "clear":
 			_set_wave_ai(id, TutorialData.hold_for(step))
+		"talk":
+			_set_wave_ai(id, Enemy.Hold.NONE)
 		"end":
 			server_end(id, true)
 			return
@@ -305,9 +310,12 @@ func client_enter(slot: int) -> void:
 		_my_arena.owner_peer = multiplayer.get_unique_id()
 		world.add_child(_my_arena)
 		_my_arena.global_position = TutorialData.slot_origin(slot)
+	_my_arena.villager_arrived.connect(_on_villager_arrived)
 
 func client_leave() -> void:
 	if is_instance_valid(_my_arena):
+		if _my_arena.villager_arrived.is_connected(_on_villager_arrived):
+			_my_arena.villager_arrived.disconnect(_on_villager_arrived)
 		# the server's own copy is freed by server_end; only free one we made
 		if not multiplayer.is_server():
 			_my_arena.queue_free()
@@ -316,10 +324,27 @@ func client_leave() -> void:
 	step_changed.emit(_my_step)
 
 func client_step(step_id: String) -> void:
-	# the popup is drawn straight off this by the HUD overlay; there is nothing
-	# to say and nothing to wait for
-	_my_step = TutorialData.step(TutorialData.index_of(step_id))
-	step_changed.emit(_my_step)
+	var step := TutorialData.step(TutorialData.index_of(step_id))
+	_my_step = step
+	step_changed.emit(step)
+	if step.is_empty():
+		return
+	if str(step.get("kind", "")) == "talk":
+		# nobody talks from across the square: the villager walks over first,
+		# and arriving is what opens the box
+		if is_instance_valid(_my_arena):
+			_my_arena.send_villager()
+		else:
+			_on_villager_arrived()
+		return
+	# the line first, then the popup (the overlay hides while a box is up)
+	var spoke := await _say(step)
+	if bool(step.get("await_dialog", false)):
+		# the bandits are standing still until this line has been read
+		if spoke and DialogSystem.is_open():
+			await DialogSystem.closed
+		if _my_step.get("id", "") == step.get("id", ""):
+			Net.report_tutorial_pressed(str(step["id"]))
 
 func client_is_running() -> bool:
 	return not _my_step.is_empty()
@@ -327,6 +352,55 @@ func client_is_running() -> bool:
 ## The step the HUD should be drawing, empty when there is nothing to draw.
 func client_step_data() -> Dictionary:
 	return _my_step
+
+## Say this step's line. If something is already talking — the bandit's taunt
+## as it lands, say — this queues behind it instead of cutting it off
+## mid-sentence, because a wave and the gate after it arrive in the same frame.
+func _say(step: Dictionary) -> bool:
+	var line := str(step.get("dialog", ""))
+	if line == "" or not DialogData.has(line):
+		return false
+	if DialogSystem.is_open():
+		await DialogSystem.closed
+		# the run moved on (or ended) while we were waiting our turn
+		if str(_my_step.get("dialog", "")) != line:
+			return false
+	return DialogSystem.start(line, _speaker_for(step))
+
+## Who is saying this line, if anyone in the world is. The camera frames them
+## and the cinematic bars come in; a line with nobody behind it (the player's
+## own head, which is what the teaching lines are) gets neither.
+func _speaker_for(step: Dictionary) -> Node3D:
+	if not DialogData.get_conversation(str(step.get("dialog", ""))).has("speaker"):
+		return null
+	if str(step.get("kind", "")) == "talk":
+		return _my_arena.villager() if is_instance_valid(_my_arena) else null
+	# whichever bandit is nearest: in the tutorial the only ones anywhere near
+	# are this player's own, and a client is not told the others exist
+	var pawn := get_tree().get_first_node_in_group("local_player")
+	if pawn == null:
+		return null
+	var best: Node3D = null
+	var best_d := INF
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d: float = (e as Node3D).global_position.distance_to(pawn.global_position)
+		if d < best_d:
+			best_d = d
+			best = e
+	return best
+
+## The villager got here: say its piece, and the tutorial ends when the box does.
+func _on_villager_arrived() -> void:
+	var step := _my_step
+	if str(step.get("kind", "")) != "talk":
+		return
+	if await _say(step):
+		await DialogSystem.closed
+		if _my_step.get("id", "") != step.get("id", ""):
+			return # the run ended under us while the box was open
+	Net.report_tutorial_pressed(str(step["id"]))
 
 ## Gates the server cannot see (lock-on) are watched here and reported.
 func _unhandled_input(event: InputEvent) -> void:

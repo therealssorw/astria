@@ -12,18 +12,18 @@ extends Control
 ## script decides what is on screen and this file only knows how to draw it.
 ##
 ## The button NAME comes from InputDevice, so a pad player is never told to
-## press a key that isn't on their pad. Styling follows the dialog box and the
+## press a key that isn't on their pad. The popup does NOT pulse: a box that
+## breathes at you while you are reading it is harder to read, and what it
+## wants is a button press rather than attention. Styling follows the dialog box and the
 ## cheat menu (black panel, gold accent) — a popup is not a new language.
 
 const GOLD := Color(0.95, 0.79, 0.42)
-const PULSE_SPEED := 3.0
 
 var _gate: PanelContainer
 var _title: Label
 var _button: Label
 var _hint: Label
 var _banner: Label
-var _t := 0.0
 
 func _ready() -> void:
 	# Full rect BY HAND. `set_anchors_preset()` keeps the control's current
@@ -60,8 +60,7 @@ func popup_fully_visible() -> bool:
 	return rect.position.x >= 0.0 and rect.position.y >= 0.0 \
 			and rect.end.x <= view.x and rect.end.y <= view.y
 
-func _process(delta: float) -> void:
-	_t += delta
+func _process(_delta: float) -> void:
 	var step: Dictionary = Tutorial.client_step_data()
 	_update_gate(step)
 	_update_banner(step)
@@ -82,7 +81,6 @@ func _update_gate(step: Dictionary) -> void:
 	# a player who taps it gets a jab and no idea why nothing happened
 	_button.text = ("HOLD  " + button) if TutorialData.gate_is_hold(action) else button
 	_hint.text = str(popup.get("body", ""))
-	_gate.modulate.a = 0.82 + 0.18 * sin(_t * PULSE_SPEED)
 
 func _update_banner(step: Dictionary) -> void:
 	var text := str(step.get("banner", ""))
@@ -91,7 +89,7 @@ func _update_banner(step: Dictionary) -> void:
 
 func _build() -> void:
 	# gold edge, like the cheat menu: a lesson is not an ordinary panel
-	_gate = UiTheme.panel(UiTheme.INK, 0.72, Vector4i(26, 26, 12, 12),
+	_gate = UiTheme.panel(UiTheme.INK, UiTheme.PANEL_ALPHA, Vector4i(26, 26, 12, 12),
 			Color(GOLD.r, GOLD.g, GOLD.b, 0.75))
 	# Anchored to the middle of the screen BY HAND, and every offset set: the
 	# PRESET_CENTER helper bakes absolute offsets out of whatever size the

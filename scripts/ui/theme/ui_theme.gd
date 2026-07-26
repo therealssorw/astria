@@ -38,8 +38,10 @@ const SHEET_MEAN := 0.56
 ## How strongly the grain reads over a panel body. Text sits on this, so it is
 ## deliberately faint — the paint is meant to be felt, not read.
 const PANEL_GRAIN := 0.30
-## Panels are this opaque over the world unless a screen says otherwise.
-const PANEL_ALPHA := 0.94
+## Panels are SOLID. Text with the world moving behind it is the thing that
+## was wrong with every screen before this file existed, and 6% of a fight
+## showing through is still 6% of a fight showing through.
+const PANEL_ALPHA := 1.0
 ## ...and a full-screen backdrop hides this much of the world behind it. There
 ## is no text on it, so the sheet is drawn at full strength.
 const BACKDROP_ALPHA := 0.72

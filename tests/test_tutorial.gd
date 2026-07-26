@@ -136,7 +136,9 @@ class Runner:
 		var overlay := get_tree().current_scene.find_child("TutorialOverlay", true, false)
 		if overlay == null:
 			return "the HUD has no tutorial overlay"
-		if not await _until(overlay.showing_popup, 120):
+		# the line plays first and the popup follows it, so this has to allow
+		# for the longest line typing itself out and holding its beat
+		if not await _until(overlay.showing_popup, 480):
 			return "%s never put its popup on screen" % step_id
 		# ...and all of it is on screen, not half off an edge
 		if not overlay.popup_fully_visible():
@@ -205,7 +207,29 @@ class Runner:
 			_fail("the copy of the island has no collision")
 			return
 
-		# 2. the bandits wait for the player's own client to report in
+		# 2. nothing moves until the cutscene says the player can see. It
+		#    reports that for itself at the end, so this waits it out the way a
+		#    player does rather than faking the hand-off.
+		await tree.physics_frame
+		if not _my_bandits().is_empty():
+			_fail("bandits attacked during the cutscene")
+			return
+		if not await _until(func() -> bool: return not IntroCutscene.is_playing(), 2400):
+			_fail("the intro cutscene never finished")
+			return
+
+		# 2b. the bandit arrives talking, and must be STILL until its line has
+		#     been read — no punching anyone through a box they cannot close
+		if not await _until(func() -> bool: return _step_id() == "first_bandit", 600):
+			_fail("the first bandit never arrived (at '%s')" % _step_id())
+			return
+		for b in _my_bandits():
+			if b.hold_mode != Enemy.Hold.STILL:
+				_fail("the bandit was not held still while it talked")
+				return
+		if not await _until(func() -> bool: return Cinematic.is_framing(), 600):
+			_fail("nothing framed the bandit while it was talking")
+			return
 
 		# 3. ONE bandit, switched on a piece at a time. Block first, against an
 		#    enemy that can do nothing but punch you on a slow count.
@@ -304,6 +328,10 @@ class Runner:
 		_kill_all_bandits()
 
 		# 4. the raid being beaten IS the end: no quest, no hand-off
+		if not await _until(func() -> bool: return _step_id() == "villager", 600):
+			_fail("the villager never came after the raid was beaten")
+			return
+		Net.report_tutorial_pressed("villager")
 		if not await _until(func() -> bool: return not Tutorial.server_running(ME)):
 			_fail("the tutorial never ended")
 			return
