@@ -108,7 +108,7 @@ const DIALOGS := {
 				],
 			},
 			"caravan": {
-				"text": "Ah, very well.\nThey've been a sort of a problem.\nThey just recently raided our caravan.",
+				"text": "Ah, very well.\nThey've been a sort of a problem.\nThey recently just raided our caravan full of food and supplies, and now I am unsure if we are able to survive next season.",
 				"answers": [
 					{"text": "I want to help stop that.", "goto": "hideout"},
 				],
