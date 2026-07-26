@@ -156,6 +156,50 @@ static func palette_of(model_path: String) -> PackedColorArray:
 	var part := _load_part(model_path)
 	return part.get("palette", PackedColorArray()) as PackedColorArray
 
+## The part ON ITS OWN: the art as drawn, in this NpcPart's colours, turned to
+## face +Z, and bound to nothing. It is for LOOKING at a piece with no character
+## under it — an item icon of a helmet — which is why it skips everything the
+## rigged path does for the sake of MOVEMENT: no bones, no cell claiming (there
+## is no neighbouring part to lose voxels to) and no seam caps (nothing here can
+## come apart, because nothing here can move). The part's `offset` and `scale`
+## are skipped for the same reason: both are nudges for fitting it onto a body.
+static func preview_mesh(spec: NpcPart) -> MeshInstance3D:
+	if spec == null:
+		return null
+	var data := _load_part(spec.model_path)
+	if data.is_empty():
+		return null
+	var verts: PackedVector3Array = data["verts"]
+	var entry: PackedInt32Array = data["entry"]
+	var palette: PackedColorArray = data["palette"]
+	if verts.is_empty():
+		return null
+
+	var cols := PackedColorArray()
+	cols.resize(verts.size())
+	for i in verts.size():
+		cols[i] = _colour(spec, palette, entry[i])
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = data["norms"]
+	arrays[Mesh.ARRAY_COLOR] = cols
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.85
+	mat.metallic = 0.0
+	mesh.surface_set_material(0, mat)
+
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	# Goxel models are built facing +X; turned here so a piece looked at from the
+	# front is looked at from ITS front, the same way a rigged character is.
+	mi.rotate_y(MODEL_YAW)
+	return mi
+
 
 # ---------------------------------------------------------------------------
 # rigging

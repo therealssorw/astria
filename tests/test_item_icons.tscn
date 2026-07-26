@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c4qk8nyx0icon"]
+
+[ext_resource type="Script" path="res://tests/test_item_icons.gd" id="1_itemicons"]
+
+[node name="ItemIconsTest" type="Node"]
+script = ExtResource("1_itemicons")
