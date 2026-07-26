@@ -26,6 +26,11 @@ extends RefCounted
 ##               # typing and then follows its "goto" by itself. That is what a
 ##               # cutscene monologue uses; the player can still press interact
 ##               # to hurry it along.
+##               #
+##               # A "\n" inside `text` is a PAGE BREAK, not a line break: the
+##               # box types up to it, holds, then wipes and types the rest in
+##               # the same box. Use it for a beat between two thoughts. Never
+##               # use it to control wrapping — the box wraps by itself.
 ##           },
 ##       },
 ##   }
@@ -110,16 +115,60 @@ const DIALOGS := {
 			},
 		},
 	},
-	# The villager who walks over once the city is clear. This is the hand-off
-	# to the mayor — the mayor's own conversation is not written yet.
-	"tut_mayor": {
-		"speaker": "Villager",
+	# The bandit, when it stops being a lesson and starts being a fight.
+	"tut_duel": {
+		"speaker": "Bandit",
 		"start": "line",
 		"lines": {
 			"line": {
-				"text": "PLACEHOLDER — thank the player, then send them to the mayor.",
-				"auto": 2.4,
+				"text": "Still not down, huh?",
+				"auto": 1.5,
 				"goto": END,
+			},
+		},
+	},
+	# ...and its friends arriving once it is beaten.
+	"tut_reinforcements": {
+		"speaker": "Bandit",
+		"start": "line",
+		"lines": {
+			"line": {
+				"text": "This one's a fighter.\nDon't worry, we'll put you down.",
+				"auto": 1.6,
+				"goto": END,
+			},
+		},
+	},
+	# The villager who walks over once the raid is beaten. This is the hand-off
+	# to the mayor — the mayor's own conversation is not written yet.
+	"tut_mayor": {
+		"speaker": "Villager",
+		"start": "alright",
+		"lines": {
+			"alright": {
+				"text": "Are you alright?",
+				"answers": [
+					{"text": "Yes — it's just my head.", "goto": "standing"},
+				],
+			},
+			"standing": {
+				"text": "You look way better than you should be after taking out those thugs.",
+				"answers": [
+					{"text": "Who even were they?", "goto": "thugs"},
+					{"text": "What should I do now?", "goto": "mayor"},
+				],
+			},
+			# back to the question it was asked from, so the other one is still
+			# there to ask
+			"thugs": {
+				"text": "They're thugs who keep raiding our village.\nSadly, I'm sure they'll come back.",
+				"goto": "standing",
+			},
+			"mayor": {
+				"text": "Head to the Mayor's office. I'm sure he'll reward you for this fight.",
+				"answers": [
+					{"text": "Sounds good!", "goto": END},
+				],
 			},
 		},
 	},

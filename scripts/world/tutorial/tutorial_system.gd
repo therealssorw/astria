@@ -143,9 +143,9 @@ func _process(delta: float) -> void:
 				# a gate is a lesson, not a lock: give in eventually rather than
 				# leave a player in front of bandits frozen forever
 				run["gate_time"] = float(run.get("gate_time", 0.0)) + delta
-				if run["gate_time"] >= TutorialData.GATE_PATIENCE:
+				if run["gate_time"] >= TutorialData.patience(step):
 					print("[Tutorial] peer %d spent %.0fs on '%s' — moving on"
-							% [id, TutorialData.GATE_PATIENCE, step.get("id", "")])
+							% [id, TutorialData.patience(step), step.get("id", "")])
 					_advance(id)
 
 ## Did the player really do it? Read off the SERVER's own copy of the pawn,
@@ -195,24 +195,20 @@ func _enter_step(id: int, index: int) -> void:
 				_advance(id)
 				return
 		"wave":
-			_spawn_wave(id, int(step.get("count", 1)), bool(step.get("frozen", false)),
-					bool(step.get("attacks", false)))
+			_spawn_wave(id, int(step.get("count", 1)), TutorialData.hold_for(step))
 			Net.tutorial_step(id, str(step["id"]))
-			_advance(id) # a wave is a beat, not a wait: the gate after it holds
+			_advance(id) # a wave is a beat, not a wait: the step after it holds
 			return
-		"gate":
-			# `hold: false` means the lesson IS the fight — leave it running
-			_freeze_wave(id, bool(step.get("hold", true)), bool(step.get("attacks", false)))
-		"clear":
-			_freeze_wave(id, false, false)
+		"gate", "clear":
+			_set_wave_ai(id, TutorialData.hold_for(step))
 		"talk":
-			_freeze_wave(id, false, false)
+			_set_wave_ai(id, Enemy.Hold.NONE)
 		"end":
 			server_end(id, true)
 			return
 	Net.tutorial_step(id, str(step["id"]))
 
-func _spawn_wave(id: int, count: int, frozen: bool, attacks: bool) -> void:
+func _spawn_wave(id: int, count: int, hold: Enemy.Hold) -> void:
 	var run: Dictionary = _runs.get(id, {})
 	if run.is_empty():
 		return
@@ -220,21 +216,19 @@ func _spawn_wave(id: int, count: int, frozen: bool, attacks: bool) -> void:
 	var spawned: int = int(run.get("spawned", 0))
 	for i in count:
 		var bandit := Net.server_spawn_tutorial_bandit(id,
-				arena.bandit_spawn(spawned + i), frozen, attacks)
+				arena.bandit_spawn(spawned + i), hold)
 		if bandit:
 			run["bandits"].append(bandit)
 	run["spawned"] = spawned + count
 
-## `frozen` holds the bandits where they are; `attacks` lets a held one still
-## step in and swing, which is the whole point of the block lesson.
-func _freeze_wave(id: int, frozen: bool, attacks: bool) -> void:
+## Switch every bandit of this run down (or up) to what the step wants of them.
+func _set_wave_ai(id: int, hold: Enemy.Hold) -> void:
 	var run: Dictionary = _runs.get(id, {})
 	if run.is_empty():
 		return
 	for b in run["bandits"]:
 		if is_instance_valid(b) and not b.dead:
-			b.frozen = frozen
-			b.frozen_attacks = attacks
+			b.set_hold(hold)
 
 func _wave_cleared(id: int) -> bool:
 	var run: Dictionary = _runs.get(id, {})

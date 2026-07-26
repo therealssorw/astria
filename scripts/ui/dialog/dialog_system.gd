@@ -36,6 +36,12 @@ var _full_text := ""
 var _typing := false
 var _type_accum := 0.0
 var _auto_left := -1.0 # >= 0 while an "auto" line is counting down to its goto
+## The current line split on "\n": each is typed on its own, in the same box.
+var _pages: PackedStringArray = []
+var _page := 0
+## >= 0 while a finished page is being held before the next one is typed.
+## -1 with pages left means it is waiting for a press instead.
+var _page_left := -1.0
 var _player: Node
 
 func _ready() -> void:
@@ -75,6 +81,9 @@ func close() -> void:
 	dialog_id = ""
 	_typing = false
 	_auto_left = -1.0
+	_page_left = -1.0
+	_pages = []
+	_page = 0
 	_sfx.stop()
 	_root.visible = false
 	set_process(false)
@@ -93,12 +102,28 @@ func _show_line(line_id: String) -> void:
 		return
 	_line_id = line_id
 	var line: Dictionary = _lines[line_id]
-	_full_text = str(line.get("text", ""))
 	_clear_answers()
+	# A "\n" in a line is a PAGE BREAK, not a line break: the box clears and
+	# types the next part in the same breath, the way the two halves of the
+	# intro monologue read. Wrapping is the Label's job, not the writer's.
+	_pages = []
+	for part in str(line.get("text", "")).split("\n"):
+		var trimmed := str(part).strip_edges()
+		if trimmed != "":
+			_pages.append(trimmed)
+	if _pages.is_empty():
+		_pages.append("")
+	_page = 0
+	_start_page()
+
+## Begin typing the current page of the current line.
+func _start_page() -> void:
+	_full_text = _pages[_page]
 	_body.text = _full_text
 	_body.visible_characters = 0
 	_type_accum = 0.0
 	_auto_left = -1.0
+	_page_left = -1.0
 	_typing = true
 	_hint.text = "%s — skip" % InputDevice.menu_accept_label()
 	_hint.visible = true
@@ -108,7 +133,23 @@ func _finish_typing() -> void:
 	_typing = false
 	_body.visible_characters = -1
 	_sfx.stop()
-	_build_answers(_lines.get(_line_id, {}))
+	var line: Dictionary = _lines.get(_line_id, {})
+	# more of this line to say: hold the finished page for a beat (or for a
+	# press) and then wipe it for the next one — the answers wait for the end
+	if _page < _pages.size() - 1:
+		var auto: Variant = line.get("auto")
+		_page_left = (float(auto) if auto is float or auto is int else AUTO_PAUSE) \
+				if auto != null else -1.0
+		_hint.text = "%s — continue" % InputDevice.menu_accept_label()
+		return
+	_build_answers(line)
+
+## Wipe the box and type the next page of the same line.
+func _next_page() -> void:
+	if _page >= _pages.size() - 1:
+		return
+	_page += 1
+	_start_page()
 
 ## A line with no explicit answers still gets one button, so keyboard and
 ## gamepad advance the same way everywhere — unless it is an "auto" line, which
@@ -162,6 +203,11 @@ func _process(delta: float) -> void:
 	# the pawn can die or despawn mid-conversation
 	if not _typing and not is_instance_valid(_player):
 		_player = _local_player()
+	if _page_left >= 0.0:
+		_page_left -= delta
+		if _page_left < 0.0:
+			_next_page()
+		return
 	if _auto_left >= 0.0:
 		_auto_left -= delta
 		if _auto_left < 0.0:
@@ -198,6 +244,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if _typing:
 		_finish_typing()
+	elif _page < _pages.size() - 1:
+		_next_page() # more of this line to say before there is anything to pick
 	elif _auto_left >= 0.0:
 		_advance_auto() # a cutscene line: hurry it along instead of choosing
 	else:

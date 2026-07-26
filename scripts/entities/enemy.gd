@@ -103,17 +103,33 @@ var puppet := false   # true on clients: no AI, just replicated state
 ## belonging to that peer's private copy of the city: it only ever fights that
 ## player, and only that player is told it exists (see Net).
 var owner_peer := 0
-## Server-side hold, used by the tutorial's gates: the bandit stops DECIDING —
-## no chasing, no strafing, no circling — so the fight stays where it is while
-## one button is taught. It is not a statue: it still turns to face you, so it
-## reads as a bandit sizing you up rather than a prop.
-var frozen := false
-## ...and with this set it also finishes the walk into reach and swings, star
-## and all. A held bandit that cannot hit you teaches nothing — "block this"
-## needs a punch actually coming at you.
-var frozen_attacks := false
-## How fast a held bandit closes that last step: a menacing walk, not a charge.
+## How much of this bandit is switched on. The tutorial builds a fight up one
+## piece at a time — a lesson is only teachable when the enemy is doing exactly
+## the thing being taught and nothing else — so the AI arrives in levels rather
+## than being all-or-nothing:
+##
+##   NONE     — an ordinary bandit: the whole state machine, as in the world.
+##   STILL    — completely still. No turning, no stepping, no swinging: a
+##              training dummy that can still be hit, staggered and killed.
+##              This is what the punching lessons are taught against.
+##   ATTACKER — rooted and facing you, throwing ONE punch every
+##              `hold_attack_period` and doing nothing else. That metronome IS
+##              the block lesson: a punch you can see coming, on a beat slow
+##              enough to answer.
+enum Hold { NONE, STILL, ATTACKER }
+
+## Grace before a bandit that has just been let loose may swing — long enough
+## for the line it says as it wakes up.
+const WAKE_GRACE := 1.8
+
+var hold_mode: Hold = Hold.NONE
+## Seconds between an ATTACKER's punches — the beat the block lesson stands on.
+@export var hold_attack_period := 3.0
+## How fast an ATTACKER closes the last step into reach: a walk, not a charge.
+## It has to be able to actually land the punch it is demonstrating.
 @export var held_step_mult := 0.45
+
+var _hold_swing_left := 0.0
 
 var health: float
 var dead := false
@@ -220,8 +236,9 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	# held by a tutorial gate: still solid, still hittable, just not deciding
-	if frozen:
+	# held by a tutorial step: still solid, still hittable, but only doing the
+	# one thing that lesson is about
+	if hold_mode != Hold.NONE:
 		_tick_held(delta)
 		return
 
@@ -401,46 +418,68 @@ func net_die() -> void:
 
 # ---------------- combat states ----------------
 
-## A bandit held by a tutorial gate. It keeps its ground and makes no
-## decisions, but it is awake: it watches you, and if the gate wants a punch to
-## block it takes the last step in and swings — wind-up star, damage and all,
-## on the same timings as a real one. Everything the state machine would do
-## (strafing, circling, chasing you across the island) stays switched off.
+## A bandit with only part of itself switched on, for one tutorial lesson.
+## STILL is a training dummy — it does not even turn — and ATTACKER is a
+## metronome: face the player, walk the last step into reach, and land one
+## punch every `hold_attack_period` with the real wind-up, star and damage.
+## Everything the state machine would otherwise do — chasing, strafing,
+## circling, guarding — stays off in both.
 func _tick_held(delta: float) -> void:
 	cooldown_left = maxf(0.0, cooldown_left - delta)
-	if not is_instance_valid(player) or player.get("dead"):
-		_acquire_player()
 	velocity.x = move_toward(velocity.x, 0.0, 25.0 * delta)
 	velocity.z = move_toward(velocity.z, 0.0, 25.0 * delta)
-	# rocked back or parried: wide open, exactly as it would be in a real fight
+	# rocked back or parried: wide open, exactly as in a real fight
 	if stagger_left > 0.0:
 		stagger_left -= delta
 		attacking = false
-		if not is_on_floor():
-			velocity.y -= _gravity() * delta
-		move_and_slide()
-		_animate(delta)
-		return
-	if is_instance_valid(player):
-		aggroed = true # it has seen you: that is what being held in a fight is
-		_face_player(delta)
-		if attacking:
-			_tick_attack(delta)
-		elif frozen_attacks:
-			var dist := global_position.distance_to(player.global_position)
-			if dist > attack_range:
-				var dir := player.global_position - global_position
-				dir.y = 0.0
-				dir = dir.normalized() * move_speed * held_step_mult
-				velocity.x = dir.x
-				velocity.z = dir.z
-			elif cooldown_left <= 0.0:
-				_start_swing()
+		_hold_swing_left = maxf(_hold_swing_left, stagger_left)
+	elif hold_mode == Hold.STILL:
+		attacking = false # a dummy does nothing at all, not even look at you
+	else:
+		if not is_instance_valid(player) or player.get("dead"):
+			_acquire_player()
+		if is_instance_valid(player):
+			aggroed = true # being held in a fight means it has seen you
+			_face_player(delta)
+			if attacking:
+				_tick_attack(delta)
+			else:
+				_hold_swing_left -= delta
+				var dist := global_position.distance_to(player.global_position)
+				if dist > attack_range:
+					# close the last step, or the punch it is demonstrating
+					# lands on nothing
+					var dir := player.global_position - global_position
+					dir.y = 0.0
+					dir = dir.normalized() * move_speed * held_step_mult
+					velocity.x = dir.x
+					velocity.z = dir.z
+				elif _hold_swing_left <= 0.0:
+					_hold_swing_left = hold_attack_period
+					_start_swing()
 	if not is_on_floor():
 		velocity.y -= _gravity() * delta
 	_separate() # two held bandits must still not stand inside each other
 	move_and_slide()
 	_animate(delta)
+
+## Switch this bandit's AI down to one lesson's worth (or back up to all of it).
+func set_hold(mode: Hold) -> void:
+	if hold_mode == mode:
+		return
+	hold_mode = mode
+	if mode == Hold.ATTACKER:
+		# the first punch comes a beat after the lesson starts, not instantly:
+		# nobody can block something that arrives with the instruction
+		_hold_swing_left = hold_attack_period
+	elif mode == Hold.STILL:
+		attacking = false
+	else:
+		# waking all the way up: it says its piece before it swings. A bandit
+		# let loose an arm's length away while the player is held by its own
+		# taunt would land a hit nobody could have answered.
+		attacking = false
+		cooldown_left = maxf(cooldown_left, WAKE_GRACE)
 
 func _enter(next: CombatState, duration: float) -> void:
 	state = next

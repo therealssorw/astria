@@ -8,14 +8,9 @@ extends RefCounted
 ##
 ##   "wait_ready" — hold until that player's client says the intro cutscene is
 ##                  over. Nothing moves before the player can see.
-##   "wave"       — spawn `count` bandits around the spawn. `frozen: true`
-##                  holds them where they are (they still watch you), and
-##                  `attacks: true` lets a held one walk into reach and swing.
-##   "gate"       — hold the fight and teach ONE button. `hold: false` leaves
-##                  the fight running instead, which is right when the lesson
-##                  IS the fight (the first swing, the heavy in the last wave),
-##                  and `attacks: true` is what makes a block gate blockable.
-##                  Its `dialog` plays first (write those lines in DialogData),
+##   "wave"       — spawn `count` bandits around the spawn, switched on to that
+##                  step's `ai` level.
+##   "gate"       — teach ONE button. Its `dialog` plays first (see DialogData),
 ##                  then the prompt goes up and the step waits until the player
 ##                  really does it. `action` is the input map name; the server
 ##                  watches for the real thing (a swing, a raised guard) rather
@@ -29,9 +24,22 @@ extends RefCounted
 ##                  when the conversation closes.
 ##   "end"        — out of the copy and onto the real island; it is torn down.
 ##
-## The pacing rules the table follows: a pause only ever buys a NEW button, the
-## fight starts moving again the moment it is pressed, and a bandit is never
-## inert — held means "stays where it is", not "stops being a bandit".
+## Every step carries an `ai` level that says how much of the bandits is
+## switched on for it (see Enemy.Hold):
+##
+##   "attacker" — rooted, punching once every three seconds and nothing else.
+##   "still"    — a training dummy: it does not move, turn or swing.
+##   "full"     — an ordinary bandit, everything on.
+##
+## That ladder IS the lesson. A fight is built one piece at a time: you meet a
+## bandit that can only punch and learn to block it, it stops dead and you
+## learn to hit it back, then it wakes all the way up for a straight duel, and
+## only when that is won does the rest of the raid arrive. A step never teaches
+## a button against an enemy doing something else at the same time.
+##
+## `patience` (seconds) overrides GATE_PATIENCE for one gate — the block gate
+## uses it, because there a lesson nobody answers is also a lesson that is
+## hitting you.
 
 ## Scene instanced once per player in the tutorial: a copy of the starter
 ## island, spawn marker and all.
@@ -60,26 +68,31 @@ static var GATE_PATIENCE := 25.0
 
 const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
-	# a bandit comes at you the moment you can see: the first thing the game
-	# teaches is that this is a fight, not a slideshow
-	{"id": "first_bandit", "kind": "wave", "count": 1},
-	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack",
-			"hold": false},
-	{"id": "kill_first", "kind": "clear", "banner": "Put him down."},
-	# two more, HELD but swinging: they walk into reach and punch, which is the
-	# only way "block this" can be taught — a frozen statue teaches nothing
-	{"id": "pair", "kind": "wave", "count": 2, "frozen": true, "attacks": true},
+
+	# ONE bandit for the whole lesson, switched on a piece at a time.
+	# First it can only punch, on a slow count — so the first thing you are
+	# taught is the answer to it.
+	{"id": "first_bandit", "kind": "wave", "count": 1, "ai": "attacker"},
 	{"id": "teach_block", "kind": "gate", "action": "block", "dialog": "tut_block",
-			"attacks": true},
-	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "dialog": "tut_lock_on",
-			"client_gate": true, "attacks": true},
-	{"id": "kill_pair", "kind": "clear", "banner": "Two of them. Keep your guard up."},
-	# no holding from here on: the last wave is a real fight, and the heavy is
-	# taught inside it
-	{"id": "last_wave", "kind": "wave", "count": 3},
+			"ai": "attacker", "patience": 14.0},
+
+	# now it stops dead and lets you learn what to do back
+	{"id": "teach_attack", "kind": "gate", "action": "attack", "dialog": "tut_attack",
+			"ai": "still"},
 	{"id": "teach_heavy", "kind": "gate", "action": "attack_heavy", "dialog": "tut_heavy",
-			"hold": false},
-	{"id": "clear_city", "kind": "clear", "banner": "Drive them out."},
+			"ai": "still"},
+	{"id": "teach_lock_on", "kind": "gate", "action": "lock_on", "dialog": "tut_lock_on",
+			"client_gate": true, "ai": "still"},
+
+	# everything it knows, one on one, with no interruptions left
+	{"id": "duel", "kind": "clear", "ai": "full", "dialog": "tut_duel",
+			"banner": "One on one. Finish him."},
+
+	# and only then the rest of the raid
+	{"id": "reinforcements", "kind": "wave", "count": 3, "ai": "full",
+			"dialog": "tut_reinforcements"},
+	{"id": "clear_raid", "kind": "clear", "ai": "full", "banner": "Drive them out."},
+
 	{"id": "mayor", "kind": "talk", "dialog": "tut_mayor"},
 	{"id": "leave", "kind": "end"},
 ]
@@ -115,6 +128,19 @@ static func gate_hint(step_id: String) -> String:
 		"teach_heavy":
 			return "A heavy swing — tapping it only jabs"
 	return ""
+
+## How much of a bandit a step switches on.
+static func hold_for(step: Dictionary) -> Enemy.Hold:
+	match str(step.get("ai", "full")):
+		"still":
+			return Enemy.Hold.STILL
+		"attacker":
+			return Enemy.Hold.ATTACKER
+	return Enemy.Hold.NONE
+
+## How long this gate waits before giving in and moving the lesson on.
+static func patience(step: Dictionary) -> float:
+	return float(step.get("patience", GATE_PATIENCE))
 
 ## True when the button has to be HELD, not tapped. The prompt says so in the
 ## button itself, because a tap and a hold are the same button here and a

@@ -3,11 +3,14 @@ extends Node
 ##   godot --headless --path . res://tests/test_tutorial.tscn
 ## Hosts a listen server in-process and walks the whole lesson: joining puts
 ## the player on their own copy of the starter island rather than the real one,
-## nothing moves until the intro cutscene reports in, each gate holds the fight
-## frozen until the player really presses that button, clearing a wave moves it
-## on by itself, and finishing hands the player to the real island with the
-## copy and its bandits gone. Then the cheat restarts it, and a gate nobody
-## answers gives in rather than trapping the player in front of frozen bandits.
+## nothing moves until the intro cutscene reports in, and then the fight is
+## built up a piece at a time — one bandit that can only punch you (and really
+## does) while block is taught, the same bandit completely still while the
+## swings are taught, a full duel, and only then the rest of the raid. Each
+## gate waits for the button to be really pressed. Finishing hands the player
+## to the real island with the copy and its bandits gone; the cheat restarts it
+## on a fresh copy; and a gate nobody answers gives in rather than trapping the
+## player in a lesson that is hitting them.
 ##
 ## The gates are worked with REAL input events. That matters: the heavy gate
 ## used to be unpassable by tapping the button, which left three bandits frozen
@@ -60,6 +63,12 @@ class Runner:
 				out.append(e)
 		return out
 
+	func _any_swinging() -> bool:
+		for b in _my_bandits():
+			if b.attacking:
+				return true
+		return false
+
 	func _kill_all_bandits() -> void:
 		# the tutorial's contract is "nothing of that wave is still standing",
 		# which is exactly the flag a real kill sets on the server
@@ -102,14 +111,11 @@ class Runner:
 		var held := _my_bandits()
 		if held.is_empty():
 			return "%s has nothing to fight" % step_id
+		# each lesson switches the bandits down to exactly what it teaches
+		# against: a metronome for the block gate, a dummy for the swings
 		for b in held:
-			# a gate holds the fight unless the lesson IS the fight, and a held
-			# bandit is never inert — it watches you, and on an "attacks" gate
-			# it walks in and swings so there is something to block
-			if b.frozen != bool(step.get("hold", true)):
-				return "%s did not hold the fight as its step asks" % step_id
-			if b.frozen and b.frozen_attacks != bool(step.get("attacks", false)):
-				return "%s did not set the held bandits swinging" % step_id
+			if b.hold_mode != TutorialData.hold_for(step):
+				return "%s did not set the bandit's AI to '%s'" % [step_id, step.get("ai", "")]
 		# a gate must not open on its own
 		await get_tree().physics_frame
 		if _step_id() != step_id:
@@ -185,21 +191,52 @@ class Runner:
 			return
 		Net.report_tutorial_ready()
 
-		# 3. the four gates, in order, each holding the fight still
-		var why := await _pass_gate("teach_attack", "attack")
+		# 3. ONE bandit, switched on a piece at a time. Block first, against an
+		#    enemy that can do nothing but punch you on a slow count.
+		if not await _until(func() -> bool: return _step_id() == "teach_block", 600):
+			_fail("the block lesson never came up (at '%s')" % _step_id())
+			return
+		if _my_bandits().size() != 1:
+			_fail("the lesson should open one on one, found %d" % _my_bandits().size())
+			return
+		# it really throws the punch there is to block — waited out, not assumed
+		var began := Time.get_ticks_msec()
+		if not await _until(_any_swinging, 300):
+			_fail("the block lesson never threw a punch to block")
+			return
+		var why := await _pass_gate("teach_block", "block")
 		if why != "":
 			_fail(why)
 			return
-		if not await _until(func() -> bool: return _step_id() == "kill_first"):
-			_fail("the fight never resumed after the first gate")
+		# ...and it opened because we blocked, not because the patience valve
+		# gave up on us. Those look identical from the outside, so time it.
+		var spent := float(Time.get_ticks_msec() - began) / 1000.0
+		var patience := TutorialData.patience(TutorialData.step(
+				TutorialData.index_of("teach_block")))
+		if spent >= patience - 2.0:
+			_fail("the block gate ran out its %.0fs patience (%.1fs) instead of opening on a block"
+					% [patience, spent])
 			return
-		for b in _my_bandits():
-			if b.frozen:
-				_fail("bandits stayed frozen after the gate opened")
-				return
-		_kill_all_bandits()
 
-		why = await _pass_gate("teach_block", "block")
+		# then it stops dead and lets you learn to hit it back
+		if not await _until(func() -> bool: return _step_id() == "teach_attack"):
+			_fail("the punch lesson did not follow the block lesson")
+			return
+		var dummy: Node3D = _my_bandits()[0]
+		var stood_at: Vector3 = dummy.global_position
+		for i in 90:
+			await tree.physics_frame
+			if dummy.attacking:
+				_fail("the bandit swung during the punch lesson")
+				return
+		if dummy.global_position.distance_to(stood_at) > 0.35:
+			_fail("the bandit was not completely still for the punch lesson")
+			return
+		why = await _pass_gate("teach_attack", "attack")
+		if why != "":
+			_fail(why)
+			return
+		why = await _pass_gate("teach_heavy", "attack_heavy")
 		if why != "":
 			_fail(why)
 			return
@@ -207,23 +244,26 @@ class Runner:
 		if why != "":
 			_fail(why)
 			return
-		if not await _until(func() -> bool: return _step_id() == "kill_pair"):
-			_fail("the pair never became a fight")
+
+		# 3b. the duel: everything switched on, still one on one
+		if not await _until(func() -> bool: return _step_id() == "duel"):
+			_fail("the duel never started")
 			return
-		if _my_bandits().size() != 2:
-			_fail("expected two bandits in the second wave, found %d" % _my_bandits().size())
+		if _my_bandits().size() != 1:
+			_fail("the duel is not one on one (%d bandits)" % _my_bandits().size())
 			return
+		for b in _my_bandits():
+			if b.hold_mode != Enemy.Hold.NONE:
+				_fail("the duel left the bandit still held back")
+				return
 		_kill_all_bandits()
 
-		why = await _pass_gate("teach_heavy", "attack_heavy")
-		if why != "":
-			_fail(why)
-			return
-		if not await _until(func() -> bool: return _step_id() == "clear_city"):
-			_fail("the last wave never became a fight")
+		# 3c. and only then the rest of the raid
+		if not await _until(func() -> bool: return _step_id() == "clear_raid"):
+			_fail("the reinforcements never arrived")
 			return
 		if _my_bandits().size() != 3:
-			_fail("expected three bandits in the last wave, found %d" % _my_bandits().size())
+			_fail("expected three more bandits, found %d" % _my_bandits().size())
 			return
 		_kill_all_bandits()
 
@@ -266,18 +306,18 @@ class Runner:
 		if again.get_instance_id() == first_arena_id:
 			_fail("the restart handed back the copy it had just freed")
 			return
-		if not await _until(func() -> bool: return _step_id() == "teach_attack", 600):
+		if not await _until(func() -> bool: return _step_id() == "teach_block", 600):
 			_fail("the restarted tutorial never reached its first gate (at '%s')" % _step_id())
 			return
 
 		# 6. nobody presses anything: the gate must give in rather than leave
-		#    the player staring at bandits frozen in place with no way out
-		if not await _until(func() -> bool: return _step_id() != "teach_attack", 600):
+		#    the player being punched by a lesson with no way out
+		if not await _until(func() -> bool: return _step_id() != "teach_block", 1500):
 			_fail("an unanswered gate never gave in — the tutorial can be bricked")
 			return
 		for b in _my_bandits():
-			if b.frozen:
-				_fail("the fight stayed frozen after the gate gave in")
+			if b.hold_mode == Enemy.Hold.ATTACKER:
+				_fail("the lesson stayed on its metronome after the gate gave in")
 				return
 
 		print("TUTTEST RESULT=PASS")

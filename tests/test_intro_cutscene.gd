@@ -62,9 +62,22 @@ func _run() -> void:
 	_check(IntroCutscene.darkness() == 1.0, "screen not black while the first line plays")
 	_check(pawn.ui_open, "player not frozen during the first line")
 
-	# it types and advances itself — nothing presses a button here
-	ok = await _until(func() -> bool: return DialogSystem.dialog_id == "")
-	_check(ok, "first line never advanced on its own")
+	# it types and advances itself — nothing presses a button here. The "\n" in
+	# the line is a PAGE BREAK: the box types "Ugh.", wipes, and types the rest
+	# in the same box, so the two halves are never on screen together and a
+	# newline is never typed as one.
+	var pages: Array = []
+	var frames := 0
+	while DialogSystem.dialog_id == IntroCutscene.DARK_DIALOG and frames < 4000:
+		var shown: String = DialogSystem._body.text
+		if shown != "" and not pages.has(shown):
+			pages.append(shown)
+		await get_tree().process_frame
+		frames += 1
+	_check(DialogSystem.dialog_id == "", "first line never advanced on its own")
+	_check(pages.size() == 2, "the first line did not page on its \\n (saw %s)" % [pages])
+	for shown: String in pages:
+		_check(not shown.contains("\n"), "a page break was typed as a line break")
 
 	ok = await _until(func() -> bool:
 		return IntroCutscene.darkness() < 0.99 and IntroCutscene.darkness() > 0.0)

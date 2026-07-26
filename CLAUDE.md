@@ -216,20 +216,26 @@ mixed pile.
   teaches one button, `clear` is just a fight and ends when the wave is dead,
   `talk` is the villager, `end` sends you to the island. Reordering the lesson
   is reordering that array.
-- A gate holds the BANDITS (`Enemy.frozen`), never the player: you can walk and
-  look around while the fight stays where it is. It opens on the real action,
-  read off the server's own copy of the pawn (`attacking` / `attack_is_heavy` /
-  `blocking`), so the lesson cannot be clicked past without doing it. Lock-on
-  lives entirely in the client's camera, so that one step carries
-  `client_gate: true` and is taken on trust — the most a patched client wins is
-  skipping its own lesson.
-- HELD IS NOT INERT, and this is the rule to keep. A held bandit stops
-  DECIDING (no chasing, circling or strafing) but still turns to face you, and
-  with `attacks: true` it walks the last step into reach and swings — wind-up
-  star, damage and all (`Enemy._tick_held`). That is the only way a block gate
-  can be taught: there has to be a punch actually coming at you. Gates that
-  ARE the fight (the first swing, the heavy in the last wave) carry
-  `hold: false` and never stop anything.
+- THE FIGHT IS BUILT UP A PIECE AT A TIME, and that is the design. Every step
+  carries an `ai` level that says how much of the bandits is switched on
+  (`Enemy.Hold`): `attacker` is rooted and throws ONE punch every
+  `hold_attack_period` (3s) and nothing else, `still` is a training dummy that
+  does not move, turn or swing, `full` is an ordinary bandit. So: you meet a
+  bandit that can only punch and learn to BLOCK it, it stops dead and you learn
+  to swing and to hold a heavy, then it wakes all the way up for a straight
+  1v1, and only when that is won does the rest of the raid arrive. A button is
+  never taught against an enemy doing something else at the same time.
+- A gate holds the BANDITS, never the player: you can walk and look around
+  while the lesson waits. It opens on the real action, read off the server's
+  own copy of the pawn (`attacking` / `attack_is_heavy` / `blocking`), so it
+  cannot be clicked past without doing it. Lock-on lives entirely in the
+  client's camera, so that one step carries `client_gate: true` and is taken on
+  trust — the most a patched client wins is skipping its own lesson.
+- An `attacker` really does hit you (`Enemy._tick_held` walks it the last step
+  into reach and swings on the real timings, star and damage included) — a
+  block lesson with nothing coming at you teaches nothing. Which is why that
+  gate carries its own shorter `patience`: a lesson nobody answers is also a
+  lesson that is punching them.
 - Tutorial bandits are spawned facing the player and already awake
   (`Enemy.face_toward` + `aggroed`, in `Net.server_spawn_tutorial_bandit`).
   An ordinary bandit only wakes when the player walks into its vision cone, so
@@ -259,10 +265,13 @@ mixed pile.
   `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
   lesson: joining lands on a copy and not the real island, the copy has the
   island's geometry, its spawn and its collision, nothing moves until the
-  cutscene reports in, every gate holds the fight frozen until the button is
-  really pressed, clearing a wave advances by itself, finishing leaves no copy
-  and no bandits behind, the cheat restarts it on a fresh copy, and an
-  unanswered gate gives in instead of bricking.
+  cutscene reports in, the block lesson really throws a punch, the punch lesson
+  really stands still, the duel is one on one with everything switched on,
+  reinforcements come after it, finishing leaves no copy and no bandits behind,
+  the cheat restarts it on a fresh copy, and an unanswered gate gives in
+  instead of bricking. It also TIMES the block gate, because a gate that opened
+  on the patience valve and one that opened on a real block look identical from
+  outside.
 - The gates are driven with REAL input events (`Input.parse_input_event`), not
   by setting `attacking`/`blocking` behind the game's back. That is the only
   reason the heavy-gate stall was caught — every flag-level test of it passed.
@@ -282,6 +291,11 @@ mixed pile.
   which is a level-editing fact, not something a script should decide. Put new
   NPCs in it when you place them, alongside the code-set groups
   (`enemies`, `player`, `npc_interactable`, `spawn_point`, `teleport_<id>`).
+- A `
+` in a line's `text` is a PAGE BREAK, not a line break: the box types up
+  to it, holds a beat (the line's `auto`, or a press), then wipes and types the
+  rest in the same box. It is how the intro's "Ugh." lands before "my head
+  feels awful". Never use it for wrapping — the box wraps by itself.
 - All conversation text lives in `scripts/ui/dialog/dialog_data.gd` — the file
   header documents the format (speaker / start / lines, each line with `text`
   plus either `answers` or a plain `goto`; `goto: END` closes the box). An
