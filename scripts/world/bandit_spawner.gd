@@ -28,10 +28,18 @@ func _ready() -> void:
 	timer.start()
 	get_tree().create_timer(initial_delay).timeout.connect(_try_spawn)
 
+## Prunes the dead and freed, and reports how many of THIS camp's bandits are
+## left. Written as a plain loop on purpose: Array[Node].filter() with a
+## lambda that types its parameter (func(b: Node)) fails at runtime with
+## "Cannot convert argument 1 from Object to Object", which left _spawned
+## empty, made this return 0 forever and so let the camp spawn without limit.
 func _alive_count() -> int:
-	_spawned = _spawned.filter(func(b: Node) -> bool:
-		return is_instance_valid(b) and not b.get("dead"))
-	return _spawned.size()
+	var live: Array[Node] = []
+	for b in _spawned:
+		if is_instance_valid(b) and not b.dead:
+			live.append(b)
+	_spawned = live
+	return live.size()
 
 func _try_spawn() -> void:
 	if _alive_count() >= max_alive:

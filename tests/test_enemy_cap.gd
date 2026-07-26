@@ -59,6 +59,14 @@ class Runner:
 			_fail("expected the cap %d to fill, got %d" % [Net.MAX_LIVE_ENEMIES, n])
 			return
 
+		# 1b. the camp's OWN tally must survive pruning. Array[Node].filter()
+		# with a typed-parameter lambda errors at runtime and silently empties
+		# the list, which reported 0 alive forever and defeated max_alive.
+		var own: int = spawner._alive_count()
+		if own != Net.MAX_LIVE_ENEMIES:
+			_fail("spawner counts %d of its own, expected %d" % [own, Net.MAX_LIVE_ENEMIES])
+			return
+
 		# 2. a SECOND camp must not raise the total
 		var extra := BanditSpawner.new()
 		extra.name = "ExtraSpawner"
