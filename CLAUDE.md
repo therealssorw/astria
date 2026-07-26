@@ -125,15 +125,15 @@ Current structure to follow and extend:
 
 - `Assets/` — all imported content
   - `Animations/Humanoid/` — animation FBX clips, grouped by purpose
-    (`Combat/LightM1`, `Combat/HeavyM1`, `Combat/Blocking`, `Movement/Idle`,
-    `Movement/Walking`, `Movement/Running`, `Movement/Sliding`, ...)
+	(`Combat/LightM1`, `Combat/HeavyM1`, `Combat/Blocking`, `Movement/Idle`,
+	`Movement/Walking`, `Movement/Running`, `Movement/Sliding`, ...)
   - `Models/` — `Entity/Humanoid/Human/` for characters, `World/Islands/...`
-    for level geometry; skeleton bone maps live in `Models/Entity/Humanoid/`;
-    NPC part models in `Entity/Humanoid/VoxelNpc/Parts/<Set>/<Slot>/`
+	for level geometry; skeleton bone maps live in `Models/Entity/Humanoid/`;
+	NPC part models in `Entity/Humanoid/VoxelNpc/Parts/<Set>/<Slot>/`
   - `Textures/` — mirrors the model grouping (e.g. `Humanoid/Human/Rouge/`);
-    `Textures/UI/` is screen furniture rather than anything in the world
+	`Textures/UI/` is screen furniture rather than anything in the world
   - `Fonts/<Family>/` — a typeface and the licence it shipped with, kept
-    together (`EBGaramond/` holds the .ttf files and its OFL.txt)
+	together (`EBGaramond/` holds the .ttf files and its OFL.txt)
   - `Data/Npcs/` — `NpcDefinition` resources written by the NPC Builder
 - `scenes/` — .tscn scene files; reusable building blocks go in subfolders
   (`scenes/entities/npc/`, `scenes/effects/`, `scenes/ui/`); built NPCs land
@@ -1810,27 +1810,61 @@ mixed pile.
 
 ## Dungeons
 
-- `scenes/starterDungeon.tscn` is a floor slab plus Area3D markers; the stone
-  shell around it is GENERATED at load by `scripts/world/dungeon/
-  dungeon_walls.gd` on the `Walls` node. Nothing is hand-placed, so do not add
-  wall transforms to the .tscn — change `RUNS` or move a marker instead.
-- The ring comes from the floor mesh's own bounds and each doorway comes from
-  the `*Enterence` marker it belongs to, so moving a marker moves its doors and
-  resizing the slab moves the ring. A run's `from`/`to` is either a fraction of
-  the floor or another marker's NAME, which is how two walls meet exactly.
-- `prefab_scale` (0.2) converts the raw voxel prefabs to player scale: wall
-  3.8m tall, doorway 2.8m x 2.6m against a 1.92m capsule. Tune it there, not by
-  scaling nodes in the scene.
+- `scenes/starterDungeon.tscn` is the floor model (`dungeon1.glb`) and nothing
+  else; the stone shell around it is GENERATED at load by `scripts/world/
+  dungeon/dungeon_walls.gd` on the `Walls` node under it. Nothing is
+  hand-placed, so do not add wall transforms to the .tscn — reshape the floor
+  in Blender and the walls follow it.
+- THE WALLS COME FROM THE FLOOR'S OWN OUTLINE. Every triangle is rasterised
+  straight DOWN into a grid, the outside is flood-filled, and a wall goes on
+  each edge between a cell the flood reached and one it did not. There is no
+  plan, no marker and no list of runs to keep in step with the art.
+- THAT REPLACED WALLING THE BOUNDING BOX, which is worth knowing before anyone
+  "simplifies" it back. Tracing the model's bounds plus a few hand-written
+  interior runs works only on a rectangular slab: on a real plan — an L of
+  rooms, a corridor, a staircase — it walls a rectangle round the lot, putting
+  walls across open rooms and burying the corridor. That is what the first
+  version did and why it was thrown away.
+- THERE ARE NO DOORWAYS AND NOTHING NEEDS ONE. An opening is simply where the
+  floor carries on, so rooms join wherever the floor joins them. The old
+  version had to cut doors back into walls it should never have drawn, keyed to
+  `*Enterence` markers that had to be kept in step by hand. `halfdoor.gltf` is
+  consequently unused — if real doors are ever wanted they are a new feature,
+  not a resurrection of that machinery.
+- STAIRS AND SPLIT LEVELS COST NOTHING. Flattening throws the height away, so a
+  staircase is solid floor and gets walls down both sides rather than one
+  across every step; the height comes back per block off the floor beside it,
+  so a wall climbs with the stairs. A stair riser is upright and flattens to a
+  LINE with no area, so triangle EDGES are stamped as well as triangle area —
+  sample by area alone and a staircase punches a hole through the footprint.
+- Flood-filling from the OUTSIDE rather than taking every inside/outside edge
+  is what fills holes in: a gap the mesh happens to leave, or a pillar modelled
+  into the floor, would otherwise get its own little wall ring mid-room.
+- `prefab_scale` (0.2) converts the raw voxel prefab to player scale: a wall
+  3.8 m tall against a 1.92 m capsule. `cells_per_wall` (4) is how closely the
+  outline hugs the real floor edge. Tune both there, not by scaling nodes.
 - Solid stretches are tiled to FIT (count rounded, length stretched), never at
-  a fixed size with the last block hanging over — the overhang both widens
-  doorways past the doors filling them and pushes blocks through each other at
-  junctions, giving coplanar faces that z-fight exactly like overlapping NPC
-  parts. Door leaves are mirrored with a 180-degree turn, not a negative scale,
-  which would flip the winding and light them inside out.
+  a fixed size with the last block hanging over — the overhang pushes blocks
+  through each other at junctions, giving coplanar faces that z-fight exactly
+  like overlapping NPC parts. Perpendicular blocks DO interpenetrate at every
+  corner, on purpose: both runs cover it, which is what makes a corner solid
+  instead of notched, and they share no coplanar face.
+- PACKED ARRAYS ARE VALUE TYPES, which cost two rounds of debugging here. A
+  `PackedByteArray`/`PackedVector3Array` handed to a helper is COPIED, so the
+  helper fills in the copy and the caller sees nothing — the builder reported
+  no error and built no walls. Hence the grid lives in members and the
+  triangles are collected into a plain `Array`. Anything new that accumulates
+  into a Packed array through a function call has the same trap.
 - Test: `--headless res://tests/test_dungeon_walls.tscn` (prints
-  `DUNGEONTEST RESULT=PASS/FAIL`). It checks every threshold has its pair, that
-  no doorway is bricked up, that nothing floats off the slab, that no two
-  blocks share space, that every piece has collision, and that a player fits.
+  `DUNGEONTEST RESULT=PASS/FAIL`). It re-measures the floor ITSELF off the mesh
+  rather than reading the builder's grid back, then checks that no wall stands
+  in open floor (the bounding-box bug), that there is enough wall to go round
+  the perimeter, that walls sit at the height of the floor beside them, that no
+  two parallel blocks share space, that every piece has collision, and that
+  rebuilding does not duplicate. Note the collision shape is found by TYPE: a
+  node parented before its parent is in the tree auto-names to
+  `@CollisionShape3D@48`, and the old test's name lookup silently matched none
+  of them, so its overlap check passed on an empty set.
 
 ## Multiplayer
 
