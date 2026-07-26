@@ -49,6 +49,13 @@ const QUESTS := {
 		## `dialog_id` of the NPC who gives it out. The server only hands the
 		## quest over to a pawn actually standing at that NPC — see
 		## `Net._server_start_quest`.
+		##
+		## NOTE: the blacksmith's conversation was cut down to "buy" and
+		## "goodbye", so no answer offers this quest any more — the rule below
+		## still holds (and test_quest walks it), but in the game only the cheat
+		## menu starts it. Put an answer carrying
+		## `"action": "start_quest:bandit_camp"` back in his dialog to hand it
+		## out again.
 		"from": "blacksmith",
 	},
 }

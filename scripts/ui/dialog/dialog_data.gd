@@ -49,45 +49,14 @@ const DIALOGS := {
 		"start": "greeting",
 		"lines": {
 			"greeting": {
-				"text": "Careful, the coals are hot. You've the look of someone who breaks more steel than they buy. What do you need?",
+				"text": "What can I do for ya",
 				"answers": [
-					{"text": "Show me what's for sale.", "goto": END, "action": "open_shop"},
-					{"text": "What do you make here?", "goto": "wares"},
-					{"text": "Can you repair my gear?", "goto": "repair"},
-					{"text": "Nothing. Just looking around.", "goto": "farewell"},
+					{"text": "Show me your goods (Buy)", "goto": END, "action": "open_shop"},
+					{"text": "I'm gonna leave now", "goto": "farewell"},
 				],
-			},
-			"wares": {
-				"text": "Blades, mostly. Axes when the woodcutters come down the hill. Give me a day and good iron and I'll make you something that outlives you.",
-				"answers": [
-					{"text": "Let's trade, then.", "goto": END, "action": "open_shop"},
-					{"text": "I'll keep that in mind.", "goto": "greeting"},
-					{"text": "Where do you get your iron?", "goto": "iron"},
-				],
-			},
-			"iron": {
-				"text": "From the old mine east of the ridge, or I did, before the bandits made a camp of it. Now I melt down whatever the tide brings in.",
-				"answers": [
-					{"text": "I'll clear them out for you.", "goto": "bandits_yes",
-							"action": "start_quest:bandit_camp"},
-					{"text": "Maybe I'll clear them out.", "goto": "bandits"},
-					{"text": "Rough luck.", "goto": "greeting"},
-				],
-			},
-			"bandits": {
-				"text": "Ha! Then come back with your shield still in one piece and I'll believe you. Bring me ore and I'll forge you something worth carrying.",
-				"goto": "greeting",
-			},
-			"bandits_yes": {
-				"text": "You mean it? Then keep the ridge on your left and follow the smoke — you'll smell their fires before you see them. Come back and I'll have the forge lit.",
-				"goto": "greeting",
-			},
-			"repair": {
-				"text": "Anything that isn't snapped clean through. Leave it on the anvil and don't touch the quench barrel.",
-				"goto": "greeting",
 			},
 			"farewell": {
-				"text": "Suit yourself. Mind the sparks on your way out.",
+				"text": "Suit yourself",
 				"goto": END,
 			},
 		},

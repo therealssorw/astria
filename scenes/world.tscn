@@ -17,6 +17,8 @@
 [ext_resource type="PackedScene" uid="uid://c8qxtclp3r7fn" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/House1.gltf" id="16_lakw3"]
 [ext_resource type="PackedScene" path="res://scenes/entities/npc/npc_interactable.tscn" id="16_npc"]
 [ext_resource type="PackedScene" uid="uid://b51pr1sajq0e6" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/WheatPatch.gltf" id="17_pm21f"]
+[ext_resource type="PackedScene" uid="uid://gy7stjw7sll5" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/halftent.gltf" id="18_pm21f"]
+[ext_resource type="PackedScene" uid="uid://cw7thlldlacjj" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/crate.gltf" id="19_2lf6f"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_57qmd"]
 panorama = ExtResource("3_i7141")
@@ -70,7 +72,7 @@ subdivisions = 50
 editor_wave_phase = 17.55
 
 [node name="BanditSpawner" type="Node3D" parent="." unique_id=638839087 groups=["quest_bandit_camp"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 160.25618, 95, -110)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 19.029312, 95, -130.02393)
 script = ExtResource("14_spawner")
 
 [node name="InventoryUI" type="CanvasLayer" parent="." unique_id=1012517542]
@@ -81,12 +83,12 @@ script = ExtResource("15_inv")
 [node name="Enemies" type="Node3D" parent="." unique_id=294465096]
 
 [node name="BlacksmithNPC" parent="." unique_id=1661342803 groups=["npc"] instance=ExtResource("16_npc")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 235.88385, 93.00493, -152.04044)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 188.00537, 93.00493, -176.3633)
 dialog_id = "blacksmith"
 prompt_offset = Vector3(0, 2.75, 0)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="BlacksmithNPC" unique_id=1573503354]
-transform = Transform3D(0.008352024, 0, 0.099650614, 0, 0.1, 0, -0.099650614, 0, 0.008352024, -8.290399, -0.030403137, -39.371307)
+transform = Transform3D(0.008352024, 0, 0.099650614, 0, 0.1, 0, -0.099650614, 0, 0.008352024, 39.588081, -0.030403137, -15.048447)
 
 [node name="RigidBody3D" type="RigidBody3D" parent="BlacksmithNPC/MeshInstance3D" unique_id=2097015641]
 
@@ -122,9 +124,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 157.31122, 91.836174, -156.51
 [node name="Kingnpc" parent="." unique_id=1967818918 groups=["npc", "quest_king"] instance=ExtResource("15_7t5mc")]
 transform = Transform3D(0.039404184, 0, 0.99922335, 0, 1, 0, -0.99922335, 0, 0.039404184, 149.93307, 92.836174, -155.87569)
 
-[node name="NpcInteractable" parent="Kingnpc" instance=ExtResource("16_npc")]
+[node name="NpcInteractable" parent="Kingnpc" unique_id=1620172739 instance=ExtResource("16_npc")]
 dialog_id = "king"
-interact_range = 3.5
 prompt_offset = Vector3(0, 2.5, 0)
 
 [node name="House1" parent="." unique_id=367744375 instance=ExtResource("16_lakw3")]
@@ -156,3 +157,18 @@ transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 197.86626, 92.331696, -
 
 [node name="WheatPatch4" parent="." unique_id=457166055 instance=ExtResource("17_pm21f")]
 transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 197.86626, 92.331696, -142.90712)
+
+[node name="halftent" parent="." unique_id=378846636 instance=ExtResource("18_pm21f")]
+transform = Transform3D(-0.33481658, 0, -0.94228333, 0, 1, 0, 0.94228333, 0, -0.33481658, 21.016354, 92.566734, -138.98691)
+
+[node name="crate" parent="." unique_id=1602888097 instance=ExtResource("19_2lf6f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 21.67864, 91.719734, -132.63132)
+
+[node name="crate4" parent="." unique_id=1886911432 instance=ExtResource("19_2lf6f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 23.33367, 94.46501, -132.63132)
+
+[node name="crate2" parent="." unique_id=1793677370 instance=ExtResource("19_2lf6f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 11.735739, 92.27471, -146.42259)
+
+[node name="crate3" parent="." unique_id=963106693 instance=ExtResource("19_2lf6f")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 25.178156, 91.7986, -132.61406)

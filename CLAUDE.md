@@ -410,7 +410,11 @@ mixed pile.
 - Test: `--headless res://tests/test_dialog.tscn` (prints
   `DIALOGTEST RESULT=PASS/FAIL`) — needs no server, since a conversation is
   local. It walks down a branch and back out of it, which is the loop-back rule
-  above, and checks reopening still says everything.
+  above, and checks reopening still says everything. It walks the KING, because
+  he is the one with branches: the blacksmith is two lines ("buy" and
+  "goodbye") and gets a smoke test instead. Page breaks matter to a test as
+  much as to a player — `_skip_typing` steps a line page by page, so what is on
+  screen when a line is done is its LAST page, not its whole text.
 - `DialogSystem` (autoload) owns the box: semi-transparent black panel,
   typewriter reveal with the looping keyboard clatter in
   `Assets/Audio/SFX/UI/Typing/`, and answer buttons driven by mouse,
@@ -530,6 +534,21 @@ mixed pile.
 - `GameStats.coins` / `.items` are read-only MIRRORS that `cl_purse` fills, so
   UI code reads them instead of the network layer. Writing to them changes
   nothing real.
+- THE COUNTER IS WHERE THE NpcInteractable IS, not where the shopkeeper is
+  drawn. That node decides the bubble, the conversation and the server's
+  `_near_npc` check, and it draws NOTHING — so dragging it off its own NPC in
+  the editor is invisible everywhere except that the shop can no longer be
+  reached. The blacksmith's spent a while 54 m from the man at the anvil, out
+  in an empty field: he could not be talked to, so nothing could be bought from
+  him. Place a new NPC's interactable ON its model (the King's way — a child at
+  the parent's origin — makes that automatic).
+- Test: `--headless res://tests/test_shop.tscn` (prints
+  `SHOPTEST RESULT=PASS/FAIL`) — that every shop's NPC has a conversation, an
+  answer carrying `open_shop` and stock that exists in `ItemDb`; that EVERY
+  talkable NPC in the world stands within its own `interact_range` of its own
+  geometry (the rule above); and the trade itself: refused from 80 m, sold at
+  the counter for ItemDb's price, refused when unstocked or unaffordable, and
+  the sale back again.
 
 ## Hotbar
 
