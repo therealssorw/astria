@@ -724,8 +724,12 @@ func _attack_trace() -> void:
 		var flat := Vector3(to_p.x, 0, to_p.z).normalized()
 		if fwd.dot(flat) < cos(deg_to_rad(attack_cone_deg)):
 			continue
-		# `self` goes along so a parried swing staggers us in return
-		p.server_take_damage(attack_damage, flat * 3.0 + Vector3.UP * 1.5, 0, self)
+		# `self` goes along so a parried swing staggers us in return.
+		# Scaled by our level the same way our health is: a level 1 bandit is
+		# the baseline and hits for exactly the exported number, and anything
+		# above or below hits harder or softer to match how long it lives.
+		p.server_take_damage(attack_damage * CombatLevels.enemy_power(level),
+				flat * 3.0 + Vector3.UP * 1.5, 0, self)
 
 ## Sees the player only when close, in front, and unobstructed.
 func _can_see_player(dist: float) -> bool:

@@ -22,9 +22,20 @@ var quest := ""
 ## Kills counted towards that quest, when it is one that asks for them. The
 ## server counts; this is the copy the heading reads as "7/25".
 var quest_kills := 0
+## GiftData ids already handed over, as id -> true. What a conversation reads to
+## know whether it is the first time you have walked up to somebody. Like
+## everything else here it is a MIRROR — clearing it locally does not earn a
+## second suit of armor, the server refuses.
+var gifts := {}
 
 func item_count(id: String) -> int:
 	return int(items.get(id, 0))
+
+## Has this player already been handed that gift? False before the first purse
+## sync, which is the right way round: an unknown answer must not hide a line
+## the player has never seen.
+func gift_taken(gift_id: String) -> bool:
+	return gift_id != "" and bool(gifts.get(gift_id, false))
 
 ## Carried item ids, in the order the server holds them.
 func owned_ids() -> Array:

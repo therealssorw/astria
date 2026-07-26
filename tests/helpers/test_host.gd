@@ -34,6 +34,7 @@ const PORTS := {
 	"gold": 27170,
 	"quest": 27180,
 	"shop": 27190,
+	"gift": 27200,
 }
 const BAND := 6              # ports tried, counting up from the band's base
 const BIND_PASSES := 3       # walks of the band before giving up

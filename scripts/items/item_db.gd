@@ -77,7 +77,87 @@ const ITEMS := {
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(3.2, 1.15, 3.0),
 				"anim_set": "sword"},
 	},
+	# --- armor ---
+	#
+	# The three suits in Assets/Data/Armor/, a piece at a time. An armor item
+	# carries "armor": the slot it covers, which is what makes four pieces a SET
+	# rather than four items — you cannot wear two helmets, so only the best
+	# piece per slot counts (see Net.armor_levels).
+	#
+	# Its "level" is the same ladder as a sword's, and matched to the blade of
+	# the same name: flimsy sits with the wooden sword at 1, copper at 2, iron at
+	# 3. On a weapon a level is damage dealt; on armor it is damage NOT taken.
+	# Priced to match its blade too, per piece — so a full suit costs four
+	# swords.
+	"flimsy_helmet": {
+		"name": "Flimsy Helmet", "armor": "head", "level": 1, "price": 20,
+		"desc": "Dented, and a size too big.",
+	},
+	"flimsy_chestplate": {
+		"name": "Flimsy Chestplate", "armor": "body", "level": 1, "price": 20,
+		"desc": "The straps have been replaced more than once.",
+	},
+	"flimsy_gauntlets": {
+		"name": "Flimsy Gauntlets", "armor": "arms", "level": 1, "price": 20,
+		"desc": "Thin plate over older leather.",
+	},
+	"flimsy_boots": {
+		"name": "Flimsy Boots", "armor": "feet", "level": 1, "price": 20,
+		"desc": "Scuffed through to the metal at the toe.",
+	},
+	"copper_helmet": {
+		"name": "Copper Helmet", "armor": "head", "level": 2, "price": 50,
+		"desc": "Soft, but it turns an edge once.",
+	},
+	"copper_chestplate": {
+		"name": "Copper Chestplate", "armor": "body", "level": 2, "price": 50,
+		"desc": "Beaten from one sheet, and heavy for it.",
+	},
+	"copper_gauntlets": {
+		"name": "Copper Gauntlets", "armor": "arms", "level": 2, "price": 50,
+		"desc": "Green at the knuckles already.",
+	},
+	"copper_boots": {
+		"name": "Copper Boots", "armor": "feet", "level": 2, "price": 50,
+		"desc": "Loud on stone, but they hold.",
+	},
+	"iron_helmet": {
+		"name": "Iron Helmet", "armor": "head", "level": 3, "price": 100,
+		"desc": "Forge-work worth wearing.",
+	},
+	"iron_chestplate": {
+		"name": "Iron Chestplate", "armor": "body", "level": 3, "price": 100,
+		"desc": "Plate thick enough to argue with a sword.",
+	},
+	"iron_gauntlets": {
+		"name": "Iron Gauntlets", "armor": "arms", "level": 3, "price": 100,
+		"desc": "Articulated, and barely worn in.",
+	},
+	"iron_boots": {
+		"name": "Iron Boots", "armor": "feet", "level": 3, "price": 100,
+		"desc": "You feel every step, and so does the ground.",
+	},
 }
+
+## The armor slots, in the order a suit is worn from the ground up. The same
+## four an NpcDefinition's armor layer holds, because they are the same pieces.
+const ARMOR_SLOTS := ["feet", "body", "arms", "head"]
+
+## A full suit, by tier. Kept here rather than written out wherever a set is
+## handed over or stocked, so "a full set" cannot come to mean four different
+## things in three files.
+const ARMOR_SETS := {
+	"flimsy": ["flimsy_boots", "flimsy_chestplate", "flimsy_gauntlets", "flimsy_helmet"],
+	"copper": ["copper_boots", "copper_chestplate", "copper_gauntlets", "copper_helmet"],
+	"iron": ["iron_boots", "iron_chestplate", "iron_gauntlets", "iron_helmet"],
+}
+
+## Which armor slot an item covers, or "" when it is not armor.
+static func armor_slot(id: String) -> String:
+	return str(ITEMS.get(id, {}).get("armor", ""))
+
+static func is_armor(id: String) -> bool:
+	return armor_slot(id) != ""
 
 ## How a held model sits in the hand bone before per-item tweaks. The sword
 ## art runs up its own +Y with the grip at the origin, and a humanoid-profile

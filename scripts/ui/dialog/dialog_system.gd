@@ -84,8 +84,20 @@ func start(id: String, speaker_node: Node3D = null) -> bool:
 	if is_instance_valid(_player):
 		_player.set("ui_open", true)
 	opened.emit(id)
-	_show_line(str(convo.get("start", "")))
+	_show_line(_opening_line(convo))
 	return true
+
+## Which line a conversation opens on. Normally "start", but a conversation may
+## carry a "first_time" block naming a line to use until a gift has been taken —
+## how an NPC greets you differently the first time you walk up to them. Read off
+## the GameStats mirror, which is the server's own record of who has been given
+## what, so it is not something this screen can be talked out of.
+func _opening_line(convo: Dictionary) -> String:
+	var start := str(convo.get("start", ""))
+	var first: Dictionary = convo.get("first_time", {})
+	if first.is_empty() or GameStats.gift_taken(str(first.get("until_gift", ""))):
+		return start
+	return str(first.get("line", start))
 
 func close() -> void:
 	if not is_open():

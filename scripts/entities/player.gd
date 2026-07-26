@@ -1242,6 +1242,11 @@ func server_take_damage(amount: float, knockback: Vector3, attacker := 0,
 				stamina = 0.0
 				blocking = false
 				server_stagger(guard_break_stagger_time)
+	# Armor last, on the HEALTH only. Deliberately after the guard has taken its
+	# cut and been charged for it: what a plate does is stop a blow reaching you,
+	# not make holding a shield up cheaper, so the stamina above is costed on the
+	# raw swing. A parry already deals nothing, so this cannot resurrect it.
+	dealt *= CombatLevels.armor_protection(Net.armor_levels(peer_id))
 	health -= dealt
 	if dealt > 0.0:
 		_hurt_hold = health_regen_delay # anything that got through stalls the heal

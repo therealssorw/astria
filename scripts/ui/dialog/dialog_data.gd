@@ -9,6 +9,15 @@ extends RefCounted
 ##   "some_id": {
 ##       "speaker": "Name shown above the text",
 ##       "start": "line_id",            # which line opens the conversation
+##
+##       # Optional. Opens somewhere ELSE until a gift has been taken:
+##       #   "first_time": {"line": "greet_once", "until_gift": "some_gift"},
+##       # which is how an NPC says something the first time you walk up to them
+##       # and never again. The condition is the SERVER's record of who has been
+##       # given what (GiftData -> GameStats.gifts), not anything this screen
+##       # remembers, so it survives a reconnect and cannot be faked into a
+##       # second helping. The line it names still lives in "lines" like any
+##       # other, and reaching it by `goto` works as normal.
 ##       "lines": {
 ##           "line_id": {
 ##               "text": "What the NPC says.",
@@ -37,8 +46,10 @@ extends RefCounted
 ##
 ## `action` is optional: when the player picks that answer the dialog emits
 ## DialogSystem.action_triggered(dialog_id, action) so gameplay code can react.
-## The one action wired up today is "open_shop", which opens the shop
-## registered under this NPC's id in ShopData.
+## The ones wired up today are "open_shop" (opens the shop registered under this
+## NPC's id in ShopData), "start_quest:<id>" / "finish_quest:<id>" (QuestData),
+## and "take_gift:<id>" (GiftData). Every one of them only ASKS — the server
+## decides, and checks you are really standing at the NPC.
 
 ## Use as a `goto` target to end the conversation.
 const END := ""
@@ -136,7 +147,23 @@ Sadly, I'm sure they'll come back.",
 	"blacksmith": {
 		"speaker": "Bram, the Blacksmith",
 		"start": "greeting",
+		# The first time you walk up to Bram he has something for you; every time
+		# after that he opens on the shop greeting like anyone else. What "the
+		# first time" means is the SERVER's record of whether the armor has been
+		# handed over, not anything this screen remembers — so it survives a
+		# reconnect, and clearing it locally earns nothing.
+		"first_time": {"line": "gift", "until_gift": "blacksmith_armor"},
 		"lines": {
+			# Taking it comes back to the greeting rather than closing the box:
+			# he has just been handed a reason to talk to you, and the shop is
+			# the next thing you want.
+			"gift": {
+				"text": "Good work out there beating the bandits up.\nHere\nI have a pair of old armor",
+				"answers": [
+					{"text": "Thank you.", "goto": "greeting",
+							"action": "take_gift:blacksmith_armor"},
+				],
+			},
 			"greeting": {
 				"text": "What can I do for ya",
 				"answers": [

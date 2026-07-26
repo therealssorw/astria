@@ -50,7 +50,7 @@ script = ExtResource("6_world")
 transform = Transform3D(500, 0, 0, 0, 500, 0, 0, 0, 500, 14.0139475, 0, 35.034847)
 
 [node name="Marker3D" type="Marker3D" parent="Island1" unique_id=891781952]
-transform = Transform3D(0.9999997, 0, 0, 0, 0.9999997, 0, 0, 0, 0.9999997, 0.45381576, 0.1839312, -0.47876972)
+transform = Transform3D(0.9999997, 0, 0, 0, 0.9999997, 0, 0, 0, 0.9999997, 0.34185776, 0.1839312, -0.46375248)
 script = ExtResource("3_k0juu")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1631508115]

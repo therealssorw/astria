@@ -14,9 +14,14 @@ extends RefCounted
 ## is worth.
 
 const SHOPS := {
+	# Listed by tier, blade first and then the suit that goes with it — a row
+	# ordering that reads as "here is level 1, here is level 2", which is the
+	# ladder the prices follow.
 	"blacksmith": {
 		"title": "Bram's Forge",
-		"stock": ["wooden_sword", "copper_sword", "iron_sword"],
+		"stock": ["wooden_sword"] + ItemDb.ARMOR_SETS["flimsy"]
+				+ ["copper_sword"] + ItemDb.ARMOR_SETS["copper"]
+				+ ["iron_sword"] + ItemDb.ARMOR_SETS["iron"],
 	},
 }
 

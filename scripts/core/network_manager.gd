@@ -325,6 +325,38 @@ func held_of(id: int) -> String:
 		return held_item(entry)
 	return str(entry.get("held", ""))
 
+## Total armor level a peer has on: the BEST piece carried in each of the four
+## slots, added up. Nothing to do with the hotbar — armor is not something you
+## hold — and best-per-slot is what stops four helmets in a bag counting as a
+## suit.
+##
+## Read off the SERVER's own bag (`players[id].items`), like everything else a
+## client could gain by lying about. On a client this reads the mirror instead,
+## which is only ever used to show the number, never to decide a hit.
+##
+## Carried IS worn, for now: there is no equipment yet (the inventory's
+## equipment slots are still decoration), so picking a piece up is what puts it
+## on. When equipping arrives this is the one function that has to change —
+## everything downstream asks it rather than looking in a bag itself.
+func armor_levels(peer_id: int) -> int:
+	var bag: Dictionary = {}
+	if players.has(peer_id):
+		bag = players[peer_id].get("items", {})
+	elif peer_id == multiplayer.get_unique_id():
+		bag = GameStats.items
+	var best := {}
+	for item_id: String in bag:
+		if int(bag[item_id]) <= 0:
+			continue
+		var slot := ItemDb.armor_slot(item_id)
+		if slot == "":
+			continue
+		best[slot] = maxi(int(best.get(slot, 0)), ItemDb.level_of(item_id))
+	var total := 0
+	for slot: String in best:
+		total += int(best[slot])
+	return total
+
 ## The item in an entry's selected hotbar slot, or "".
 func held_item(entry: Dictionary) -> String:
 	var bar: Array = entry.get("hotbar", [])
@@ -338,6 +370,7 @@ func _make_entry(username: String) -> Dictionary:
 			"items": _starting_items(), "hotbar": _empty_hotbar(), "hot_slot": 0,
 			"quest": "", # id of the quest being tracked, "" for none
 			"quest_kills": 0, # kills counted towards it, when it asks for kills
+			"gifts": {}, # GiftData ids already handed over, so none is given twice
 			"seen": {}} # items already offered a hotbar slot (server-side only)
 	_refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
 	return entry
@@ -459,6 +492,52 @@ func _server_finish_quest(id: int, quest_id: String) -> void:
 	if reward > 0:
 		players[id]["gold"] = int(players[id].get("gold", 0)) + reward
 	_set_quest(id, "") # sends the purse, so the gold rides along with it
+
+## Client -> server: the NPC I am talking to just offered me this. Same shape as
+## a quest request and for the same reason — the conversation is local, so the
+## server cannot see the offer was made and checks the part it CAN see: that the
+## pawn is standing at the NPC who gives it out, and that it has not already
+## been handed over.
+func request_gift(gift_id: String) -> void:
+	if multiplayer.is_server():
+		_server_take_gift(multiplayer.get_unique_id(), gift_id)
+	else:
+		rpc_id(1, "sv_take_gift", gift_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_take_gift(gift_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_take_gift(multiplayer.get_remote_sender_id(), gift_id)
+
+func _server_take_gift(id: int, gift_id: String) -> void:
+	if not players.has(id) or not GiftData.has(gift_id):
+		return
+	var giver := GiftData.giver(gift_id)
+	if giver == "" or not _near_npc(id, giver):
+		return # nobody hands this one out, or you are not standing at them
+	server_grant_gift(id, gift_id)
+
+## SERVER: hand `gift_id` over, once. Marking it taken BEFORE the items go in is
+## deliberate — this is the only thing standing between a client that asks twice
+## in one frame and two suits of armor.
+func server_grant_gift(id: int, gift_id: String) -> bool:
+	if not players.has(id) or not GiftData.has(gift_id):
+		return false
+	var taken: Dictionary = players[id].get("gifts", {})
+	if taken.has(gift_id):
+		return false
+	taken[gift_id] = true
+	players[id]["gifts"] = taken
+	var bag: Dictionary = players[id]["items"]
+	for item_id: String in GiftData.items(gift_id):
+		if not ItemDb.has(item_id):
+			push_warning("Net: gift '%s' lists an unknown item '%s'" % [gift_id, item_id])
+			continue
+		bag[item_id] = int(bag.get(item_id, 0)) + 1
+	print("[Net] %s was given '%s'" % [players[id]["name"], gift_id])
+	_bag_changed(id) # sends the purse, so the gifts record rides along with it
+	return true
 
 ## Server-side code putting a player on a quest — the tutorial's hand-off. Not
 ## a request: this is the server deciding, so there is nothing to validate.
@@ -923,20 +1002,22 @@ func _send_purse(id: int) -> void:
 	var slot := int(entry.get("hot_slot", 0))
 	var quest := str(entry.get("quest", ""))
 	var quest_kills := int(entry.get("quest_kills", 0))
+	var gifts: Dictionary = entry.get("gifts", {})
 	if id == multiplayer.get_unique_id():
-		cl_purse(gold, items, bar, slot, quest, quest_kills)
+		cl_purse(gold, items, bar, slot, quest, quest_kills, gifts)
 	else:
-		rpc_id(id, "cl_purse", gold, items, bar, slot, quest, quest_kills)
+		rpc_id(id, "cl_purse", gold, items, bar, slot, quest, quest_kills, gifts)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
-		quest: String, quest_kills := 0) -> void:
+		quest: String, quest_kills := 0, gifts := {}) -> void:
 	GameStats.coins = gold
 	GameStats.items = items.duplicate(true) # never alias the server's dictionary
 	GameStats.hotbar = hotbar.duplicate()
 	GameStats.hot_slot = hot_slot
 	GameStats.quest = quest
 	GameStats.quest_kills = quest_kills
+	GameStats.gifts = gifts.duplicate()
 	GameStats.changed.emit()
 
 # ---------------- state replication ----------------
