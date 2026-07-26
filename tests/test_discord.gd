@@ -38,7 +38,7 @@ func _run() -> void:
 
 func _payload() -> bool:
 	var roster := ["Marth", "Bram", "Wanderer"]
-	var payload := NOTIFIER.build_join_payload("Marth", 7, roster, WHEN)
+	var payload := NOTIFIER.build_join_payload("Marth", roster, WHEN)
 
 	# it has to survive being sent: Discord gets JSON, not a Dictionary
 	var json := JSON.stringify(payload)
@@ -73,12 +73,16 @@ func _payload() -> bool:
 		if not _check(str(fields.get("Who's on", "")).contains(who),
 				"the roster left out %s" % who):
 			return false
-	if not _check(str(fields.get("Peer", "")) == "7", "the peer id is wrong"):
+	# a peer id is a number off the wire; the channel does not want it
+	if not _check(not fields.has("Peer"), "the peer id is back in the message"):
+		return false
+	if not _check(int(embed.get("color", 0)) == NOTIFIER.EMBED_COLOR,
+			"the embed lost its colour"):
 		return false
 
 	# an empty server (nobody registered yet) must not produce an empty roster
 	# field — Discord rejects a field with a blank value outright
-	var alone := NOTIFIER.build_join_payload("Marth", 7, [], WHEN)
+	var alone := NOTIFIER.build_join_payload("Marth", [], WHEN)
 	var alone_fields := _fields(alone["embeds"][0])
 	if not _check(not alone_fields.has("Who's on"),
 			"an empty roster should leave the field out, not send it blank"):
@@ -95,7 +99,7 @@ func _payload() -> bool:
 func _never_from_a_listen_server() -> bool:
 	if not _check(Discord._queue.is_empty(), "something was queued before the test began"):
 		return false
-	Discord.post_join("Marth", 7, ["Marth"])
+	Discord.post_join("Marth", ["Marth"])
 	if not _check(Discord._queue.is_empty(),
 			"a non-dedicated run queued a webhook post — a test run would " \
 			+ "have posted to a real Discord channel"):
@@ -104,7 +108,7 @@ func _never_from_a_listen_server() -> bool:
 	# merely because nothing was configured on this machine
 	var was := Discord._url
 	Discord._url = "https://example.invalid/webhook"
-	Discord.post_join("Marth", 7, ["Marth"])
+	Discord.post_join("Marth", ["Marth"])
 	var stayed_empty := Discord._queue.is_empty()
 	Discord._url = was
 	return _check(stayed_empty,

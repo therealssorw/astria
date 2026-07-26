@@ -26,8 +26,9 @@ const MIN_GAP := 2.0
 ## Dropped rather than queued past this — if that many joins are backed up, the
 ## channel does not need every one of them.
 const MAX_QUEUED := 20
-## Discord blue-ish gold, matching the HUD's "pay attention" accent.
-const EMBED_COLOR := 0xF2C96B
+## Discord's own blurple, so the embed's stripe reads as part of the client
+## rather than as something shouting from a bot.
+const EMBED_COLOR := 0x5865F2
 
 var _url := ""
 var _http: HTTPRequest
@@ -60,12 +61,12 @@ func is_configured() -> bool:
 ## test in `tests/` all host one and register a player, and without this the
 ## channel would fill up with joins nobody can act on — and a test run would post
 ## to a real Discord channel every time it was run.
-func post_join(username: String, peer_id: int, online: Array) -> void:
+func post_join(username: String, online: Array) -> void:
 	if _url == "" or not multiplayer.is_server() or not Net.is_dedicated:
 		return
 	if _queue.size() >= MAX_QUEUED:
 		return
-	_queue.append(build_join_payload(username, peer_id, online,
+	_queue.append(build_join_payload(username, online,
 			Time.get_unix_time_from_system()))
 
 ## The message itself, kept separate from the sending so it can be checked
@@ -75,7 +76,7 @@ func post_join(username: String, peer_id: int, online: Array) -> void:
 ## reader sees the join time in THEIR timezone, and the relative one keeps
 ## counting ("3 minutes ago") without the message being edited. A UTC string
 ## baked in here would be right for nobody but the server.
-static func build_join_payload(username: String, peer_id: int, online: Array,
+static func build_join_payload(username: String, online: Array,
 		unix_time: float) -> Dictionary:
 	var stamp := int(unix_time)
 	var names: Array[String] = []
@@ -84,10 +85,11 @@ static func build_join_payload(username: String, peer_id: int, online: Array,
 		if text != "":
 			names.append(text)
 	var count := names.size()
+	# no peer id: it is a number off the wire that means nothing to somebody
+	# reading the channel deciding whether to come and play
 	var fields := [
 		{"name": "Joined", "value": "<t:%d:F>\n<t:%d:R>" % [stamp, stamp], "inline": false},
 		{"name": "Players online", "value": str(count), "inline": true},
-		{"name": "Peer", "value": str(peer_id), "inline": true},
 	]
 	if count > 0:
 		# who is actually on, which is the whole point: somebody deciding whether

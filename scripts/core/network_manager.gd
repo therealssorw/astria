@@ -181,7 +181,7 @@ func sv_register(username: String) -> void:
 	print("[Net] %s joined (peer %d)" % [players[id]["name"], id])
 	# tell Discord somebody is on, so people who would play with them find out.
 	# Server-side and after registration, so the roster it reports includes them
-	Discord.post_join(str(players[id]["name"]), id, player_names())
+	Discord.post_join(str(players[id]["name"]), player_names())
 	_sync_players()
 	rpc_id(id, "cl_load_world")
 
