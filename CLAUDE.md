@@ -78,7 +78,8 @@ mixed pile.
   A (cross), `slide` = Space or Ctrl / A (cross) — the SAME button as jump,
   `lock_on` = MMB / R3, `interact` = E / Y (triangle), `inventory` = Tab /
   D-pad up, `sprint` = Shift, with no pad button by request,
-  `hotbar_next` / `hotbar_prev` = ] and [ / R1 and L1, `use_item` = F / R2 —
+  `hotbar_next` / `hotbar_prev` = ] and [, the mouse WHEEL (down = next, up =
+  back) / R1 and L1, `use_item` = F / R2 —
   the SAME trigger as attack, so a swing is also a use (which is why the
   server's use replies carry no message yet), `cheat_menu` = Z / Options
   (Menu), `voice_talk` = V / L3 (click the left stick), `voice_mode` = M, with
@@ -810,9 +811,28 @@ mixed pile.
   instead of `_send_purse` directly. It only does this the FIRST time an item
   is carried (`entry["seen"]`), so clearing a slot by hand stays cleared;
   losing the item entirely forgets it again.
-- Requests: `request_hotbar_select(slot)` (R1/L1 in the world, a click in the
-  panel), `request_hotbar_assign(slot, id)` ("" clears; assigning something
-  already on the bar swaps rather than duplicating) and `request_use_item()`.
+- Requests: `request_hotbar_select(slot)` (the mouse wheel, R1/L1 or ] and [ in
+  the world, a click in the panel), `request_hotbar_assign(slot, id)` ("" clears;
+  assigning something already on the bar swaps rather than duplicating) and
+  `request_use_item()`.
+- WALKING the bar is event-driven, in `player.gd::_hotbar_event`, and that is the
+  only place it happens. It cannot be polled: a wheel press and its release land
+  in the same frame, so `is_action_just_pressed` on the physics step either misses
+  the notch or sees it twice — and once the wheel is in the input map, leaving the
+  poll in as well would count every notch on both paths. Wheel up steps back,
+  wheel down steps forward. A scroll is also excluded from the "click back into
+  the world to recapture the pointer" branch, since a scroll is not a click.
+- DRAG AND DROP in the panel, on top of clicking rather than instead of it —
+  there is nothing to drag with on a pad, which still walks the slots with the
+  focus and takes them with `ui_accept`. It uses Godot's own
+  `_get_drag_data`/`_can_drop_data`/`_drop_data` (hence `InventoryUI.DragSlot`,
+  a Button subclass — those can only be overridden on a script), and every drop
+  goes through `_on_slot_drop`, which is the one place the rules live: bag -> bar
+  puts it there, bar -> bar moves it (the server's swap handles an occupied
+  destination), bar -> bag takes it off. bag -> bag is deliberately nothing,
+  because a bag slot's position is not stored anywhere — it is just where that
+  item fell in `owned_ids()` this frame, so a "move" would be undone by the next
+  redraw.
 - Using is server-side: `Net._server_use_item` checks the pawn is alive and
   the slot really holds a carried item, then answers on the `item_used`
   signal. No item has an effect yet — that branch is the hook, and anything

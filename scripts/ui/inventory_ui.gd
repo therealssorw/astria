@@ -126,6 +126,30 @@ func _on_bar_pressed(slot: int) -> void:
 	else:
 		Net.request_hotbar_select(slot)
 
+## Something was dragged onto a slot. `kind`/`slot` describe where it LANDED,
+## `data` where it came from. Three moves, and nothing else:
+##
+##   bag  -> bar   put that item on that slot
+##   bar  -> bar   move it there; the server SWAPS rather than duplicating, so
+##                 dropping onto an occupied slot exchanges the two
+##   bar  -> bag   take it off the bar
+##
+## bag -> bag is deliberately nothing: a bag slot's position is not stored
+## anywhere, it is just where that item happens to fall in owned_ids() this
+## frame, so "moving" one would be undone by the next redraw.
+func _on_slot_drop(kind: String, slot: int, data: Dictionary) -> void:
+	var id := str(data.get("id", ""))
+	var from_kind := str(data.get("kind", ""))
+	var from_slot := int(data.get("slot", -1))
+	if id == "":
+		return
+	if kind == "bar":
+		if from_kind == "bar" and from_slot == slot:
+			return # dropped back where it started
+		Net.request_hotbar_assign(slot, id)
+	elif from_kind == "bar":
+		Net.request_hotbar_assign(from_slot, "")
+
 # ---------------- construction ----------------
 
 func _slot_style(selected := false) -> StyleBoxFlat:
@@ -195,8 +219,65 @@ func _add_item_labels(host: Control) -> void:
 
 ## An in-panel slot: a Button, so the mouse can click it and a gamepad can walk
 ## the grid with focus, styled to look exactly like the plain Panel slots.
+## A slot you can pick an item up from and drop one onto.
+##
+## Godot's own drag and drop (_get_drag_data / _can_drop_data / _drop_data) rather
+## than watching mouse buttons by hand: it owns the held preview, the release and
+## the hit-testing, and it can only be overridden on a script, which is why these
+## slots are a class of their own rather than plain Buttons.
+##
+## Dragging is ADDED, not swapped in for clicking. The slots are walked with the
+## focus and taken with ui_accept on a pad, and there is nothing to drag with.
+class DragSlot extends Button:
+	## What this slot is, which is what a drop onto it means: "bag" or "bar".
+	var kind := "bag"
+	## Which hotbar slot this is. Bar slots only; -1 in the bag.
+	var slot := -1
+	## The item drawn here right now, kept by _draw_item so a drag knows what it
+	## has picked up without going back to the mirror for it.
+	var item_id := ""
+	var ui: Node
+
+	func _get_drag_data(_at: Vector2) -> Variant:
+		if item_id == "":
+			return null
+		set_drag_preview(_preview())
+		return {"kind": kind, "slot": slot, "id": item_id}
+
+	## Anything carrying an item can be dropped on any slot; what it MEANS is
+	## decided in one place (InventoryUI._on_slot_drop) rather than here.
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		return data is Dictionary and str((data as Dictionary).get("id", "")) != ""
+
+	func _drop_data(_at: Vector2, data: Variant) -> void:
+		if ui and ui.has_method("_on_slot_drop"):
+			ui._on_slot_drop(kind, slot, data as Dictionary)
+
+	## What rides with the cursor: the item's icon, or its name when it has no
+	## art — the same fallback the slots themselves use.
+	func _preview() -> Control:
+		var holder := Control.new()
+		var tex := ItemDb.icon(item_id)
+		if tex:
+			var icon := TextureRect.new()
+			icon.texture = tex
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.size = Vector2(SLOT_SIZE, SLOT_SIZE) * 0.8
+			icon.position = -icon.size * 0.5 # under the cursor, not beside it
+			icon.modulate = Color(1, 1, 1, 0.85)
+			holder.add_child(icon)
+		else:
+			var name_label := Label.new()
+			name_label.text = ItemDb.item_name(item_id)
+			name_label.add_theme_font_size_override("font_size", 12)
+			name_label.position = Vector2(-20, -8)
+			holder.add_child(name_label)
+		return holder
+
 func _slot_button() -> Button:
-	var b := Button.new()
+	var b := DragSlot.new()
+	b.ui = self
 	b.custom_minimum_size = Vector2(SLOT_SIZE, SLOT_SIZE)
 	b.focus_mode = Control.FOCUS_ALL
 	_add_item_labels(b)
@@ -218,6 +299,10 @@ func _draw_item(host: Control, id: String, count_text := "") -> void:
 	var icon := host.get_node("ItemIcon") as TextureRect
 	var name_label := host.get_node("ItemName") as Label
 	var count := host.get_node("ItemCount") as Label
+	# a draggable slot carries what it is showing, so picking it up needs no
+	# second look at the mirror (and the bag reorders as things come and go)
+	if host is DragSlot:
+		(host as DragSlot).item_id = id
 	if id == "":
 		icon.texture = null
 		name_label.text = ""
@@ -405,6 +490,8 @@ func _build_inventory_tab() -> Control:
 	panel_bar_slots.clear()
 	for i in HOTBAR_SLOTS:
 		var b := _slot_button()
+		(b as DragSlot).kind = "bar"
+		(b as DragSlot).slot = i
 		b.pressed.connect(_on_bar_pressed.bind(i))
 		panel_bar_slots.append(b)
 		bar.add_child(b)
@@ -450,8 +537,16 @@ func _build_inventory_tab() -> Control:
 
 ## The accept button is named after whatever device was last used, exactly as
 ## the dialog box and the shop do it.
+## Named after whatever device was last used, exactly as the dialog box and the
+## shop do it — and it only mentions dragging on a keyboard, because there is no
+## dragging with a thumbstick.
 func _update_hint() -> void:
-	if _hint:
+	if not _hint:
+		return
+	if InputDevice.kind == InputDeviceTracker.Kind.KEYBOARD:
+		_hint.text = "Drag an item onto a hotbar slot · drag it off the bar to clear it" \
+				+ " · or click to put it in the held slot · wheel / R1 / L1 in the world"
+	else:
 		_hint.text = "%s an item to put it in the held hotbar slot · the held slot again to clear it · R1 / L1 in the world" \
 				% InputDevice.accept_label()
 

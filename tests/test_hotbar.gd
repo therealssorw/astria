@@ -53,7 +53,11 @@ class Runner:
 		for id: String in ids:
 			Net.request_cheat_give(id)
 			await tree.physics_frame
-		for i in ids.size():
+		# only as far as the bar goes: the catalogue is bigger than nine now (the
+		# armor pieces), and _refill_hotbar fills free slots until it runs out.
+		# Indexing past the end used to abort this function mid-run, which read as
+		# the whole test hanging rather than failing.
+		for i in mini(ids.size(), Net.HOTBAR_SLOTS):
 			if _bar()[i] != ids[i]:
 				_fail("slot %d holds '%s', expected '%s'" % [i, _bar()[i], ids[i]])
 				return
@@ -79,19 +83,30 @@ class Runner:
 			_fail("out-of-range slot was accepted")
 			return
 
-		# 3. assigning an item that is already on the bar swaps the two slots
+		# 3. assigning an item that is already on the bar SWAPS the two slots —
+		# whatever was in the destination comes back to where the item came from.
+		# Checked against what was actually there rather than against "": the
+		# catalogue now fills every slot, and this used to pass only because slot
+		# 4 happened to be empty, which made a swap indistinguishable from a move.
 		var moved: String = ids[0]
+		var from_slot: int = _bar().find(moved)
+		var displaced: String = _bar()[4]
 		Net.request_hotbar_assign(4, moved)
 		await tree.physics_frame
-		if _bar()[4] != moved or _bar().count(moved) != 1 or _bar()[0] != "":
-			_fail("assign duplicated or lost an entry: %s" % str(_bar()))
+		if _bar()[4] != moved or _bar().count(moved) != 1 \
+				or _bar()[from_slot] != displaced:
+			_fail("assign duplicated or lost an entry: %s (slot %d should hold '%s')"
+					% [str(_bar()), from_slot, displaced])
 			return
 
-		# 4. an item the player does not carry can never reach the bar
+		# 4. an item the player does not carry can never reach the bar. Slot 0 is
+		# checked as UNCHANGED rather than empty — with a full bar it holds the
+		# item the swap above displaced into it.
+		var slot0: String = _bar()[0]
 		Net.request_hotbar_assign(0, "not_a_real_item")
 		await tree.physics_frame
-		if _bar()[0] != "":
-			_fail("bar took an item that isn't carried")
+		if _bar()[0] != slot0 or _bar().has("not_a_real_item"):
+			_fail("bar took an item that isn't carried: %s" % str(_bar()))
 			return
 
 		# 5. using the held slot reports the item; clearing leaves it in the bag.
@@ -140,6 +155,61 @@ class Runner:
 			if _bar().has(sold):
 				_fail("an item that left the bag stayed on the bar")
 				return
+
+		# 7. dragging. The gesture itself is Godot's (_get_drag_data / _drop_data);
+		# what is ours is what a drop MEANS, so that is what is checked — through
+		# the real screen in the world, which asks the same server the clicks do.
+		var inv := tree.current_scene.get_node_or_null("InventoryUI")
+		if inv == null:
+			_fail("the world has no InventoryUI to drag in")
+			return
+		var carried := ""
+		for item_id: String in Net.players[1]["items"]:
+			if int(Net.players[1]["items"][item_id]) > 0:
+				carried = item_id
+				break
+
+		# bag -> bar: it lands on the slot it was dropped on, not the held one
+		Net.request_hotbar_select(0)
+		await tree.physics_frame
+		inv._on_slot_drop("bar", 6, {"kind": "bag", "slot": -1, "id": carried})
+		await tree.physics_frame
+		if _bar()[6] != carried:
+			_fail("a bag item dragged onto slot 6 did not land there: %s" % str(_bar()))
+			return
+
+		# bar -> bar: moved, and never duplicated
+		inv._on_slot_drop("bar", 7, {"kind": "bar", "slot": 6, "id": carried})
+		await tree.physics_frame
+		if _bar()[7] != carried or _bar().count(carried) != 1:
+			_fail("dragging along the bar duplicated or lost it: %s" % str(_bar()))
+			return
+
+		# dropped back on itself: nothing happens
+		var settled: Array = _bar().duplicate()
+		inv._on_slot_drop("bar", 7, {"kind": "bar", "slot": 7, "id": carried})
+		await tree.physics_frame
+		if _bar() != settled:
+			_fail("dropping a slot on itself changed the bar: %s" % str(_bar()))
+			return
+
+		# bar -> bag: off the bar, still in the bag
+		inv._on_slot_drop("bag", -1, {"kind": "bar", "slot": 7, "id": carried})
+		await tree.physics_frame
+		if _bar()[7] != "":
+			_fail("dragging an item off the bar did not clear its slot")
+			return
+		if int(Net.players[1]["items"].get(carried, 0)) <= 0:
+			_fail("dragging an item off the bar ate it")
+			return
+
+		# bag -> bag is deliberately nothing: a bag slot's position is not stored
+		settled = _bar().duplicate()
+		inv._on_slot_drop("bag", -1, {"kind": "bag", "slot": -1, "id": carried})
+		await tree.physics_frame
+		if _bar() != settled:
+			_fail("a bag-to-bag drag changed the bar: %s" % str(_bar()))
+			return
 
 		print("HOTBARTEST bar=", _bar(), " slot=", Net.players[1]["hot_slot"])
 		print("HOTBARTEST RESULT=PASS")
