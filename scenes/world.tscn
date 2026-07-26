@@ -1,4 +1,4 @@
-﻿[gd_scene format=3 uid="uid://c1dnltiqj44qc"]
+[gd_scene format=3 uid="uid://c1dnltiqj44qc"]
 
 [ext_resource type="PackedScene" uid="uid://uj5rvb1182cu" path="res://Assets/Models/World/Islands/StarterIsland/Island1.glb" id="1_nnsk1"]
 [ext_resource type="Texture2D" uid="uid://dmup8pjq8hpk1" path="res://Assets/Textures/Skyboxes/beautiful-view-sea-with-cloudy-sky-reflected-it.jpg" id="3_i7141"]
@@ -21,7 +21,6 @@
 [ext_resource type="PackedScene" uid="uid://b51pr1sajq0e6" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/WheatPatch.gltf" id="17_pm21f"]
 [ext_resource type="PackedScene" uid="uid://gy7stjw7sll5" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/halftent.gltf" id="18_pm21f"]
 [ext_resource type="PackedScene" uid="uid://cw7thlldlacjj" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/crate.gltf" id="19_2lf6f"]
-[ext_resource type="Script" path="res://scripts/world/island_boundary.gd" id="20_bound"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_57qmd"]
 panorama = ExtResource("3_i7141")
@@ -192,11 +191,3 @@ transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 14.200106, 92.27471, -1
 
 [node name="crate3" parent="." unique_id=963106693 instance=ExtResource("19_2lf6f")]
 transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 24.78345, 91.7986, -132.61406)
-
-[node name="Boundary" type="StaticBody3D" parent="."]
-script = ExtResource("20_bound")
-inset = 3.0
-thickness = 24.0
-wall_bottom = 15.0
-wall_top = 130.0
-overlap = 1.8

@@ -884,8 +884,8 @@ mixed pile.
   - USE is `use_item` (F / R2). It shares a trigger with `attack` on purpose,
 	so a swing is also a use — which is why a blade's use IS its swing.
   - SPECIAL is `block` (RMB / L2). Anything that declares no special of its own
-    falls back to the GUARD, so for fists and swords that button is the block it
-    has always been and nothing about a fight changed when specials arrived.
+	falls back to the GUARD, so for fists and swords that button is the block it
+	has always been and nothing about a fight changed when specials arrived.
 - Declared in `ItemDb` as `"use": "<verb>"` and
   `"special": {"action": "<id>", "name": "<verb>"}`. The ACTION is what runs and
   the NAME is only ever shown. `Net._server_use_special` is the ONE place that
