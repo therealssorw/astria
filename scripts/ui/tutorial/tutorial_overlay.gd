@@ -145,13 +145,15 @@ func _build() -> void:
 	_hint.custom_minimum_size.x = 460
 	vbox.add_child(_hint)
 
-	# same corner and colour as the quest heading, one line below it
+	# same corner and colour as the quest heading, one line below it — clear of
+	# the whole two-row block (QuestTracker.MARGIN.y + SIZE.y = 134), which the
+	# cheat menu's "Start tutorial" can put on screen at the same time as this
 	_banner = Label.new()
 	_banner.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_banner.offset_left = -324
 	_banner.offset_right = -24
-	_banner.offset_top = 114
-	_banner.offset_bottom = 138
+	_banner.offset_top = 140
+	_banner.offset_bottom = 164
 	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_banner.add_theme_font_size_override("font_size", 16)
 	_banner.add_theme_color_override("font_color", Color(0.93, 0.93, 0.95))

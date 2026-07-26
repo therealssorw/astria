@@ -1,8 +1,14 @@
 extends Control
 class_name QuestTracker
-## "Current Quest ★" heading, sitting under the health and stamina bars but
-## over on the opposite side of the screen, so the top-left corner stays the
-## vitals corner and quests get one of their own.
+## The quest corner: a "Current Quest: ★" heading with what you are actually on
+## underneath it. It sits under the health and stamina bars but over on the
+## opposite side of the screen, so the top-left corner stays the vitals corner
+## and quests get one of their own.
+##
+## Two rows rather than one, because the objective alone read as a label of
+## itself — "Kill the bandits" in the corner says nothing about why it is there.
+## The heading keeps the place (and the star) the single row used to have, and
+## the objective moved down under it.
 ##
 ## The star is DRAWN, not typed: Godot's default font (Open Sans) has no U+2605,
 ## so a ★ in a Label comes out as tofu. It is the same polygon as the enemy
@@ -22,10 +28,15 @@ const STAR_INNER := 4.0
 ## Distance in from the right edge, and down from the top (clear of the bars,
 ## which end at y = 72).
 const MARGIN := Vector2(24.0, 84.0)
-const SIZE := Vector2(240.0, 26.0)
-## Space between the end of the text and the star.
+const SIZE := Vector2(240.0, 50.0)
+## The heading's share of that height. The objective takes the rest, and the
+## star rides on the heading row — which is where the star has always been, so
+## growing the block downwards leaves the corner looking the same.
+const HEADING_H := 22.0
+## Space between the end of the heading and the star.
 const STAR_GAP := 10.0
 
+var _heading: Label
 var _label: Label
 
 func _ready() -> void:
@@ -39,22 +50,34 @@ func _ready() -> void:
 	offset_top = MARGIN.y
 	offset_bottom = MARGIN.y + SIZE.y
 
-	_label = Label.new()
-	_label.add_theme_font_size_override("font_size", 18)
-	_label.add_theme_color_override("font_color", GOLD)
-	# a thin dark outline instead of a panel behind it: the heading has to stay
-	# readable over bright sky and water without boxing in the corner
-	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
-	_label.add_theme_constant_override("outline_size", 4)
-	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_label.offset_right = -(STAR_OUTER * 2.0 + STAR_GAP) # leave the star its room
-	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	add_child(_label)
+	_heading = _row(15)
+	_heading.text = "Current Quest:"
+	_heading.offset_right = -(STAR_OUTER * 2.0 + STAR_GAP) # leave the star its room
+	_heading.offset_bottom = -(SIZE.y - HEADING_H)
+
+	# the objective gets the full width: it is the longer of the two, and the
+	# star is not sitting on this row to take any of it
+	_label = _row(18)
+	_label.offset_top = HEADING_H
 
 	GameStats.changed.connect(_refresh)
 	_refresh()
+
+## One right-aligned gold row of the block, full-rect within it until the caller
+## says otherwise. A thin dark outline instead of a panel behind it: the corner
+## has to stay readable over bright sky and water without being boxed in.
+func _row(font_size: int) -> Label:
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", GOLD)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	add_child(label)
+	return label
 
 ## The purse sync is what carries the quest, so this rides GameStats.changed
 ## rather than polling every frame.
@@ -68,7 +91,9 @@ func _refresh() -> void:
 func _draw() -> void:
 	if str(GameStats.quest) == "":
 		return
-	var center := Vector2(size.x - STAR_OUTER, size.y * 0.5)
+	# on the heading's row, not the block's middle: the star belongs beside
+	# "Current Quest:" exactly where the one-row version put it
+	var center := Vector2(size.x - STAR_OUTER, HEADING_H * 0.5)
 	draw_colored_polygon(_star_points(center, STAR_OUTER), GOLD)
 
 func _star_points(center: Vector2, outer: float) -> PackedVector2Array:

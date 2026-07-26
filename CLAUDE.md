@@ -222,11 +222,14 @@ mixed pile.
   has its guard up). Keep new markers on that split rather than inventing a
   colour per feature.
 - Screen HUD layout: health and stamina bars in the top-left (x 24, y 24 and
-  52, 280x20 each), and the "Current Quest" heading
+  52, 280x20 each), and the quest corner
   (`scripts/ui/quest/quest_tracker.gd`) under them on the opposite side, pinned
-  24 px in from the right. Its star is a drawn polygon, the same one as the
-  wind-up star: Godot's default font has NO U+2605, so a typed ★ renders as
-  tofu — any symbol in the HUD has to be drawn, which is the rule above anyway.
+  24 px in from the right. It is TWO rows — "Current Quest:" at y 84 with the
+  star beside it, and what you are on at y 106 — because the objective by itself
+  read as a label of itself. Anything else in that corner goes below y 134 (the
+  tutorial's banner does); the star is a drawn polygon, the same one as the
+  wind-up star, because Godot's default font has NO U+2605 and a typed ★ renders
+  as tofu — any symbol in the HUD has to be drawn, which is the rule above.
 - Anchored HUD pieces set `offset_*`, never `position`: `position` is
   parent-relative, so on a right-anchored control it lands off the left edge.
 - `set_anchors_preset()` KEEPS THE CONTROL'S CURRENT RECT, baking offsets to
