@@ -1051,6 +1051,20 @@ mixed pile.
   - Rigidly skins each part: one bone per voxel, weight 1, picked by nearest
 	bone segment within that slot's allowed bone set (`BIND_SETS`). Whole
 	voxels are bound as units, so they rotate about joints instead of tearing.
+- KEEP `BIND_SETS` SHORT. Every bone in a set is another pivot cutting the art
+  into another rigid slab, and a slab shears against its neighbour on every
+  frame it animates — a body bound to Hips/Spine/Chest/UpperChest/Neck is a
+  seven-voxel torso in four pieces sliding on each other, which is what made a
+  walking villager look like it was coming apart. A humanoid rig offers far more
+  joints than voxel art this coarse has any use for. Today: legs keep
+  hip/knee/ankle (no toes — a two-voxel boot has nothing to flex), the body has
+  ONE hinge at the waist, the arms keep shoulder and elbow (no wrist — a voxel
+  fist has no knuckles, and a held item hangs off a `BoneAttachment3D` on
+  RightHand, which does not care how the mesh is skinned), and the head is one
+  piece. Adding a bone back is a visible cost, not a free improvement.
+- `UpperChest` stays in the ARMS set and is not for the arms: it is what catches
+  the copy of the torso every arms model carries, so that section stays put
+  instead of grabbing an arm bone and flying off with it.
 - `NpcVisual._adapt_hips` rebases the clips' Hips position track per NPC — it
   was authored around a human pelvis and would otherwise yank a short-legged
   voxel NPC up to Rouge's hip height.
@@ -1075,7 +1089,7 @@ mixed pile.
   arm swings whole, shoulder cap included.
 - What is LEFT is inherent and worth knowing before chasing it: rigid voxel
   blocks with no gap between them interpenetrate slightly wherever a joint bends
-  — at the elbow and wrist inside a limb, and where the head meets the shoulders.
+  — at the elbow and the knee, and where the head meets the shoulders.
   The art is drawn flush on purpose (a gap reads as a floating head in the bind
   pose), so short of authoring joint clearance into the models there is nothing
   to fix there. The bind pose is clean; only bent joints show it.

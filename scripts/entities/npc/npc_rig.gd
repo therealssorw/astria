@@ -31,21 +31,41 @@ const MODEL_EXTS := ["gltf", "glb", "obj", "res", "scn", "tscn"]
 ## Which bones each slot is allowed to bind to. Restricting per slot is what
 ## stops the arms model's centre section (which lives inside the torso) from
 ## grabbing an arm bone and flying off with it.
+##
+## KEEP THESE SHORT. Every bone in a set is another pivot cutting the art into
+## another rigid slab, and a slab shears against its neighbour on every frame it
+## is animated -- a body bound to five bones is a torso in four pieces sliding
+## on each other, which is what made a walking villager look like it was coming
+## apart. A humanoid rig offers far more joints than voxel art this coarse has
+## any use for; the torso here is seven voxels tall and does not want four
+## hinges in it. Adding a bone back is a visible cost, not a free improvement.
 const BIND_SETS := {
-	"feet": ["Hips", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes",
-			"RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"],
-	# No shoulders in the torso set: they swing with the arms, and letting them
-	# claim the top of the chest would knead the whole body every stride.
-	"body": ["Hips", "Spine", "Chest", "UpperChest", "Neck"],
+	# Toes left out: a boot two voxels long has nothing to flex, and the joint
+	# only ever sheared the front of it off the back.
+	"feet": ["Hips", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+			"RightUpperLeg", "RightLowerLeg", "RightFoot"],
+	# One hinge, at the waist: below it the torso rides the hips, above it the
+	# chest. Spine/UpperChest/Neck used to sit in here too and bought nothing
+	# except three more places for the body to come apart.
+	#
+	# No shoulders either: they swing with the arms, and letting them claim the
+	# top of the chest would knead the whole body every stride.
+	"body": ["Hips", "Chest"],
 	# No CLAVICLES either, and for the mirror of the reason above: a clavicle runs
 	# from the spine out to the shoulder joint, so its segment lies along the
 	# inner half of the sleeve and claims it -- and a clavicle barely rotates in
 	# these clips while the upper arm swings the whole way. That splits one rigid
 	# sleeve between a bone that moves and a bone that does not, and the voxels
 	# tear apart into a sawtooth at the shoulder. A voxel arm swings whole,
-	# shoulder cap included.
-	"arms": ["UpperChest", "LeftUpperArm", "LeftLowerArm", "LeftHand",
-			"RightUpperArm", "RightLowerArm", "RightHand"],
+	# shoulder cap included -- and so does a voxel hand, which is why the wrist is
+	# out too: a fist this size has no knuckles to bend, and a held item hangs off
+	# a BoneAttachment3D on RightHand, which does not care how the mesh is skinned.
+	#
+	# UpperChest is NOT for the arms themselves. It is what catches the copy of
+	# the torso every arms model carries, so that section stays put instead of
+	# grabbing an arm bone and flying off with it.
+	"arms": ["UpperChest", "LeftUpperArm", "LeftLowerArm",
+			"RightUpperArm", "RightLowerArm"],
 	# Head only, never Neck: Head is a child of Neck, so it already inherits the
 	# neck's motion, and binding it whole keeps a voxel skull from shearing.
 	"head": ["Head"],
