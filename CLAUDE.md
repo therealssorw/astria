@@ -853,6 +853,20 @@ mixed pile.
 - Keep the `.gox` next to the `.gltf` it was exported from (as
   `king_head.gox` / `king_head.gltf`), so the source of a part is never a
   question of which Downloads folder it came from.
+- AN UPDATED PART OVERWRITES ITS FILE. It does NOT land beside the old one under
+  a new name. A slot's models are all offered in the builder's menu and the
+  DEFAULT is whichever sorts first, so a new `arms_base1.gltf` next to
+  `arms_base.gltf` does not replace anything — it just means every new character
+  silently starts with the superseded arms while the head (`basic_head.gltf`,
+  which sorts before `head_base.gltf`) starts with the new one. That mongrel is
+  what "the character creator is using the wrong files" looks like from the
+  outside, and re-exporting from Goxel never fixes it because the file being
+  updated is not the file being used. When someone sends a new version of a part,
+  copy it over the existing filename.
+- Several models in ONE slot is for genuine variants — the Undead's `skeleton_*`
+  and `zombie_*`, which are two characters, not two drafts of one. If the new
+  file is not a thing you would want to pick between, it is an update, so see
+  above.
 - The builder only ever reads the **glTF**. Editing a `.gox` and saving it
   changes nothing on its own — Goxel's "Export as glTF" has to be run again, or
   `python tools/voxel/gox_to_gltf.py <in.gox> <out.gltf>` used instead. If a
