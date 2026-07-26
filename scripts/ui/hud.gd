@@ -9,6 +9,7 @@ const QUEST_TRACKER := preload("res://scripts/ui/quest/quest_tracker.gd")
 const QUEST_MARKER := preload("res://scripts/ui/quest/quest_marker_overlay.gd")
 const TUTORIAL_OVERLAY := preload("res://scripts/ui/tutorial/tutorial_overlay.gd")
 const VOICE_OVERLAY := preload("res://scripts/ui/voice/voice_overlay.gd")
+const ITEM_PROMPT := preload("res://scripts/ui/items/item_prompt.gd")
 
 var player: Player
 var hp_fill: ColorRect
@@ -50,6 +51,8 @@ func _ready() -> void:
 
 	root.add_child(NPC_PROMPTS.new())
 	root.add_child(VOICE_OVERLAY.new())
+	# bottom-right: the two buttons for whatever is in hand
+	root.add_child(ITEM_PROMPT.new())
 	root.add_child(QUEST_MARKER.new())
 	root.add_child(QUEST_TRACKER.new())
 	var tut_overlay: Control = TUTORIAL_OVERLAY.new()

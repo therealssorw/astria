@@ -74,6 +74,12 @@ mixed pile.
   input map. Keyboard/mouse bindings can be proposed as usual, but the pad half
   is always the user's call — the layout is a design decision, and a clash with
   slide/lock-on/interact is invisible from the code.
+- `block` (RMB / LT) is ALSO the item SPECIAL — see "Two buttons: use and
+  special". It is one binding doing both on purpose: an item that declares a
+  special takes that button over while it is in hand and cannot guard, and
+  everything else (fists, every blade) blocks exactly as it always did. Adding
+  a second binding for it would be a control that means the same thing twice
+  and can drift.
 - Bindings today: `attack` = LMB / RT, `block` = RMB / LT, `jump` = Space /
   A (cross), `slide` = Space or Ctrl / A (cross) — the SAME button as jump,
   `lock_on` = MMB / R3, `interact` = E / Y (triangle), `inventory` = Tab /
@@ -839,13 +845,47 @@ mixed pile.
   cover all four plates, which `test_gift` asserts — merging must not quietly
   drop one.
 
+## Two buttons: use and special
+
+- EVERYTHING YOU HOLD HAS TWO BUTTONS, and every item may declare either:
+  - USE is `use_item` (F / R2). It shares a trigger with `attack` on purpose,
+	so a swing is also a use — which is why a blade's use IS its swing.
+  - SPECIAL is `block` (RMB / L2). Anything that declares no special of its own
+    falls back to the GUARD, so for fists and swords that button is the block it
+    has always been and nothing about a fight changed when specials arrived.
+- Declared in `ItemDb` as `"use": "<verb>"` and
+  `"special": {"action": "<id>", "name": "<verb>"}`. The ACTION is what runs and
+  the NAME is only ever shown. `Net._server_use_special` is the ONE place that
+  turns an action id into something happening — add a case there, not a branch
+  in the player.
+- SPECIAL IS NOT A NEW BINDING. It is the block action, so there is one button
+  to rebind and the two can never drift apart. That is also why an item with a
+  special CANNOT guard while it is in hand — L2 is spoken for, and a breastplate
+  is not a shield. Deliberate, and the reason the corner prompt exists.
+- The request names NOTHING: `request_use_special()` carries no item and no
+  action. The server reads its own bar and the catalogue, so the worst a patched
+  client can do is press a button it is already holding down.
+- THE PROMPT IN THE BOTTOM-RIGHT is what tells the player which two they have —
+  `scripts/ui/items/item_prompt.gd`, added by `hud.gd`. Use on top, special
+  INDENTED under it, each with the button's name for whatever device was last
+  touched (`InputDevice.action_label`, so nothing there knows a binding). A use
+  that does nothing shows no line at all rather than a line saying "nothing",
+  which is most of the catalogue today.
+- Its rows are LEFT-aligned inside a block that sits in the right-hand corner,
+  and that is load-bearing: flushed right, indenting the special line only makes
+  its row wider and both lines still end on the same column, so the indent is
+  invisible. Anything else stacking a hint under a hint in a corner has the same
+  trap.
+- Armor's prompt reads "Equip" or "Take off" depending on whether that piece is
+  already on. One button, two meanings, and a prompt that always said "Equip"
+  would be lying half the time.
+
 ## Equipping
 
-- RIGHT TRIGGER PUTS IT ON. `use_item` (F / R2) is the one button, and armor is
-  the only thing in the catalogue that does anything with it yet — pressing it
-  on a piece equips it, pressing it again on the same piece takes it off. There
-  is no separate equip button and no drag-and-drop, so one control both dresses
-  and undresses you.
+- LEFT TRIGGER PUTS IT ON — the SPECIAL button (see "Two buttons" below), not
+  the use one. Pressing it on a piece equips it, pressing it again on the same
+  piece takes it off. There is no separate equip button and no drag-and-drop,
+  so one control both dresses and undresses you.
 - Server-owned like the bag it comes out of. `Net.players[id]["equipped"]` is
   armor slot -> item id; `Net._server_equip` is the only thing that writes it,
   and it checks the item really is armor, that the player is really carrying

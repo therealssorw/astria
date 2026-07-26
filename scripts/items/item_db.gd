@@ -46,6 +46,30 @@ extends RefCounted
 
 const SELL_RATIO := 0.5
 
+## EVERY ITEM HAS TWO BUTTONS, and the pair is the whole of what holding
+## something means:
+##
+##   USE     (use_item — R2 / F) is the ordinary thing you do with it. It
+##           shares a trigger with `attack` on purpose, so a swing is also a
+##           use, which is why a blade's use is its swing.
+##   SPECIAL (block — L2 / RMB) is the other thing. Anything that does not name
+##           one falls back to the GUARD: fists and swords put their hands up,
+##           which is exactly what that button has always done, so nothing
+##           about fighting changed when specials arrived.
+##
+## An item declares them with the optional "use" (a verb, for the prompt) and
+## "special" ({"action": <id>, "name": <verb>}) keys. The ACTION is what the
+## server runs — `Net._server_use_special` is the one place that turns an
+## action id into something happening — and the NAME is only ever shown.
+##
+## An item with a special CANNOT guard while it is in hand: L2 is spoken for.
+## That is deliberate and it is what the prompt in the corner of the screen is
+## for; a breastplate is not a shield.
+const FIST_USE := "Punch"
+const GUARD_SPECIAL := "Block"
+## The special that puts a piece of armor on, or takes it off again.
+const SPECIAL_EQUIP := "equip"
+
 ## An empty hand. Everything is measured from here: the exported damage on
 ## player.gd is what a level 0 fist deals, and an item that forgets to declare
 ## a level is worth no more than punching.
@@ -68,6 +92,7 @@ const ITEMS := {
 		"level": 1,
 		"price": 20,
 		"desc": "A splintered practice blade.",
+		"use": "Swing",
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.6, 1.0, 2.4),
 				"tint": Color(0.52, 0.36, 0.19), "anim_set": "sword"},
 	},
@@ -76,6 +101,7 @@ const ITEMS := {
 		"level": 2,
 		"price": 125,
 		"desc": "Soft metal, but it holds an edge.",
+		"use": "Swing",
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(2.9, 1.08, 2.7),
 				"tint": Color(0.85, 0.52, 0.28), "anim_set": "sword"},
 	},
@@ -84,6 +110,7 @@ const ITEMS := {
 		"level": 3,
 		"price": 250,
 		"desc": "Forge-work worth carrying.",
+		"use": "Swing",
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(3.2, 1.15, 3.0),
 				"anim_set": "sword"},
 	},
@@ -105,46 +132,55 @@ const ITEMS := {
 	# swords.
 	"flimsy_helmet": {
 		"name": "Flimsy Helmet", "armor": "helmet", "level": 1, "price": 20,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["flimsy"],
 		"desc": "Dented, and a size too big.",
 	},
 	"flimsy_chestplate": {
 		"name": "Flimsy Chestplate", "armor": "torso", "level": 1, "price": 20,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["flimsy"],
 		"desc": "Plate and sleeves both. The straps have been replaced more than once.",
 	},
 	"flimsy_boots": {
 		"name": "Flimsy Boots", "armor": "pants", "level": 1, "price": 20,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["flimsy"],
 		"desc": "Scuffed through to the metal at the toe.",
 	},
 	"copper_helmet": {
 		"name": "Copper Helmet", "armor": "helmet", "level": 2, "price": 125,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["copper"],
 		"desc": "Soft, but it turns an edge once.",
 	},
 	"copper_chestplate": {
 		"name": "Copper Chestplate", "armor": "torso", "level": 2, "price": 125,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["copper"],
 		"desc": "Beaten from one sheet, and heavy for it.",
 	},
 	"copper_boots": {
 		"name": "Copper Boots", "armor": "pants", "level": 2, "price": 125,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["copper"],
 		"desc": "Loud on stone, but they hold.",
 	},
 	"iron_helmet": {
 		"name": "Iron Helmet", "armor": "helmet", "level": 3, "price": 250,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["iron"],
 		"desc": "Forge-work worth wearing.",
 	},
 	"iron_chestplate": {
 		"name": "Iron Chestplate", "armor": "torso", "level": 3, "price": 250,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["iron"],
 		"desc": "Plate thick enough to argue with a sword.",
 	},
 	"iron_boots": {
 		"name": "Iron Boots", "armor": "pants", "level": 3, "price": 250,
+		"special": {"action": SPECIAL_EQUIP, "name": "Equip"},
 		"suit": SUITS["iron"],
 		"desc": "You feel every step, and so does the ground.",
 	},
@@ -172,6 +208,27 @@ const ARMOR_SETS := {
 	"copper": ["copper_boots", "copper_chestplate", "copper_helmet"],
 	"iron": ["iron_boots", "iron_chestplate", "iron_helmet"],
 }
+
+## What the USE button does with this item — a verb for the prompt, "" when it
+## does nothing at all. An empty hand punches, which is what that trigger has
+## always done.
+static func use_label(id: String) -> String:
+	if id == "":
+		return FIST_USE
+	return str(ITEMS.get(id, {}).get("use", ""))
+
+## The id of the SPECIAL this item runs, or "" for anything that just guards.
+## `Net._server_use_special` is what turns this into something happening; a
+## client sending an id no item declares gets nothing.
+static func special_action(id: String) -> String:
+	return str((ITEMS.get(id, {}).get("special", {}) as Dictionary).get("action", ""))
+
+## What the SPECIAL button does with it, for the prompt. Falls back to the
+## guard, which is what the button does when the item has nothing of its own —
+## including bare hands.
+static func special_label(id: String) -> String:
+	var verb := str((ITEMS.get(id, {}).get("special", {}) as Dictionary).get("name", ""))
+	return verb if verb != "" else GUARD_SPECIAL
 
 ## Which equipment slot an item is worn in, or "" when it is not armor.
 static func armor_slot(id: String) -> String:

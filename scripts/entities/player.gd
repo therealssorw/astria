@@ -790,6 +790,17 @@ func _body_forward() -> Vector3:
 # ---------------- block ----------------
 
 func _handle_block() -> void:
+	# THE GUARD BUTTON IS ALSO THE ITEM'S SPECIAL. Anything in hand that
+	# declares one takes that button over — a press runs it and there is no
+	# guard at all while it is held, because a breastplate is not a shield. An
+	# empty hand and a sword declare nothing, so for a fight this is exactly the
+	# block it has always been. The prompt in the corner of the screen is what
+	# tells the player which of the two they have.
+	if ItemDb.special_action(Net.held_of(peer_id)) != "":
+		if Input.is_action_just_pressed("block"):
+			Net.request_use_special()
+		blocking = false
+		return
 	# punching overrides blocking: the guard only holds while not swinging,
 	# and comes back up on its own after the swing if block is still held.
 	# An empty guard meter can't hold anything up (see server_take_damage).

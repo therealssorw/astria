@@ -971,14 +971,44 @@ func _server_use_item(id: int) -> void:
 	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
 		_use_reply(id, "", "")
 		return
-	# Using a piece of armor is putting it on. It is the same button as using
-	# anything else on purpose — there is nothing else you would want to do with
-	# a helmet — and pressing it again with that piece already on takes it off,
-	# so one button both dresses and undresses you.
-	if ItemDb.is_armor(item_id):
-		_server_equip(id, item_id)
-		return
 	_use_reply(id, item_id, "")
+
+## Client -> server: the SPECIAL button (L2 / RMB) on whatever is in hand.
+##
+## Only reaches here for an item that DECLARES a special — an empty hand and a
+## sword just guard, and the guard is client-side and validated the way it
+## always was, so nothing about blocking goes through this.
+func request_use_special() -> void:
+	if multiplayer.is_server():
+		_server_use_special(multiplayer.get_unique_id())
+	else:
+		rpc_id(1, "sv_use_special")
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_use_special() -> void:
+	if not multiplayer.is_server():
+		return
+	_server_use_special(multiplayer.get_remote_sender_id())
+
+## SERVER: run the held item's special. The request names NOTHING — not the
+## item, not the action — so the worst a patched client can do is press a
+## button it is already holding down. What happens comes off the server's own
+## bar and the catalogue.
+func _server_use_special(id: int) -> void:
+	if not players.has(id):
+		return
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		return
+	var entry: Dictionary = players[id]
+	var item_id := held_item(entry)
+	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
+		return
+	match ItemDb.special_action(item_id):
+		ItemDb.SPECIAL_EQUIP:
+			_server_equip(id, item_id)
+		_:
+			pass # nothing declared: that button is the guard, and it is not ours
 
 ## SERVER: put `item_id` on, or take it off if it is already worn. Everything it
 ## could be lied about is checked here — that the thing is armor, that the

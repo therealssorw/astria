@@ -255,10 +255,25 @@ class Runner:
 		# never reaches the health subtraction fails here.
 		return await _armor_softens_a_hit(tree, pawn)
 
-	## Right trigger on a piece of armor puts it on, and again takes it off.
-	## Driven through the ordinary use request, because that IS the feature —
-	## nothing else in the game equips anything.
+	## The SPECIAL button (L2 / right mouse) on a piece of armor puts it on, and
+	## again takes it off. Driven through the real request, because that IS the
+	## feature — nothing else in the game equips anything.
 	func _equipping(tree: SceneTree) -> bool:
+		# The catalogue half first: armor declares a special, a blade does not
+		# (its special is the guard, which never reaches the server), and the
+		# USE button no longer equips anything at all.
+		if not _check(ItemDb.special_action("flimsy_helmet") == ItemDb.SPECIAL_EQUIP,
+				"a helmet's special should be equipping it"):
+			return false
+		if not _check(ItemDb.special_action("wooden_sword") == "",
+				"a sword should declare no special, so that button stays the guard"):
+			return false
+		if not _check(ItemDb.special_label("wooden_sword") == ItemDb.GUARD_SPECIAL,
+				"a sword's special should read as the guard"):
+			return false
+		if not _check(ItemDb.use_label("") == ItemDb.FIST_USE,
+				"an empty hand should still punch on the use button"):
+			return false
 		for item_id: String in ItemDb.ARMOR_SETS["flimsy"]:
 			if not await _use(tree, item_id):
 				return false
@@ -311,16 +326,28 @@ class Runner:
 		await tree.physics_frame
 		return await _use(tree, "flimsy_helmet")
 
-	## Selects the hotbar slot holding `item_id` and presses use on it.
+	## Selects the hotbar slot holding `item_id` and presses SPECIAL on it.
 	func _use(tree: SceneTree, item_id: String) -> bool:
 		var slot := (Net.players[1]["hotbar"] as Array).find(item_id)
 		if not _check(slot >= 0, "'%s' never reached the hotbar" % item_id):
 			return false
 		Net.request_hotbar_select(slot)
 		await tree.physics_frame
+		# ...and the USE button must NOT equip it any more: that moved to the
+		# special, and a use that still worked would be two ways to do it.
 		Net.request_use_item()
 		await tree.physics_frame
+		if not _check(not GameStats.is_equipped(item_id) or _was_on.has(item_id),
+				"the use button should no longer equip %s" % item_id):
+			return false
+		Net.request_use_special()
+		await tree.physics_frame
+		_was_on[item_id] = GameStats.is_equipped(item_id)
 		return true
+
+	## What each piece was already wearing before the last _use, so the check
+	## above can tell "use did nothing" from "it was on to begin with".
+	var _was_on := {}
 
 	## The same blow with the suit on and with it gone. Nothing about this reads
 	## CombatLevels — it asks the pawn what a hit cost it.
