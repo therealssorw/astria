@@ -728,6 +728,71 @@ static func _segments(skeleton: Skeleton3D) -> Dictionary:
 		out[i] = [a, b]
 	return out
 
+## Adds the voxels the exporter never wrote.
+##
+## Goxel writes only faces you could have seen, so a cell walled in on all six
+## sides is absent from the model entirely. Fine for drawing, wrong for
+## jointing: a bone boundary through the middle of a solid part then has nothing
+## on it to cap, and the shell comes apart as two rings with a hole down the
+## middle of each -- which is the wedge you could see through the chest even
+## after the rim of it was capped.
+##
+## Which cells are enclosed is not a guess. Flood the air AROUND the part; what
+## the flood cannot reach is inside it. Filled cells carry the colour of the one
+## that found them, which is the surface they are directly under.
+static func _fill_interior(cells: Dictionary, candidates: Array[int],
+		segments: Dictionary, voxel_scale: float) -> void:
+	if cells.is_empty():
+		return
+	var keys := cells.keys()
+	var anchor: Vector3i = keys[0]
+	var origin: Vector3 = (cells[anchor] as Dictionary)["centre"]
+	var lo := anchor
+	var hi := anchor
+	for key: Vector3i in keys:
+		lo = Vector3i(mini(lo.x, key.x), mini(lo.y, key.y), mini(lo.z, key.z))
+		hi = Vector3i(maxi(hi.x, key.x), maxi(hi.y, key.y), maxi(hi.z, key.z))
+	# a cell of air all the way round, to flood from. Voxel centres sit two grid
+	# steps apart, so the whole walk moves in twos and stays on their lattice.
+	lo -= Vector3i(2, 2, 2)
+	hi += Vector3i(2, 2, 2)
+
+	var outside := {lo: true}
+	var queue: Array[Vector3i] = [lo]
+	while not queue.is_empty():
+		var at: Vector3i = queue.pop_back()
+		for axis in 3:
+			for step in [-2, 2]:
+				var next := at
+				next[axis] += step
+				if next[axis] < lo[axis] or next[axis] > hi[axis]:
+					continue
+				if outside.has(next) or cells.has(next):
+					continue
+				outside[next] = true
+				queue.append(next)
+
+	# whatever is left in the box is walled in: grow into it from the surface,
+	# which is also what gives each filled cell a colour worth wearing
+	var frontier := keys
+	while not frontier.is_empty():
+		var at: Vector3i = frontier.pop_back()
+		for axis in 3:
+			for step in [-2, 2]:
+				var next := at
+				next[axis] += step
+				if next[axis] < lo[axis] or next[axis] > hi[axis]:
+					continue
+				if cells.has(next) or outside.has(next):
+					continue
+				var centre := origin + Vector3(next - anchor) * (voxel_scale * 0.5)
+				cells[next] = {
+					"bone": _nearest_bone(centre, candidates, segments),
+					"centre": centre,
+					"colour": (cells[at] as Dictionary)["colour"],
+				}
+				frontier.append(next)
+
 ## Which voxels this part gets, on the grid every part shares: the bone each one
 ## binds to, where its centre sits, and what colour it is. Nothing is drawn here
 ## -- see `rig()` for why ownership has to be settled for the whole character
@@ -750,19 +815,28 @@ static func _claim_cells(slot: String, data: Dictionary, spec: NpcPart, xf: Tran
 	var entry: PackedInt32Array = data["entry"]
 	var palette: PackedColorArray = data["palette"]
 
-	var mine := {}
+	var all := {}
 	for t in range(0, src_verts.size() - 2, 3):
 		# One bone for the whole voxel, chosen from its centre rather than from
 		# each face -- picking per vertex would tear voxels in half at the joints.
 		var cell := xf * (_face_centre(src_verts, t) - src_norms[t] * 0.5)
 		var key := _cell_key(cell, voxel_scale)
-		if occupied.has(key) or mine.has(key):
+		if all.has(key):
 			continue
-		mine[key] = {
+		all[key] = {
 			"bone": _nearest_bone(cell, candidates, segments),
 			"centre": cell,
 			"colour": _colour(spec, palette, entry[t]),
 		}
+	# Done on the WHOLE model, before anything is handed to an earlier part: a
+	# part eaten down to a stump is full of holes for a flood to pour through,
+	# and it is the shape as DRAWN whose inside we want.
+	_fill_interior(all, candidates, segments, voxel_scale)
+
+	var mine := {}
+	for key: Vector3i in all:
+		if not occupied.has(key):
+			mine[key] = all[key]
 	for key: Vector3i in mine:
 		occupied[key] = int((mine[key] as Dictionary)["bone"])
 	return mine
@@ -780,11 +854,18 @@ static func _build_mesh(data: Dictionary, spec: NpcPart, xf: Transform3D,
 	var bones := PackedInt32Array()
 	var weights := PackedFloat32Array()
 
+	# Which sides the ART already draws, so the cap pass does not write a second
+	# face over one of them -- two coplanar faces pointing the SAME way is the
+	# z-fighting this whole file works to avoid.
+	var drawn := {}
+
 	for t in range(0, src_verts.size() - 2, 3):
+		var out := (xf.basis * src_norms[t]).normalized().round()
 		var key := _cell_key(xf * (_face_centre(src_verts, t) - src_norms[t] * 0.5),
 				voxel_scale)
 		if not mine.has(key):
 			continue
+		drawn["%s|%s" % [key, Vector3i(out)]] = true
 		var bone := int((mine[key] as Dictionary)["bone"])
 		for c in 3:
 			var src := t + c
@@ -793,7 +874,7 @@ static func _build_mesh(data: Dictionary, spec: NpcPart, xf: Transform3D,
 			cols.append(_colour(spec, palette, entry[src]))
 			_bind(bones, weights, bone)
 
-	_add_seam_caps(mine, occupied, xf.basis.get_scale().x, voxel_scale,
+	_add_seam_caps(mine, occupied, drawn, xf.basis.get_scale().x, voxel_scale,
 			_winding_sign(data), verts, norms, cols, bones, weights)
 	if verts.is_empty():
 		return null
@@ -868,17 +949,33 @@ static func _winding_sign(data: Dictionary) -> float:
 ## every built NPC as soon as anything animated, and it is worse in armor, which
 ## sits a voxel further out from the bone and so swings further.
 ##
-## So every join between two voxels on DIFFERENT bones gets its missing face
-## back, one square per side, each bound to its own voxel's bone. At rest the
-## pair sits back to back on the same plane facing opposite ways, so each is the
-## other's backface and neither is drawn; the moment the joint opens, both sides
-## show solid colour instead of the inside of the model.
+## The rule is that what one bone carries has to be a CLOSED surface on its own,
+## because that is the thing that moves as a unit. So a voxel gets a face on any
+## side the art left bare, unless the voxel next to it belongs to the same part
+## AND the same bone -- only then can the two never part, and only then is the
+## face guaranteed never to be seen.
 ##
-## Joins WITHIN a bone are left alone -- those two voxels can never part, and
-## capping them would be geometry that is never seen. Neighbours across a PART
-## boundary count, which is what closes the seam under the chin.
-static func _add_seam_caps(mine: Dictionary, occupied: Dictionary, voxel: float,
-		voxel_scale: float, winding: float, verts: PackedVector3Array,
+## Three ways a side ends up bare, and only the first is a bone boundary:
+##  * the neighbour is the same part on a DIFFERENT bone -- the chest join;
+##  * the neighbour was this model's own voxel and got dropped, because an
+##    earlier part already filled that cell. Every arms model carries a copy of
+##    the torso it was drawn against, the torso wins those cells, and what is
+##    left is an arm with no end on it -- the hole at the shoulder;
+##  * the neighbour is a different MESH on the same bone. Nothing moves apart
+##    there, but nothing of OURS covers the join either, and a helmet cut around
+##    a head is open all the way round its rim.
+##
+## Each side gets one square, bound to its own voxel's bone. Where two of them
+## meet they sit back to back on a plane facing opposite ways, so each is the
+## other's backface and neither is drawn until the joint actually opens.
+##
+## Sides the art already draws are left alone: a second face pointing the same
+## way as an existing one is the z-fighting this file works to avoid. So is a
+## side facing a cell NOBODY owns -- the exporter writes a face against open
+## air, so a bare side with no owner next to it can only be this model's own
+## solid interior, walled in already and never seen.
+static func _add_seam_caps(mine: Dictionary, occupied: Dictionary, drawn: Dictionary,
+		voxel: float, voxel_scale: float, winding: float, verts: PackedVector3Array,
 		norms: PackedVector3Array, cols: PackedColorArray, bones: PackedInt32Array,
 		weights: PackedFloat32Array) -> void:
 	if voxel <= 0.0:
@@ -892,8 +989,12 @@ static func _add_seam_caps(mine: Dictionary, occupied: Dictionary, voxel: float,
 			for step in [-1.0, 1.0]:
 				var dir := Vector3.ZERO
 				dir[axis] = step
+				if drawn.has("%s|%s" % [key, Vector3i(dir)]):
+					continue
 				var beside := _cell_key(at + dir * voxel, voxel_scale)
-				if not occupied.has(beside) or int(occupied[beside]) == bone:
+				if not occupied.has(beside):
+					continue
+				if mine.has(beside) and int((mine[beside] as Dictionary)["bone"]) == bone:
 					continue
 				var u := Vector3.ZERO
 				u[(axis + 1) % 3] = half

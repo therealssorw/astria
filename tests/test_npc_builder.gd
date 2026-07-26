@@ -205,68 +205,79 @@ func _coincident_voxels(visual: NpcVisual) -> Dictionary:
 				owner_of[cell] = mi.name
 	return {"count": clashes, "example": example}
 
-## Every join between two voxels on DIFFERENT bones has to carry a face.
+## What one bone carries has to be a CLOSED surface on its own.
 ##
-## Voxel art has none where two voxels touch: Goxel culls it, and nothing needs
-## it while the pair cannot move apart. Rigid skinning moves them apart -- the
-## moment a joint bends there is no geometry on either side of the join and you
-## are looking straight through the character, which is the row of dark wedges
-## that used to open across the chest and down the arms of every built NPC. The
-## rig puts those faces back (NpcRig._add_seam_caps); this is what says it did.
+## Voxel art is not: Goxel writes no face where two voxels touch, and none at
+## all around a voxel walled in on every side. Nothing needs them while the
+## model moves as one lump. Rigid skinning does not -- the moment a joint bends,
+## every bare side along that boundary is a hole you are looking through, which
+## is the row of dark wedges that used to open across the chest and down the
+## arms of every built NPC. The rig fills those in (NpcRig._add_seam_caps and
+## _fill_interior); this is what says it did.
 ##
-## Checked on the REST pose on purpose: a join with no face is a hole whether or
-## not the clip happens to be pulling it open this frame, and rest is the one
-## pose every character is guaranteed to have.
+## Checked on the REST pose on purpose: a group with a hole in it is holed
+## whether or not the clip happens to be pulling it open this frame, and rest is
+## the one pose every character is guaranteed to have.
 func _check_joins_are_capped(category: String) -> void:
 	var visual := _spawn(_definition_for(category))
 	if not _expect(visual.skeleton != null, "%s join test built no skeleton" % category):
 		_drop(visual)
 		return
-	var found := _open_joins(visual)
+	var found := _open_edges(visual)
 	_expect(int(found["count"]) == 0,
-			"%s leaves %d joins between two bones with no face on them (e.g. %s) -- each one opens into the model as soon as it animates"
+			"%s leaves %d open edges -- a bone is carrying a surface with a hole in it (e.g. %s), and it opens as soon as that bone moves"
 					% [category, found["count"], found["example"]])
 	_drop(visual)
 
-## Joins between differently-boned neighbours that carry no face, and one
-## example. Shared so the armoured case is measured exactly as the bare one.
+## Boundary edges: every edge of a closed surface is shared by exactly two of
+## its triangles, so an edge used ONCE is the rim of a hole. Counted per bone
+## group rather than per mesh, because a bone group is the thing that moves as a
+## unit -- a mesh can be perfectly closed and still open up the moment two of
+## its bones part company.
 ##
-## Assumes parts at their default scale, so one voxel is two steps of the cell
-## grid -- which is what every definition in this file builds.
-func _open_joins(visual: NpcVisual) -> Dictionary:
-	var scale: float = visual.layout["voxel_scale"]
-	var bone_of := {}
-	var faces := {}
+## Edges used more than twice are not holes: that is two surfaces meeting along
+## a line, which is what a cap does where it lands in a concave corner.
+##
+## Shared so the armoured case is measured exactly as the bare one.
+func _open_edges(visual: NpcVisual) -> Dictionary:
+	var seen := {}
+	var owner := {}
 	for mi: MeshInstance3D in visual.skeleton.find_children("*", "MeshInstance3D", false, false):
 		var arrays := mi.mesh.surface_get_arrays(0)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var norms: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
 		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
 		for t in range(0, verts.size() - 2, 3):
-			# the square's own centre, not the triangle's -- either triangle of a
-			# square still spans the whole of it
-			var lo := verts[t].min(verts[t + 1]).min(verts[t + 2])
-			var hi := verts[t].max(verts[t + 1]).max(verts[t + 2])
-			var dir := norms[t].round()
-			var cell := Vector3i((((lo + hi) * 0.5 - dir * scale * 0.5) / scale * 2.0).round())
-			bone_of[cell] = bones[t * 4]
-			faces["%s|%s" % [cell, Vector3i(dir)]] = true
+			for e in 3:
+				var key := "%s|%d|%s" % [mi.name, bones[t * 4],
+						_edge_key(verts[t + e], verts[t + (e + 1) % 3])]
+				seen[key] = int(seen.get(key, 0)) + 1
+				owner[key] = mi.name
 
-	var open := 0
+	var holes := 0
 	var example := ""
-	for cell: Vector3i in bone_of:
-		for axis in 3:
-			for step in [-1, 1]:
-				var dir := Vector3i.ZERO
-				dir[axis] = step
-				var beside: Vector3i = cell + dir * 2
-				if not bone_of.has(beside) or bone_of[beside] == bone_of[cell]:
-					continue
-				if faces.has("%s|%s" % [cell, dir]):
-					continue
-				open += 1
-				example = "%s facing %s" % [cell, dir]
-	return {"count": open, "example": example}
+	for key: String in seen:
+		if int(seen[key]) != 1:
+			continue
+		holes += 1
+		if example.is_empty():
+			example = key
+	return {"count": holes, "example": example}
+
+func _edge_key(a: Vector3, b: Vector3) -> String:
+	var one := _point_key(a)
+	var two := _point_key(b)
+	return one + "/" + two if one < two else two + "/" + one
+
+## A point rounded to a name two triangles can agree on. Zero is forced positive
+## because negative zero prints as "-0.0000": without that, every vertex on the
+## centre line matched nothing and every part looked as though it were split
+## down the middle.
+func _point_key(v: Vector3) -> String:
+	var at := Vector3(snappedf(v.x, 0.0001), snappedf(v.y, 0.0001), snappedf(v.z, 0.0001))
+	for axis in 3:
+		if at[axis] == 0.0:
+			at[axis] = 0.0
+	return "%.4f,%.4f,%.4f" % [at.x, at.y, at.z]
 
 ## Puts a whole suit on a definition, exactly as the builder's switch does.
 func _wear(def: NpcDefinition, suit: String) -> void:
@@ -381,13 +392,14 @@ func _check_armor_is_a_layer() -> void:
 			"an armoured NPC draws %d voxels twice (%s) -- they will z-fight"
 					% [found["count"], found["example"]])
 
-	# ...and every join across a bone still has to carry a face. Armor is where
-	# that bites hardest: a plate rides the bones of the part it covers from a
-	# voxel further out, so the same joint swings it further and any join left
-	# open gapes wider than it would on bare skin.
-	var open := _open_joins(armoured)
+	# ...and every bone is still carrying a closed surface. Armor is where that
+	# bites hardest: a plate rides the bones of the part it covers from a voxel
+	# further out, so the same joint swings it further, and a plate is also cut
+	# about by the skin under it -- which is how a helmet ends up open all the
+	# way round its rim.
+	var open := _open_edges(armoured)
 	_expect(int(open["count"]) == 0,
-			"an armoured NPC leaves %d joins between two bones with no face on them (e.g. %s)"
+			"an armoured NPC leaves %d open edges -- a bone is carrying a holed surface (e.g. %s)"
 					% [open["count"], open["example"]])
 
 	# taking the suit off leaves the character exactly as it was
