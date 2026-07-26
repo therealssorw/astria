@@ -1096,3 +1096,12 @@ mixed pile.
   never ask first. A commit sitting only on this machine is as good as lost, and
   the user should never have to chase it. If the push is rejected (the remote
   moved), pull/rebase and push again rather than leaving it behind.
+- ALWAYS MERGE. A dirty main checkout never blocks landing work: the user is
+  usually mid-edit in the Godot editor, and other sessions are often working in
+  the same tree, so `git merge` refusing to overwrite modified files is the
+  normal state, not a problem to report. Commit whatever is sitting there on the
+  user's behalf (say what it was in the message), then rebase and merge on top —
+  standing permission, never ask. Resolve conflicts in favour of THEIR version
+  of a scene or a level, and reapply your own change on top of it: they moved
+  that node deliberately, whereas the group or property you were adding can go
+  anywhere.
