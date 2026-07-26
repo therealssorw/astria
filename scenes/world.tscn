@@ -1,10 +1,11 @@
-[gd_scene format=3 uid="uid://c1dnltiqj44qc"]
+﻿[gd_scene format=3 uid="uid://c1dnltiqj44qc"]
 
 [ext_resource type="PackedScene" uid="uid://uj5rvb1182cu" path="res://Assets/Models/World/Islands/StarterIsland/Island1.glb" id="1_nnsk1"]
 [ext_resource type="Texture2D" uid="uid://dmup8pjq8hpk1" path="res://Assets/Textures/Skyboxes/beautiful-view-sea-with-cloudy-sky-reflected-it.jpg" id="3_i7141"]
 [ext_resource type="Script" uid="uid://utfup6w6qxdt" path="res://scripts/world/spawn_point.gd" id="3_k0juu"]
 [ext_resource type="PackedScene" uid="uid://cfkbjklmgx003" path="res://scenes/entities/npc/built/knight.tscn" id="4_2lf6f"]
 [ext_resource type="Script" uid="uid://dsfc67ukwp5gu" path="res://scripts/ui/hud.gd" id="5_hud"]
+[ext_resource type="PackedScene" uid="uid://duhlu47gbvmld" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/house2.gltf" id="6_7iits"]
 [ext_resource type="Script" uid="uid://ccnll1i5iuigg" path="res://scripts/world/world.gd" id="6_world"]
 [ext_resource type="Script" uid="uid://c4apsnqkotlma" path="res://scripts/world/ocean.gd" id="7_ocean"]
 [ext_resource type="PackedScene" uid="uid://bjx1pxn2obibu" path="res://Assets/Models/World/Prefab/Anvil.gltf" id="12_jhx03"]
@@ -20,6 +21,7 @@
 [ext_resource type="PackedScene" uid="uid://b51pr1sajq0e6" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/WheatPatch.gltf" id="17_pm21f"]
 [ext_resource type="PackedScene" uid="uid://gy7stjw7sll5" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/halftent.gltf" id="18_pm21f"]
 [ext_resource type="PackedScene" uid="uid://cw7thlldlacjj" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/crate.gltf" id="19_2lf6f"]
+[ext_resource type="Script" path="res://scripts/world/island_boundary.gd" id="20_bound"]
 
 [sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_57qmd"]
 panorama = ExtResource("3_i7141")
@@ -67,6 +69,9 @@ transform = Transform3D(-0.00012019183, 0, 0.0019963845, 0, 0.001999998, 0, -0.0
 dialog_id = "knight"
 interact_range = 5.0
 prompt_offset = Vector3(0, 2.3, 0)
+
+[node name="house2" parent="Island1" unique_id=363451490 instance=ExtResource("6_7iits")]
+transform = Transform3D(-0.0016895855, 0, 0.0010701842, 0, 0.0019999968, 0, -0.0010701842, 0, -0.0016895855, 0.32754165, 0.18468967, -0.30176678)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1631508115]
 transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 0, 0)
@@ -187,3 +192,11 @@ transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 14.200106, 92.27471, -1
 
 [node name="crate3" parent="." unique_id=963106693 instance=ExtResource("19_2lf6f")]
 transform = Transform3D(0.2, 0, 0, 0, 0.2, 0, 0, 0, 0.2, 24.78345, 91.7986, -132.61406)
+
+[node name="Boundary" type="StaticBody3D" parent="."]
+script = ExtResource("20_bound")
+inset = 3.0
+thickness = 24.0
+wall_bottom = 15.0
+wall_top = 130.0
+overlap = 1.8

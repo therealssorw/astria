@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://dq8vscrolltest"]
+[gd_scene format=3 uid="uid://dbnom231nq42v"]
 
 [ext_resource type="Script" path="res://tests/test_menu_scroll.gd" id="1_menuscroll"]
 
