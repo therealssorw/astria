@@ -684,13 +684,11 @@ mixed pile.
 ## Items and shops
 
 - Item catalogue: `scripts/items/item_db.gd` — id -> name / buy price / desc /
-  icon. Selling pays `ItemDb.SELL_RATIO` (half, rounded down) unless an item
+  level. Selling pays `ItemDb.SELL_RATIO` (half, rounded down) unless an item
   carries its own `"sell"`. Never hardcode a price anywhere else; two shops
   must not disagree about what a sword is worth.
-- An item's `"icon"` is what the bag grid and the shop rows draw; art lives in
-  `Assets/Textures/Items/`, grouped like the models. Items with no usable icon
-  fall back to drawing their name, so a bad path never crashes a screen. The
-  shipped sword icons are 64x64 placeholders — overwrite the files to replace.
+- AN ITEM CARRIES NO ICON. Its picture is a PHOTOGRAPH OF ITS OWN ART FILE,
+  taken at run time — see "Item icons" below.
 - Who stocks what: `scripts/ui/shop/shop_data.gd`, keyed by the NPC's
   `dialog_id`. Optional `"buys"` list restricts what that shop will take back;
   omit it and the shop buys anything.
@@ -714,6 +712,66 @@ mixed pile.
 - `GameStats.coins` / `.items` are read-only MIRRORS that `cl_purse` fills, so
   UI code reads them instead of the network layer. Writing to them changes
   nothing real.
+
+## Item icons
+
+- An item's picture is a PHOTOGRAPH OF ITS OWN ART FILE, taken when the game
+  starts: the iron sword's icon is `tony_sword.fbx` at the size and tint that
+  item wears, and the copper helmet's is `Armor1`'s head model in the colours
+  `copper_armor.tres` paints it. There are no icon PNGs and no `"icon"` key —
+  an item is described in ONE place, so a blade that gets fatter or a suit
+  repainted in the Items tab cannot leave a stale drawing of itself behind on
+  the shop rows. (The three shipped 64x64 sword placeholders are gone with it.)
+- Which file gets photographed is `ItemDb.art_source(id)`, and it is the art the
+  GAME uses: the `"hold"` model for anything carried, and for armor the piece of
+  the suit named by its `"suit"` — `ItemDb.SUITS` maps the three tiers onto
+  `Assets/Data/Armor/*.tres`. `ItemDb.build_model(id)` is that art as a node —
+  its own colours, facing +Z, with nothing about a hand or a body applied — and
+  is what to instance if an item is ever dropped on the ground.
+- `ItemIcons` (autoload, `scripts/items/icons/item_icon_renderer.gd`) takes the
+  shot: one small `SubViewport` with its OWN world (or the icon is taken inside
+  the island, sky and all), an ORTHOGONAL camera three quarters on and slightly
+  above, framed on the art's own bounding box so a boot and a greatsword both
+  fill the frame, on a transparent background. Nothing is told how big it is.
+- Anything much taller than it is wide is laid over diagonally (`LEAN_RATIO` /
+  `LEAN_DEG`): a sword stood upright in a square icon is a thin line with two
+  empty margins, and framing it to fill the height makes it unrecognisable. The
+  stage is reset to upright before each shot is measured — measuring the next
+  item while the last one's lean is still on it decides the angle off the wrong
+  shape, which came out as two of three identical swords at different angles.
+- Rendered at 256 and shrunk to 64 with a filter rather than rendered at 64:
+  cheaper than MSAA and the voxel edges come out cleaner. 64 is also what the
+  old placeholders were, so no screen's layout changed.
+- Asked for early, an item hands back an EMPTY `ImageTexture` and the art
+  appears in it a frame or two later. The texture object never changes, so
+  whatever is already drawing it redraws itself — that is what lets a
+  synchronous `ItemDb.icon()` sit in front of something that needs a frame to
+  happen. Every catalogue item is queued at startup, so a bag opened in the
+  first second is already full of pictures.
+- A tint is applied in one place, `ItemDb.tint_model()`, shared with the copy in
+  a character's hand: what is being swung and what is in the bag must never be
+  two different colours. White leaves the material alone rather than
+  multiplying by it.
+- HEADLESS RUNS TAKE NO PICTURES AT ALL — a dedicated server and every test in
+  `tests/` have nothing to draw into, and `icon()` answers null there, which
+  every screen already handles by drawing the item's name instead. So a test
+  asks `ItemDb.art_source()` ("does this item HAVE a picture") rather than for
+  the picture.
+- Armor is photographed through `NpcRig.preview_mesh()`: the plate as drawn, in
+  the suit's colours, bound to nothing. It skips the cell-claiming and the seam
+  caps a rigged part needs, because both of those exist for the sake of
+  MOVEMENT and nothing here can move.
+- Test: `--headless res://tests/test_item_icons.tscn` (prints
+  `ICONTEST RESULT=PASS/FAIL`) — every item HAS art and the file is there (the
+  guard the hand-drawn icons never had: an item added with no art used to be a
+  silent nameplate), each armor item is the right piece of its own suit, every
+  item builds a model with triangles in it, the three tiers photograph in three
+  different colours, a tint reaches the blade and an untinted item is left
+  alone, and a headless run renders nothing.
+- Eyeballing them: `godot --path . res://tests/preview_item_icons.tscn` (NO
+  `--headless` — an icon IS a render) lays every item's real icon out on a sheet
+  with its name and saves `user://item_icons_preview.png`. Framing, the angle
+  and whether a boot is recognisable at 64 pixels are invisible headless.
 
 ## Hotbar
 

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b7mxq2previcon"]
+
+[ext_resource type="Script" path="res://tests/preview_item_icons.gd" id="1_previcon"]
+
+[node name="ItemIconsPreview" type="Control"]
+script = ExtResource("1_previcon")

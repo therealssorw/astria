@@ -502,21 +502,10 @@ func set_held_item(id: String) -> void:
 	# needs its cross-section fattened without growing longer as well
 	var s: Variant = cfg["scale"]
 	inst.scale = s if s is Vector3 else Vector3.ONE * float(s)
-	_tint_held(inst, cfg["tint"])
+	# The same tint the item's icon is taken with, from the same place: what is
+	# in the hand and what is in the bag must never be two different colours.
+	ItemDb.tint_model(inst, cfg["tint"])
 	_held_node = attach
-
-## One model serves several items, so a tint stands in for different metals
-## until each has art of its own. White leaves the material alone.
-func _tint_held(root: Node, tint: Color) -> void:
-	if tint == Color(1, 1, 1):
-		return
-	for mi in root.find_children("*", "MeshInstance3D", true, false):
-		var mesh_inst := mi as MeshInstance3D
-		for i in mesh_inst.get_surface_override_material_count():
-			var mat := mesh_inst.mesh.surface_get_material(i)
-			var over := (mat.duplicate() if mat else StandardMaterial3D.new()) as BaseMaterial3D
-			over.albedo_color = over.albedo_color * tint
-			mesh_inst.set_surface_override_material(i, over)
 
 func flash(color: Color, duration := 0.15) -> void:
 	_flash_time = duration

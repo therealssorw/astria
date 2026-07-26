@@ -48,12 +48,16 @@ class Runner:
 			_fail("bar is not %d slots" % Net.HOTBAR_SLOTS)
 			return
 
-		# 1. handed-out items land on the bar without anyone touching the UI
+		# 1. handed-out items land on the bar without anyone touching the UI —
+		#    in catalogue order, and only until the bar is full. The catalogue
+		#    is longer than nine slots (it was not when this was written: the
+		#    twelve armor pieces filled it up), and everything past that is
+		#    carried without being on the bar.
 		var ids: Array = ItemDb.ITEMS.keys()
 		for id: String in ids:
 			Net.request_cheat_give(id)
 			await tree.physics_frame
-		for i in ids.size():
+		for i in mini(ids.size(), Net.HOTBAR_SLOTS):
 			if _bar()[i] != ids[i]:
 				_fail("slot %d holds '%s', expected '%s'" % [i, _bar()[i], ids[i]])
 				return
@@ -79,18 +83,23 @@ class Runner:
 			_fail("out-of-range slot was accepted")
 			return
 
-		# 3. assigning an item that is already on the bar swaps the two slots
+		# 3. assigning an item that is already on the bar swaps the two slots —
+		#    the slot it came from takes whatever was in the slot it went to,
+		#    which is an empty string only while the bar has a hole in it.
 		var moved: String = ids[0]
+		var displaced: String = _bar()[4]
 		Net.request_hotbar_assign(4, moved)
 		await tree.physics_frame
-		if _bar()[4] != moved or _bar().count(moved) != 1 or _bar()[0] != "":
+		if _bar()[4] != moved or _bar().count(moved) != 1 or _bar()[0] != displaced:
 			_fail("assign duplicated or lost an entry: %s" % str(_bar()))
 			return
 
-		# 4. an item the player does not carry can never reach the bar
+		# 4. an item the player does not carry can never reach the bar, and the
+		#    refusal leaves the slot exactly as it was
+		var untouched: String = _bar()[0]
 		Net.request_hotbar_assign(0, "not_a_real_item")
 		await tree.physics_frame
-		if _bar()[0] != "":
+		if _bar()[0] != untouched:
 			_fail("bar took an item that isn't carried")
 			return
 
