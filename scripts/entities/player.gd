@@ -248,6 +248,7 @@ var _net_send_accum := 0.0
 var _srv_pending_heavy := false
 var _srv_pending_time := -10.0
 var _srv_pending_lock := NodePath("")
+var _srv_pending_aim := 0.0 # yaw the queued swing was aimed along
 var _srv_combo_deadline := -10.0
 
 var _time := 0.0
@@ -498,8 +499,9 @@ func _server_sim_tick(delta: float) -> void:
 			and _time - _srv_pending_time <= combo_input_cache_tolerance:
 		var pending_heavy := _srv_pending_heavy
 		var pending_lock := _srv_pending_lock
+		var pending_aim := _srv_pending_aim
 		_srv_pending_time = -10.0
-		_srv_try_start(pending_heavy, pending_lock)
+		_srv_try_start(pending_heavy, pending_lock, pending_aim)
 		return
 	if attack_timer >= attack_duration:
 		attacking = false
@@ -511,8 +513,9 @@ func _server_sim_tick(delta: float) -> void:
 		if _time - _srv_pending_time <= combo_input_cache_tolerance:
 			var h := _srv_pending_heavy
 			var lp := _srv_pending_lock
+			var aim := _srv_pending_aim
 			_srv_pending_time = -10.0
-			_srv_try_start(h, lp)
+			_srv_try_start(h, lp, aim)
 
 ## True while the guard is up. Mirrors Enemy.is_blocking() so the HUD can ask
 ## any lock-on target the same question; `blocking` is already replicated.
@@ -748,8 +751,12 @@ func _orient_body(delta: float) -> void:
 	target_dir.y = 0
 	if target_dir.length_squared() < 0.001:
 		return
-	var target_yaw := atan2(-target_dir.x, -target_dir.z) + PI
-	body_visual.rotation.y = rotate_toward(body_visual.rotation.y, target_yaw, deg_to_rad(rate) * delta)
+	body_visual.rotation.y = rotate_toward(body_visual.rotation.y, _yaw_of(target_dir), deg_to_rad(rate) * delta)
+
+## Body yaw that faces `dir`. Inverse of the Vector3(sin(yaw), 0, cos(yaw)) the
+## server uses to read a reported yaw back into a direction.
+func _yaw_of(dir: Vector3) -> float:
+	return atan2(-dir.x, -dir.z) + PI
 
 func _body_forward() -> Vector3:
 	# facing dir is +Z: the orient yaw (atan2 + PI) turns basis.z toward the target
@@ -830,16 +837,23 @@ func _start_swing(heavy: bool, section: int) -> void:
 		_woosh_player.play()
 	if body_visual.has_method("on_attack_started"):
 		body_visual.on_attack_started(heavy, section)
-	# facing: locked target first, else velocity, else camera forward
+	# Facing: the locked target if there is one, otherwise straight down the
+	# camera — where you are LOOKING, which is the only aim an unlocked punch
+	# has. It used to prefer the direction you were moving whenever you were
+	# moving at all, so strafing past someone threw the punch off sideways and
+	# backing away threw it behind you.
 	if lock_target:
 		attack_face_dir = lock_target.global_position - global_position
-	elif Vector3(velocity.x, 0, velocity.z).length() > 0.5:
-		attack_face_dir = Vector3(velocity.x, 0, velocity.z)
 	else:
 		attack_face_dir = -camera.global_transform.basis.z
 	attack_face_dir.y = 0
 	if attack_face_dir.length_squared() > 0.001:
 		attack_face_dir = attack_face_dir.normalized()
+		# A swing commits the stance: turn to it NOW instead of catching up at
+		# orient speed. The body yaw is what the server aims the trace along, and
+		# at 540 deg/s a swing thrown mid-turn landed up to a right angle away
+		# from what the player saw.
+		body_visual.rotation.y = _yaw_of(attack_face_dir)
 	_attack_lunge_step(heavy)
 	# the owner's swing is a prediction — only the server's copy of this
 	# swing (host pawn, or _srv_start_swing for remote pawns) deals damage
@@ -849,7 +863,7 @@ func _start_swing(heavy: bool, section: int) -> void:
 		var lock_path := NodePath("")
 		if is_instance_valid(lock_target):
 			lock_path = lock_target.get_path()
-		Net.request_attack(heavy, lock_path)
+		Net.request_attack(heavy, lock_path, body_visual.rotation.y)
 
 ## A committed swing steps into a locked opponent that is out of reach, so
 ## punching at the edge of the ring closes the gap instead of hitting air.
@@ -892,7 +906,7 @@ func _tick_attack(delta: float) -> void:
 		combo_index = 0
 
 ## SERVER: a remote client pressed attack. Validate, don't trust.
-func server_handle_attack_request(heavy: bool, lock_path: NodePath) -> void:
+func server_handle_attack_request(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
 	if dead or sliding or stagger_time > 0.0:
 		return
 	if attacking:
@@ -900,10 +914,11 @@ func server_handle_attack_request(heavy: bool, lock_path: NodePath) -> void:
 		_srv_pending_heavy = heavy
 		_srv_pending_time = _time
 		_srv_pending_lock = lock_path
+		_srv_pending_aim = aim_yaw
 		return
-	_srv_try_start(heavy, lock_path)
+	_srv_try_start(heavy, lock_path, aim_yaw)
 
-func _srv_try_start(heavy: bool, lock_path: NodePath) -> void:
+func _srv_try_start(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
 	if dead or stagger_time > 0.0:
 		return
 	if stamina < (heavy_stamina_cost if heavy else stamina_cost):
@@ -924,7 +939,9 @@ func _srv_try_start(heavy: bool, lock_path: NodePath) -> void:
 	if lock_target:
 		attack_face_dir = lock_target.global_position - server_body_pos()
 	else:
-		attack_face_dir = Vector3(sin(net_yaw), 0, cos(net_yaw))
+		# the yaw the swing was thrown along, not whatever the last state report
+		# happened to say the body was doing when the request landed
+		attack_face_dir = Vector3(sin(aim_yaw), 0, cos(aim_yaw))
 	attack_face_dir.y = 0
 	if attack_face_dir.length_squared() > 0.001:
 		attack_face_dir = attack_face_dir.normalized()
@@ -977,9 +994,13 @@ func _do_attack_trace() -> void:
 		var flat := Vector3(to_target.x, 0, to_target.z).normalized()
 		var in_range := dist <= reach + radius
 		var in_cone := fwd.dot(flat) >= cone_cos
+		# nobody misses a body they are stood inside. At that distance the cone is
+		# only measuring which way two overlapping capsules lean, and it is what
+		# ate the punch every time an enemy closed all the way in
+		var point_blank := dist <= radius
 		# locked target is guaranteed within reach + radius + slack, even off-angle
 		var guaranteed: bool = e == lock_target and dist <= reach + radius + locked_hit_bonus
-		if (in_range and in_cone) or guaranteed:
+		if (in_range and (in_cone or point_blank)) or guaranteed:
 			hit_actors[e] = true
 			var away := flat if flat.length_squared() > 0.001 else fwd
 			var kb := away * knockback + Vector3.UP * launch

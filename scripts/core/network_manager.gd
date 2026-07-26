@@ -838,18 +838,24 @@ func _check_fell_off_world(pn: Node) -> void:
 
 # ---------------- combat protocol ----------------
 
-## Client owner -> server: "I pressed attack" (+ claimed lock-on target,
-## which the server re-validates by range). Everything else is server-side.
+## Client owner -> server: "I pressed attack" (+ claimed lock-on target, which
+## the server re-validates by range, and the yaw the swing was thrown along).
+##
+## The aim rides WITH the swing rather than being read off the last state report
+## when it lands: the two are sent in the same frame and the report can arrive
+## second, which aimed the trace along wherever the body had been pointing. It is
+## no more trusted than before — the reported body yaw was already the client's
+## word, and the trace still runs off the server's own positions and reach.
 @rpc("any_peer", "call_remote", "reliable")
-func sv_request_attack(heavy: bool, lock_path: NodePath) -> void:
+func sv_request_attack(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
 	if not multiplayer.is_server():
 		return
 	var pawn := _pawn(multiplayer.get_remote_sender_id())
 	if pawn and not pawn.is_local:
-		pawn.server_handle_attack_request(heavy, lock_path)
+		pawn.server_handle_attack_request(heavy, lock_path, aim_yaw)
 
-func request_attack(heavy: bool, lock_path: NodePath) -> void:
-	rpc_id(1, "sv_request_attack", heavy, lock_path)
+func request_attack(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
+	rpc_id(1, "sv_request_attack", heavy, lock_path, aim_yaw)
 
 ## Server: tell everyone (but the swinging owner predicted it already).
 func server_broadcast_swing(id: int, heavy: bool, section: int) -> void:

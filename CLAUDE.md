@@ -133,6 +133,27 @@ mixed pile.
 - No new animation: `_animate` already replicates `ratio = speed / walk_speed`,
   and `HumanoidVisual.tick` picks the run clip and scales stride rate from it.
 
+## Combat: where a swing goes
+
+- An unlocked punch goes where the CAMERA is pointed. It used to prefer the
+  direction you were moving whenever you were moving at all, so strafing past
+  someone threw the punch off sideways and backing away threw it behind you —
+  which is what made unlocked punching feel like it never connected.
+- A swing snaps the body to its aim rather than turning toward it at
+  `locked_orient_speed_deg`. This is not cosmetic: the body yaw IS what the
+  server aims an unlocked trace along, and at 540 deg/s a punch thrown mid-turn
+  landed up to a right angle away from what the player saw.
+- The aim rides WITH the attack request (`sv_request_attack`'s `aim_yaw`)
+  instead of being read off `net_yaw` when the request lands. Both are sent in
+  the same frame and the state report can arrive second, which aimed the trace
+  at wherever the body had been. It is no more trusted than before — the
+  reported yaw was already the client's word, and there is nowhere else a
+  server could learn where someone was looking. Everything the trace CHECKS
+  (position, reach, who exists) is still the server's own.
+- The cone is skipped at point blank (`dist <= radius`): inside that, it is only
+  measuring which way two overlapping capsules lean, and it ate the punch every
+  time an enemy closed all the way in.
+
 ## Combat: lock-on
 
 - Lock-on is ALWAYS the player's own press (MMB / R3) — nothing locks on for
