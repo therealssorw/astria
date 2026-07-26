@@ -1,0 +1,57 @@
+[gd_resource type="Resource" script_class="NpcDefinition" format=3 uid="uid://df51oiis3fewv"]
+
+[ext_resource type="Script" uid="uid://d3re5nb76kyc8" path="res://scripts/entities/npc/npc_part.gd" id="1_dj411"]
+[ext_resource type="Script" uid="uid://c5ofxco6fpte0" path="res://scripts/entities/npc/npc_definition.gd" id="2_y6klr"]
+
+[sub_resource type="Resource" id="Resource_55a8a"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Arms/arms_base.gltf"
+colors = PackedColorArray(0, 0, 0, 1, 1, 1, 1, 1)
+tint = Color(0.8567708, 0.7630615, 0.4819336, 1)
+
+[sub_resource type="Resource" id="Resource_j8i2o"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Arms/arms_armor1.gltf"
+colors = PackedColorArray(1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1)
+
+[sub_resource type="Resource" id="Resource_028y0"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Body/body_base.gltf"
+colors = PackedColorArray(0, 0, 0, 1)
+
+[sub_resource type="Resource" id="Resource_3nbhh"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Body/body_armor1.gltf"
+colors = PackedColorArray(1, 1, 1, 1)
+
+[sub_resource type="Resource" id="Resource_7o2t4"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Feet/feet_base.gltf"
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 1, 0.93333334, 0.93333334, 0.93333334, 1)
+
+[sub_resource type="Resource" id="Resource_a2fya"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Feet/feet_armor1.gltf"
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0.9372549, 0.92941177, 0.9372549, 1)
+
+[sub_resource type="Resource" id="Resource_srqcj"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Head/head_base.gltf"
+colors = PackedColorArray(0.85490197, 0.7647059, 0.48235294, 1, 0, 0, 0, 1)
+
+[sub_resource type="Resource" id="Resource_7xwxm"]
+script = ExtResource("1_dj411")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Head/head_armor1.gltf"
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
+
+[resource]
+script = ExtResource("2_y6klr")
+display_name = "Knight"
+feet = SubResource("Resource_7o2t4")
+body = SubResource("Resource_028y0")
+arms = SubResource("Resource_55a8a")
+head = SubResource("Resource_srqcj")
+feet_armor = SubResource("Resource_a2fya")
+body_armor = SubResource("Resource_3nbhh")
+arms_armor = SubResource("Resource_j8i2o")
+head_armor = SubResource("Resource_7xwxm")

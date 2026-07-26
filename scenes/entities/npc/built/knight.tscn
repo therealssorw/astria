@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://cfkbjklmgx003"]
+
+[ext_resource type="Script" uid="uid://bdghot0bj7ino" path="res://scripts/entities/npc/npc_character.gd" id="1_r6hmh"]
+[ext_resource type="Resource" uid="uid://df51oiis3fewv" path="res://Assets/Data/Npcs/knight.tres" id="2_onvgi"]
+
+[node name="Knight" type="Node3D" unique_id=1042695314]
+script = ExtResource("1_r6hmh")
+definition = ExtResource("2_onvgi")
