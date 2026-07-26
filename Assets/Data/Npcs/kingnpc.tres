@@ -26,6 +26,7 @@ colors = PackedColorArray(0.9372549, 0.88235295, 0.77254903, 1, 0.87058824, 0.76
 [resource]
 script = ExtResource("2_6tpbr")
 display_name = "KingNPC"
+height = 2.4
 feet = SubResource("Resource_qhpae")
 body = SubResource("Resource_6tpbr")
 arms = SubResource("Resource_3infr")
