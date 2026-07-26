@@ -57,29 +57,39 @@ const CLIPS := {
 	"light_1": {"path": ANIM_DIR + "Combat/LightM1/Illegal Elbow Punch.fbx", "speed": 1.55, "loop": false},
 	"light_2": {"path": ANIM_DIR + "Combat/LightM1/Elbow Uppercut Combo.fbx", "speed": 1.55, "loop": false},
 	"heavy": {"path": ANIM_DIR + "Combat/HeavyM1/Cross Punch.fbx", "speed": 1.35, "loop": false},
-	# --- with a sword in hand (Mocap Online TC pack, MotusMan rig) ---
-	# The pack ships ONE 5.5s combo take, and most of it is spent in a deep
-	# mocap fighting crouch: the hips sit at 1.00 standing and sink to 0.75
-	# through the middle cuts and to 0.67 in the lunge at ~4.1, which on this
-	# character reads as squatting. So only the FIRST cut is used — it starts
-	# from the standing ready pose (~0.6), the blade goes through at ~0.8, and
-	# it is out before the crouch settles. Every light swing plays it, and the
-	# heavy is that same slash stretched over the longer heavy swing.
+	# --- standing and walking with a sword (Mocap Online TC pack, MotusMan rig) ---
 	"sword_idle": {"path": ANIM_DIR + "Sword/Idle/Sword Idle.fbx", "speed": 1.0, "loop": true},
 	"sword_walk": {"path": ANIM_DIR + "Sword/Walking/Sword Walk.fbx", "speed": 1.0, "loop": true},
 	"sword_run": {"path": ANIM_DIR + "Sword/Running/Sword Run.fbx", "speed": 1.0, "loop": true},
-	# "speed" here only matters if something plays this clip outside an attack:
-	# on_attack_started always stretches it to the punch it stands in for.
-	# Trimmed to the cut itself: the arm is already moving at 0.66, peaks at
-	# 0.80 and is spent by 0.90. The raise before it and the drift after are
-	# not in the clip at all — the blend out of idle covers the lead-in.
-	"sword_slash": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
-			"loop": false, "slice": [0.66, 0.90]},
+	# --- swinging it (Awesome Sword Animations V4, UE mannequin rig) ---
+	# FOUR REAL CUTS, one per swing, where there used to be one slash played for
+	# all of them. This pack is what made that possible: the Mocap Online take is
+	# a single 5.5s combo spent mostly in a deep fighting crouch (hips sinking
+	# from 1.00 to 0.67), so only one cut of it could ever be used.
+	#
+	# These are the IN-PLACE (_IP) variants, not the root-motion ones: the game
+	# drives its own movement, and a root track would fight the lunge. Their hips
+	# do not move a millimetre through the whole take, so there is no crouch to
+	# dodge — the only trimming needed is to the cut itself.
+	#
+	# Each is sliced to its strike, found by the peak of the right arm's angular
+	# speed and widened to where that falls under a quarter of the peak. The
+	# numbers in the names are the pack's own combo numbers, kept so a clip can be
+	# traced back to it. "speed" only matters if something plays one outside an
+	# attack: on_attack_started always stretches it onto the punch's own window.
+	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/SwordCombo6.fbx", "speed": 1.55,
+			"loop": false, "slice": [1.14, 1.45]},   # sharpest of them: the opener
+	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/SwordCombo5.fbx", "speed": 1.55,
+			"loop": false, "slice": [1.10, 1.53]},
+	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/SwordCombo10.fbx", "speed": 1.55,
+			"loop": false, "slice": [1.54, 1.95]},   # the combo ender
+	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/SwordCombo3.fbx", "speed": 1.35,
+			"loop": false, "slice": [1.18, 1.62]},   # widest wind-up
 }
 ## Clip swaps applied while a sword is in hand. Anything not listed keeps its
-## bare-handed clip, so blocking, sliding and jumping are unchanged. Every
-## swing is the same slash — the take only has one that stays standing — and
-## the heavy differs only in being stretched over the heavy's longer window,
+## bare-handed clip, so blocking, sliding and jumping are unchanged. Each swing
+## now has a cut of its OWN — the three lights chain through three different
+## ones, and the heavy is a fourth stretched over the heavy's longer window,
 ## which is what makes it read as the slow, committed version. Repeats still
 ## cross-blend through the "__alt" copy.
 const SWORD_CLIPS := {
@@ -88,8 +98,8 @@ const SWORD_CLIPS := {
 	# and nothing about it shows.
 	"idle": "sword_idle", "idle_long": "sword_idle",
 	"walk": "sword_walk", "run": "sword_run",
-	"light_0": "sword_slash", "light_1": "sword_slash",
-	"light_2": "sword_slash", "heavy": "sword_slash",
+	"light_0": "sword_light_0", "light_1": "sword_light_1",
+	"light_2": "sword_light_2", "heavy": "sword_heavy",
 }
 ## Guard-up movement clips built at load: legs from the locomotion clip on the
 ## right, upper body grafted from the block stance — so circling an opponent

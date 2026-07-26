@@ -1119,19 +1119,33 @@ mixed pile.
   `_clip_for()` does the swap inside `_play`/`_restart`, so anything with no
   sword version (block, slide, jump) keeps the bare-handed clip, and a
   character built without the sword clips falls back instead of erroring.
-- Those clips are the Mocap Online TC Sword pack on the MotusMan rig, whose
-  bones are Mixamo's names minus the `mixamorig_` prefix — hence
-  `bonemap_motusman.tres`, the Mixamo map with the prefix stripped, wired into
-  each clip's `.import` exactly like the Mixamo ones.
-- The pack ships ONE 5.5s combo take, and most of it is danced in a deep mocap
-  crouch: the hips stand at 1.00, sink to ~0.75 through the middle cuts and to
-  0.67 in the lunge near 4.1s, which on this character reads as squatting. So
-  only the FIRST cut is used, trimmed to the strike itself —
-  `"slice": [0.66, 0.90]`, the arm already moving at 0.66, peaking at 0.80 and
-  spent by 0.90, with the blend out of idle standing in for the raise. EVERY swing plays
-  that one slash (`sword_slash`); the heavy differs only in the longer window
-  it is stretched over. If more sword moves are ever wanted they need a take
-  that stays on its feet, not another slice of this one.
+- STANDING and WALKING with a blade are the Mocap Online TC Sword pack on the
+  MotusMan rig, whose bones are Mixamo's names minus the `mixamorig_` prefix —
+  hence `bonemap_motusman.tres`, the Mixamo map with the prefix stripped, wired
+  into each clip's `.import` exactly like the Mixamo ones.
+- SWINGING it is Awesome Sword Animations V4, on the UE mannequin — so it reuses
+  `bonemap_manny.tres`, the map Rouge already needed, with no new map to write.
+  There are FOUR cuts, one per swing: three lights that chain and a heavy. Each
+  is trimmed to its strike, and the slices were not eyeballed — the peak of the
+  right arm's angular speed was measured and widened out to where it falls under
+  a quarter of that peak.
+- It replaced a real limitation, which is worth knowing if a future pack is being
+  judged: the Mocap Online take is ONE 5.5s combo danced in a deep mocap crouch
+  (hips from 1.00 down to 0.67 in the lunge), so exactly one cut of it was usable
+  and every swing played that same slash. The V4 clips are the IN-PLACE (`_IP`)
+  variants and their hips do not move at all, so there is no crouch to dodge and
+  no root track to fight the lunge the game drives itself.
+- The `_IP` / `_RM` split matters: `_RM` is root motion, and this game moves its
+  own characters. Take the in-place half of any pack that offers both.
+- A RETARGET IS KEYED BY NODE PATH, and getting it wrong fails SILENTLY: the
+  `_subresources` block names the skeleton (`"PATH:SKM_Manny_Simple/Skeleton3D"`
+  here, not the bare `"PATH:Skeleton3D"` the Mixamo clips use, because these
+  exports put the skeleton under a mesh node). Point it at a path that does not
+  exist and the clip imports perfectly with its ORIGINAL bone names, animating
+  nothing — check a track path, not just that the import succeeded.
+- Eyeballing them: `godot --path . res://tests/preview_sword_swings.tscn` (NO
+  `--headless`) puts the iron sword in the player's hand and photographs each
+  swing going in, at the strike, and coming out.
 - A weapon never changes how fast you fight: `get_attack_info` measures the
   bare-handed clip even when one is held, and `on_attack_started` stretches
   the weapon's clip onto that window — so damage, hit time and the combo gate
