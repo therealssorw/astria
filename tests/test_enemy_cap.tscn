@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://captest0astria"]
+
+[ext_resource type="Script" path="res://tests/test_enemy_cap.gd" id="1_test"]
+
+[node name="EnemyCapTest" type="Node"]
+script = ExtResource("1_test")

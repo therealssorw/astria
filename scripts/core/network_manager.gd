@@ -24,6 +24,10 @@ const PLAYER_STATE_INTERVAL := 1.0 / 20.0  # server -> clients pawn states
 const ENEMY_STATE_INTERVAL := 1.0 / 15.0   # server -> clients enemy states
 const VITALS_INTERVAL := 0.5               # server -> owner stamina/health sync
 const KILL_Y := 30.0                       # below the waves -> counts as a death
+## Hard ceiling on how many bandits may be alive in the world at once, across
+## every spawner. The server owns it: a spawner asks before it builds anything
+## (server_can_spawn_enemy), so adding more camps cannot raise the total.
+const MAX_LIVE_ENEMIES := 5
 
 const GOLD_DROP_SCRIPT := preload("res://scripts/world/gold_drop.gd")
 const GOLD_PICKUP_RANGE := 1.4             # walk this close to collect a pile
@@ -599,6 +603,24 @@ func cl_player_respawn(id: int, pos: Vector3) -> void:
 func next_enemy_name() -> String:
 	_enemy_counter += 1
 	return "Bandit_%d" % _enemy_counter
+
+## SERVER: how many bandits are alive in the world right now.
+func live_enemy_count() -> int:
+	var en := _enemies_node()
+	if en == null:
+		return 0
+	var n := 0
+	for e in en.get_children():
+		if not e.dead:
+			n += 1
+	return n
+
+## SERVER: may another bandit be spawned? Spawners must ask before building
+## one — this is the single place the world-wide cap is enforced.
+func server_can_spawn_enemy() -> bool:
+	if not multiplayer.is_server():
+		return false
+	return live_enemy_count() < MAX_LIVE_ENEMIES
 
 func server_broadcast_enemy_spawn(enemy: Node3D) -> void:
 	rpc("cl_spawn_enemy", String(enemy.name), enemy.global_position)

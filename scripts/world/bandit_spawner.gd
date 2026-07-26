@@ -36,6 +36,9 @@ func _alive_count() -> int:
 func _try_spawn() -> void:
 	if _alive_count() >= max_alive:
 		return
+	# The world-wide ceiling the server owns, on top of this camp's own cap.
+	if not Net.server_can_spawn_enemy():
+		return
 	var bandit := bandit_scene.instantiate() as Node3D
 	bandit.name = Net.next_enemy_name()
 	var container := get_tree().current_scene.get_node_or_null("Enemies")
