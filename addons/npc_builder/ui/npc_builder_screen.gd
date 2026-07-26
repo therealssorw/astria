@@ -276,26 +276,45 @@ func _refresh_sets() -> void:
 	if _set_picker.item_count > 0:
 		_set_picker.select(0)
 
+## Two kinds of thing can be worn, and the menu says which is which. A SAVED
+## suit (made in the Items tab) arrives named and already coloured; a raw model
+## SET is the art as drawn, for dressing a character without making a suit
+## first. Metadata carries the path or the set name, so applying one does not
+## have to guess from the label.
 func _refresh_suits() -> void:
 	_suit_picker.clear()
-	for suit in NpcRig.list_categories(true):
-		_suit_picker.add_item(suit)
+	var saved := ArmorLibrary.paths()
+	if not saved.is_empty():
+		_suit_picker.add_separator("Saved suits")
+		for path in saved:
+			_suit_picker.add_item(ArmorLibrary.title_of(path))
+			_suit_picker.set_item_metadata(_suit_picker.item_count - 1, path)
+	var sets := NpcRig.list_categories(true)
+	if not sets.is_empty():
+		_suit_picker.add_separator("Armor sets")
+		for suit in sets:
+			_suit_picker.add_item(suit)
+			_suit_picker.set_item_metadata(_suit_picker.item_count - 1, suit)
 	if _suit_picker.item_count == 0:
-		_suit_picker.add_item("(no suits in %s)" % NpcRig.ARMOR_ROOT.get_file())
+		_suit_picker.add_item("(no armor in %s)" % NpcRig.ARMOR_ROOT.get_file())
 		_suit_picker.disabled = true
-	else:
-		_suit_picker.disabled = false
-		_suit_picker.select(0)
+		return
+	_suit_picker.disabled = false
+	for i in _suit_picker.item_count:
+		if not _suit_picker.is_item_separator(i):
+			_suit_picker.select(i)
+			break
 
 func _selected_set() -> String:
 	if _set_picker.selected < 0:
 		return ""
 	return _set_picker.get_item_text(_set_picker.selected)
 
+## Either a res:// path to a saved suit or the name of a raw armor set.
 func _selected_suit() -> String:
 	if _suit_picker.disabled or _suit_picker.selected < 0:
 		return ""
-	return _suit_picker.get_item_text(_suit_picker.selected)
+	return str(_suit_picker.get_item_metadata(_suit_picker.selected))
 
 func _queue_preview() -> void:
 	_repaint.start()
@@ -350,9 +369,18 @@ func _on_apply_suit() -> void:
 	_rebind_slots()
 	_apply_to_preview()
 
-## Every armor slot from one suit. An empty suit name strips the layer, which is
-## what the switch going off means.
+## Puts on whatever the picker is showing. A SAVED suit comes with the colours
+## it was authored in (that is the point of having saved it); a raw armor SET is
+## the art as drawn, so its overrides start empty. An empty name strips the
+## layer, which is what the switch going off means.
 func _fill_armor(def: NpcDefinition, suit: String) -> void:
+	if suit.begins_with("res://"):
+		var saved := ArmorLibrary.load_suit(suit)
+		if saved != null:
+			saved.wear(def)
+			return
+		_status.text = "%s could not be loaded" % suit.get_file()
+		return
 	for slot: String in NpcDefinition.ARMOR_SLOTS:
 		var part := def.get_part(slot)
 		var models := NpcRig.list_parts(slot, suit) if not suit.is_empty() else PackedStringArray()

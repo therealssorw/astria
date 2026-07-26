@@ -1,0 +1,31 @@
+@tool
+extends EditorPlugin
+## Adds the "Items" tab next to 2D / 3D / Script / NPC Builder.
+
+const Screen := preload("res://addons/item_builder/ui/item_builder_screen.gd")
+
+var _screen: Control
+
+func _enter_tree() -> void:
+	_screen = Screen.new()
+	_screen.name = "ItemBuilder"
+	EditorInterface.get_editor_main_screen().add_child(_screen)
+	_screen.hide()
+
+func _exit_tree() -> void:
+	if is_instance_valid(_screen):
+		_screen.queue_free()
+	_screen = null
+
+func _has_main_screen() -> bool:
+	return true
+
+func _get_plugin_name() -> String:
+	return "Items"
+
+func _get_plugin_icon() -> Texture2D:
+	return EditorInterface.get_editor_theme().get_icon(&"MeshInstance3D", &"EditorIcons")
+
+func _make_visible(next: bool) -> void:
+	if is_instance_valid(_screen):
+		_screen.visible = next

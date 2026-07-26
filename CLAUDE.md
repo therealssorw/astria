@@ -58,7 +58,8 @@ Current structure to follow and extend:
   `theme/` — the palette every screen is built from), `combat/` (the rules two
   fighters meet under, e.g. levels), `world/` (level/world logic), `core/`
   (autoloads)
-- `addons/` — editor plugins (`npc_builder/`, `grass_brush/`, ...)
+- `addons/` — editor plugins (`npc_builder/`, `item_builder/`, `grass_brush/`,
+  ...)
 - `tools/` — command-line asset pipeline scripts, e.g. `voxel/gox_to_gltf.py`
 
 When adding new assets or code, place them in the most specific folder that
@@ -961,6 +962,51 @@ mixed pile.
 - Fitting a weapon is previewed on the player's hand now
   (`tests/preview_held_item.gd`), because the player is the only thing in the
   game that carries anything and a voxel fist is not the shape Rouge's was.
+
+## The Items tab
+
+- `addons/item_builder/` adds the **Items** tab beside 2D / 3D / Script / NPC
+  Builder. It is where the things characters carry and wear are MADE. It opens
+  on a menu of what can be made rather than on an editor, because "Items" is not
+  one thing: armor is the first kind, and the next (a weapon, a shield) is
+  another button on that menu and another pane beside the armor one.
+- "Create armor" opens the armor pane: a name, the four pieces, a colour swatch
+  per palette entry and a tint each, on a turntable. **Save** writes one file,
+  `Assets/Data/Armor/<slug>.tres` — an `ArmorDefinition`.
+- MADE here, WORN in the NPC Builder, and that split is the point. A suit is
+  authored and coloured once and then put on any number of characters in one
+  move, so recolouring the town guard is one file instead of twenty NPCs.
+- A SUIT is not an armor MODEL SET. `NpcRig.ARMOR_ROOT` is the raw art in the
+  colours it was drawn in; a suit is that art dressed — pieces chosen, palette
+  overridden, tinted, named. The NPC Builder's picker offers both, under
+  "Saved suits" and "Armor sets", and the metadata says which so applying one
+  never has to guess from the label.
+- `ArmorDefinition.wear()` hands the character COPIES of its pieces. If it
+  handed references, recolouring one guard in the NPC Builder would rewrite the
+  suit file and every other guard wearing it. `take_from()` is the other
+  direction, for making a suit out of what a character already has on.
+- `ArmorLibrary` (`scripts/items/armor/`) owns the folder, the listing, the slug
+  and the save, so neither tab invents a path of its own. It refuses to hand
+  back anything that is not an `ArmorDefinition` — the NPC definitions live one
+  folder over and files get dragged around.
+- The suit is previewed ON a Base villager, never floating on its own: the rig
+  builds its height stack from feet, body and head, so a character made only of
+  armor has no height to be rigged by — and a suit hanging in the air tells you
+  nothing about whether it fits.
+- The tab REUSES the NPC Builder's part-picker and turntable rather than copying
+  them (a suit is made of the same `NpcPart`s an NPC's armor layer holds), so
+  `item_builder` depends on `npc_builder` being enabled. Both ship together and
+  are enabled together in `project.godot`.
+- `ArmorDefinition` MUST stay `@tool`, for the reason `NpcDefinition` documents:
+  a loaded .tres whose script is not a tool script comes back as a placeholder
+  and `wear()` dies on it.
+- Test: `--headless res://tests/test_armor_suits.tscn` (prints
+  `ARMORTEST RESULT=PASS/FAIL`) — an empty suit is refused, a saved one comes
+  back with its colours, wearing copies instead of linking, a worn suit really
+  rigs in its own colours, the library refuses an NPC definition, the Items tab
+  builds and its Create armor button produces something, and the NPC Builder
+  offers the saved suit and puts it on in the colours it was authored in while a
+  raw set still arrives as drawn.
 
 ## Armor on a built NPC
 
