@@ -57,15 +57,21 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("cheat_menu"):
 		if _open:
 			close()
-		elif not DialogSystem.is_open() and not ShopSystem.is_open():
+		elif not ShopSystem.is_open():
 			open()
 
+## A conversation does NOT keep the menu shut: half of what these cheats are
+## for is getting out of something that is talking to you — a tutorial line, a
+## cutscene, a gate you cannot find the button for. The box is closed on the
+## way in so the two are never both listening for the same press.
 func open() -> void:
 	if _open:
 		return
 	_player = _local_player()
 	if _player == null:
 		return # not in the world yet (main menu) — nothing to cheat at
+	if DialogSystem.is_open():
+		DialogSystem.close()
 	_open = true
 	_page = "root"
 	_root.visible = true
@@ -113,6 +119,8 @@ func _refresh() -> void:
 		_build_give()
 	elif _page == "teleport":
 		_build_teleport()
+	elif _page == "cutscene":
+		_build_cutscene()
 	else:
 		_build_root()
 	_set_hint(_default_hint(), Color(1, 1, 1, 0.38))
@@ -128,13 +136,25 @@ func _build_root() -> void:
 	_add_row("Teleport…", "", func() -> void:
 		_page = "teleport"
 		_refresh())
-	# both close the menu first so you actually see the thing you asked for
-	_add_row("Start cutscene", "intro", func() -> void:
-		close()
-		IntroCutscene.replay())
-	_add_row("Start tutorial", "city raid", func() -> void:
+	_add_row("Cutscene…", "", func() -> void:
+		_page = "cutscene"
+		_refresh())
+	# closes the menu first so you actually see the thing you asked for
+	_add_row("Start tutorial", "island raid", func() -> void:
 		close()
 		Net.request_cheat_tutorial())
+
+func _build_cutscene() -> void:
+	_title.text = "Cheats  ›  Cutscene"
+	_add_row("Start cutscene", "from black", func() -> void:
+		close()
+		IntroCutscene.replay())
+	_add_row("End cutscene", "skip to the end", func() -> void:
+		close()
+		IntroCutscene.abort())
+	_add_row("‹ Back", "", func() -> void:
+		_page = "root"
+		_refresh())
 
 ## Every place in TeleportData, whether or not it has been built yet — a
 ## destination with no anchor in the level answers with that, which is more

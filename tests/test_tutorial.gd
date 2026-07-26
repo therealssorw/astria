@@ -2,11 +2,17 @@ extends Node
 ## Headless integration test for the tutorial. Run:
 ##   godot --headless --path . res://tests/test_tutorial.tscn
 ## Hosts a listen server in-process and walks the whole lesson: joining puts
-## the player in their own copy of the city rather than on the island, nothing
-## moves until the intro cutscene reports in, each gate holds the fight frozen
-## until the player really does that action, clearing a wave moves it on by
-## itself, and finishing hands the player to the island with the copy and its
-## bandits gone.
+## the player on their own copy of the starter island rather than the real one,
+## nothing moves until the intro cutscene reports in, each gate holds the fight
+## frozen until the player really presses that button, clearing a wave moves it
+## on by itself, and finishing hands the player to the real island with the
+## copy and its bandits gone. Then the cheat restarts it, and a gate nobody
+## answers gives in rather than trapping the player in front of frozen bandits.
+##
+## The gates are worked with REAL input events. That matters: the heavy gate
+## used to be unpassable by tapping the button, which left three bandits frozen
+## and no way forward, and no amount of setting flags directly would have
+## caught it.
 ## Prints TUTTEST RESULT=PASS/FAIL and exits with the matching code.
 
 func _ready() -> void:
@@ -19,6 +25,10 @@ class Runner:
 	extends Node
 
 	const ME := 1 # a listen server's own player is peer 1
+	## Not Net.DEFAULT_PORT: the test must not fight a game running from the
+	## editor for the port, or it fails with "pawn never spawned" and blames
+	## the tutorial for someone else playing.
+	const TEST_PORT := 27140
 
 	func _ready() -> void:
 		_run()
@@ -56,28 +66,36 @@ class Runner:
 		for b in _my_bandits():
 			b.dead = true
 
-	## Stand in for the player doing the thing. These are the SERVER's own
-	## fields on its copy of the pawn — the same ones a real swing or a raised
-	## guard set, and the only ones the gates ever read.
-	func _do_action(pawn: Node, action: String) -> void:
-		match action:
-			"attack":
-				pawn.attacking = true
-				pawn.attack_is_heavy = false
-			"attack_heavy":
-				pawn.attacking = true
-				pawn.attack_is_heavy = true
-			"block":
-				pawn.blocking = true
+	## Real input, not a flag set behind the game's back. A gate reads what the
+	## pawn is DOING, and the road from "the button is down" to "attack_is_heavy
+	## is true" is where the interesting mistakes live — the heavy gate was
+	## unpassable by tapping, and only pressing the real button showed it.
+	func _press(action: String, down: bool) -> void:
+		var ev := InputEventAction.new()
+		ev.action = action
+		ev.pressed = down
+		Input.parse_input_event(ev)
 
-	func _stop_action(pawn: Node) -> void:
-		pawn.attacking = false
-		pawn.blocking = false
+	## Work the button the way a player would until the step moves on: taps for
+	## an ordinary press, ~0.6s holds for the ones that need holding.
+	func _work_button(action: String, hold: bool, was: String, seconds := 6.0) -> bool:
+		var period := 40 if hold else 20
+		var release_at := 36 if hold else 10
+		for i in int(seconds * 60.0):
+			if i % period == 0:
+				_press(action, true)
+			elif i % period == release_at:
+				_press(action, false)
+			await get_tree().physics_frame
+			if _step_id() != was:
+				_press(action, false)
+				return true
+		_press(action, false)
+		return false
 
-	## Walk one gate: check the fight is frozen, do the action, check it moved
-	## on and let go. Returns "" on success or the failure reason.
-	func _pass_gate(pawn: Node, step_id: String, action: String,
-			client_gate := false) -> String:
+	## Walk one gate: check the fight is frozen, do the action for real, check
+	## it moved on. Returns "" on success or the failure reason.
+	func _pass_gate(step_id: String, action: String, client_gate := false) -> String:
 		if not await _until(func() -> bool: return _step_id() == step_id):
 			return "%s never came up (stuck on '%s')" % [step_id, _step_id()]
 		var held := _my_bandits()
@@ -92,18 +110,18 @@ class Runner:
 			return "%s opened without the player doing anything" % step_id
 		if client_gate:
 			Net.report_tutorial_pressed(step_id)
-		else:
-			_do_action(pawn, action)
-		var moved := await _until(func() -> bool: return _step_id() != step_id)
-		_stop_action(pawn)
-		if not moved:
-			return "%s never opened after the action" % step_id
+			if not await _until(func() -> bool: return _step_id() != step_id):
+				return "%s never opened after the action" % step_id
+			return ""
+		var binding := TutorialData.gate_action_binding(action)
+		if not await _work_button(binding, TutorialData.gate_is_hold(action), step_id):
+			return "%s never opened after pressing %s" % [step_id, binding]
 		return ""
 
 	func _run() -> void:
 		var tree := get_tree()
 		await tree.physics_frame
-		Net.host_game("Tester")
+		Net.host_game("Tester", false, TEST_PORT)
 
 		var pawn: Node3D = null
 		for i in 900:
@@ -118,20 +136,40 @@ class Runner:
 			_fail("pawn never spawned")
 			return
 
-		# 1. joining lands in a private copy of the city, not on the island
+		# 1. joining lands in a private COPY OF THE ISLAND, not on the real one
 		if not Tutorial.server_running(ME):
 			_fail("tutorial did not start on join")
 			return
 		var arena := tree.current_scene.get_node_or_null("TutorialArena_0")
 		if arena == null:
-			_fail("no copy of the city was built")
+			_fail("no copy of the island was built")
 			return
+		var first_arena_id := arena.get_instance_id()
 		var island := Net.spawn_position(0)
 		if pawn.global_position.distance_to(island) < 100.0:
-			_fail("player woke up on the island instead of the city")
+			_fail("player woke up on the real island instead of a copy")
 			return
 		if pawn.global_position.distance_to(arena.player_spawn()) > 3.0:
-			_fail("player did not wake up at the city's spawn")
+			_fail("player did not wake up at the copy's spawn")
+			return
+		# the copy IS the starter island: same geometry, and the spawn sits in
+		# the same place on it (the slot offset is the only difference)
+		if arena.get_node_or_null("Island1") == null:
+			_fail("the copy has no island in it")
+			return
+		var offset: Vector3 = arena.player_spawn() - island
+		if Vector2(offset.x - TutorialData.SLOT_ORIGIN.x, offset.z).length() > 1.0:
+			_fail("the copy's spawn is not the island's own spawn (off by %s)" % offset)
+			return
+		# a glTF ships no collision — without the runtime trimesh the player
+		# would fall through the copy forever
+		var solid := false
+		for mi: MeshInstance3D in arena.find_children("*", "MeshInstance3D", true, false):
+			if mi.find_children("*", "StaticBody3D", false, false).size() > 0:
+				solid = true
+				break
+		if not solid:
+			_fail("the copy of the island has no collision")
 			return
 
 		# 2. nothing moves until the cutscene says the player can see
@@ -142,7 +180,7 @@ class Runner:
 		Net.report_tutorial_ready()
 
 		# 3. the four gates, in order, each holding the fight still
-		var why := await _pass_gate(pawn, "teach_attack", "attack")
+		var why := await _pass_gate("teach_attack", "attack")
 		if why != "":
 			_fail(why)
 			return
@@ -155,11 +193,11 @@ class Runner:
 				return
 		_kill_all_bandits()
 
-		why = await _pass_gate(pawn, "teach_block", "block")
+		why = await _pass_gate("teach_block", "block")
 		if why != "":
 			_fail(why)
 			return
-		why = await _pass_gate(pawn, "teach_lock_on", "lock_on", true)
+		why = await _pass_gate("teach_lock_on", "lock_on", true)
 		if why != "":
 			_fail(why)
 			return
@@ -171,7 +209,7 @@ class Runner:
 			return
 		_kill_all_bandits()
 
-		why = await _pass_gate(pawn, "teach_heavy", "attack_heavy")
+		why = await _pass_gate("teach_heavy", "attack_heavy")
 		if why != "":
 			_fail(why)
 			return
@@ -183,9 +221,9 @@ class Runner:
 			return
 		_kill_all_bandits()
 
-		# 4. the villager step, then out of the city
+		# 4. the villager step, then out of the copy and onto the real island
 		if not await _until(func() -> bool: return _step_id() == "mayor"):
-			_fail("the villager never came after the city was clear")
+			_fail("the villager never came after the copy was clear")
 			return
 		Net.report_tutorial_pressed("mayor")
 		if not await _until(func() -> bool: return not Tutorial.server_running(ME)):
@@ -193,7 +231,7 @@ class Runner:
 			return
 		if not await _until(func() -> bool:
 				return tree.current_scene.get_node_or_null("TutorialArena_0") == null):
-			_fail("the copy of the city was left standing")
+			_fail("the copy of the island was left standing")
 			return
 		if Vector2(pawn.global_position.x - island.x,
 				pawn.global_position.z - island.z).length() > 3.0:
@@ -202,9 +240,39 @@ class Runner:
 		var en := tree.current_scene.get_node_or_null("Enemies")
 		if en:
 			for e in en.get_children():
-				if int(e.owner_peer) == ME:
+				# already on its way out is gone: queue_free lands next frame
+				if int(e.owner_peer) == ME and not e.is_queued_for_deletion():
 					_fail("a tutorial bandit outlived the tutorial")
 					return
+
+		# 5. the cheat starts it again — on a FRESH copy, not the one that was
+		#    just torn down (queue_free is deferred, so the dying island is
+		#    still in the tree and still answering to its name this frame)
+		TutorialData.GATE_PATIENCE = 1.5 # the valve, without the wait
+		Net.request_cheat_tutorial()
+		if not await _until(func() -> bool: return Tutorial.server_running(ME)):
+			_fail("the tutorial cheat did not restart it")
+			return
+		var again := tree.current_scene.get_node_or_null("TutorialArena_0")
+		if again == null or not is_instance_valid(again):
+			_fail("the restart left no copy of the island")
+			return
+		if again.get_instance_id() == first_arena_id:
+			_fail("the restart handed back the copy it had just freed")
+			return
+		if not await _until(func() -> bool: return _step_id() == "teach_attack", 600):
+			_fail("the restarted tutorial never reached its first gate (at '%s')" % _step_id())
+			return
+
+		# 6. nobody presses anything: the gate must give in rather than leave
+		#    the player staring at bandits frozen in place with no way out
+		if not await _until(func() -> bool: return _step_id() != "teach_attack", 600):
+			_fail("an unanswered gate never gave in — the tutorial can be bricked")
+			return
+		for b in _my_bandits():
+			if b.frozen:
+				_fail("the fight stayed frozen after the gate gave in")
+				return
 
 		print("TUTTEST RESULT=PASS")
 		tree.quit(0)

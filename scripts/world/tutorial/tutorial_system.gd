@@ -93,7 +93,12 @@ func server_end(id: int, graduate: bool) -> void:
 		if is_instance_valid(b):
 			Net.server_despawn_enemy(b)
 	if is_instance_valid(run["arena"]):
-		(run["arena"] as Node).queue_free()
+		# queue_free is deferred, so the old copy is still in the tree for the
+		# rest of the frame. Take its name with it, or a restart in the same
+		# slot (the cheat) finds the DYING island when it looks its copy up.
+		var old: Node = run["arena"]
+		old.name = "TutorialArena_gone_%d" % run["slot"]
+		old.queue_free()
 	Net.tutorial_leave(id)
 	if _runs.is_empty():
 		set_process(false)
@@ -120,10 +125,11 @@ func server_report_pressed(id: int, step_id: String) -> void:
 
 # ---------------- server: the walk through the table ----------------
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not multiplayer.is_server():
 		return
 	for id: int in _runs.keys():
+		var run: Dictionary = _runs[id]
 		var step := _step_of(id)
 		match str(step.get("kind", "")):
 			"clear":
@@ -132,6 +138,14 @@ func _process(_delta: float) -> void:
 			"gate":
 				if not bool(step.get("client_gate", false)) \
 						and _gate_satisfied(id, str(step.get("action", ""))):
+					_advance(id)
+					continue
+				# a gate is a lesson, not a lock: give in eventually rather than
+				# leave a player in front of bandits frozen forever
+				run["gate_time"] = float(run.get("gate_time", 0.0)) + delta
+				if run["gate_time"] >= TutorialData.GATE_PATIENCE:
+					print("[Tutorial] peer %d spent %.0fs on '%s' — moving on"
+							% [id, TutorialData.GATE_PATIENCE, step.get("id", "")])
 					_advance(id)
 
 ## Did the player really do it? Read off the SERVER's own copy of the pawn,
@@ -144,7 +158,9 @@ func _gate_satisfied(id: int, action: String) -> bool:
 		return false
 	match action:
 		"attack":
-			return pawn.attacking and not pawn.attack_is_heavy
+			# any swing counts: "swing at him" is not the place to be strict
+			# about which swing it was
+			return pawn.attacking
 		"attack_heavy":
 			return pawn.attacking and pawn.attack_is_heavy
 		"block":
@@ -168,6 +184,7 @@ func _enter_step(id: int, index: int) -> void:
 	if run.is_empty():
 		return
 	run["index"] = index
+	run["gate_time"] = 0.0
 	var step := TutorialData.step(index)
 	if step.is_empty():
 		server_end(id, true)

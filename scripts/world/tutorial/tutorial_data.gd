@@ -30,17 +30,30 @@ extends RefCounted
 ## the fight starts moving again the moment it is pressed. Four gates, and the
 ## last wave is fought without a single interruption.
 
-## Scene instanced once per player in the tutorial — placeholder art, meant to
-## be replaced by a real city without anything here changing.
+## Scene instanced once per player in the tutorial: a copy of the starter
+## island, spawn marker and all.
 const ARENA_SCENE := preload("res://scenes/world/tutorial/tutorial_arena.tscn")
 
-## Copies sit in a row high above the island, far enough apart that no two
-## players in the tutorial can ever see, shoot or shove each other. This is the
-## "cloned world": one physics space, but a private block of it per player.
-const SLOT_ORIGIN := Vector3(0.0, 4000.0, 0.0)
-const SLOT_SPACING := 500.0
+## Copies sit in a row far to the east, at the island's OWN height — the ocean
+## follows the local player and the distance fog is measured from the camera,
+## so a copy down here has water and horizon exactly like home, where one
+## parked in the sky would have neither. This is the "cloned world": one
+## physics space, but a private island each, well past fog range from the real
+## one and from each other.
+const SLOT_ORIGIN := Vector3(4000.0, 0.0, 0.0)
+const SLOT_SPACING := 3000.0
 ## Beyond this many at once, the newest player waits on the island instead.
-const MAX_SLOTS := 16
+## Deliberately small: a copy is a whole island's worth of trimesh collision,
+## generated when it is built (see tutorial_arena.gd).
+const MAX_SLOTS := 4
+
+## A gate that has been up this long gives in: the fight starts moving again
+## and the lesson carries on. Nothing about a tutorial is worth being stuck in
+## front of forever — a player who cannot find the button (or who wandered off,
+## or cheated themselves out of the city) must never end up staring at bandits
+## frozen in place with no way out.
+## (A `static var` so the test can turn it down; nothing in the game writes it.)
+static var GATE_PATIENCE := 25.0
 
 const STEPS := [
 	{"id": "wake", "kind": "wait_ready"},
@@ -86,12 +99,18 @@ static func gate_hint(step_id: String) -> String:
 		"teach_attack":
 			return "Swing"
 		"teach_block":
-			return "Raise your guard"
+			return "Hold to guard"
 		"teach_lock_on":
 			return "Lock on"
 		"teach_heavy":
-			return "Hold for a heavy swing"
+			return "A heavy swing — tapping it only jabs"
 	return ""
+
+## True when the button has to be HELD, not tapped. The prompt says so in the
+## button itself, because a tap and a hold are the same button here and a
+## player who taps gets a light punch and no idea why nothing happened.
+static func gate_is_hold(action: String) -> bool:
+	return action in ["attack_heavy", "block"]
 
 ## Input action whose button glyph the prompt draws. "attack_heavy" is not a
 ## binding of its own — a heavy is the attack button held down — so the glyph

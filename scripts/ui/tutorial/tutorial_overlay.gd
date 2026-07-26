@@ -44,7 +44,10 @@ func _update_gate(step: Dictionary) -> void:
 	if not show_gate:
 		return
 	var action := str(step.get("action", ""))
-	_button.text = InputDevice.action_label(TutorialData.gate_action_binding(action)).to_upper()
+	var button := InputDevice.action_label(TutorialData.gate_action_binding(action)).to_upper()
+	# "HOLD X" rather than "X": a heavy swing and a jab are the same button, and
+	# a player who taps it gets a jab and no idea why the gate did not open
+	_button.text = ("HOLD  " + button) if TutorialData.gate_is_hold(action) else button
 	_hint.text = TutorialData.gate_hint(str(step.get("id", "")))
 	_gate.modulate.a = 0.82 + 0.18 * sin(_t * PULSE_SPEED)
 

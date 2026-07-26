@@ -178,15 +178,29 @@ mixed pile.
 
 ## The tutorial
 
-- What happens: you wake up (intro cutscene) in a city being raided, you are
-  taught one fighting button at a time while the fight is held still, and when
-  the last bandit is down a villager walks over and sends you to the mayor.
-  Then you are put on the island. It runs on every join, right after the
-  cutscene reports in.
-- Each player gets their OWN copy of the city — the "cloned world". Copies are
-  the same scene instanced at `TutorialData.slot_origin(slot)`, a row of slots
-  500m apart and 4km above the island: one physics space, a private block of it
-  each. Nobody in the tutorial can see, hit or interrupt anybody else.
+- What happens: you wake up (intro cutscene) on the starter island while it is
+  being raided, you are taught one fighting button at a time while the fight is
+  held still, and when the last bandit is down a villager walks over and sends
+  you to the mayor. Then you are put on the REAL island. It runs on every join,
+  right after the cutscene reports in.
+- Each player gets their OWN copy of the starter island — the "cloned world".
+  A copy IS the island: the same `Island1` mesh at the same transform with the
+  spawn marker in the same place on it, instanced at
+  `TutorialData.slot_origin(slot)` — a row of slots 3km apart, 4km east, at the
+  island's own height. One physics space, a private island each; nobody in the
+  tutorial can see, hit or interrupt anybody else.
+- Copies sit at sea level rather than up in the sky on purpose: the ocean
+  follows the local player and the fog is measured from the camera, so a copy
+  down here has water and a horizon, and one parked overhead would have
+  neither.
+- A copy grows its own collision at load (`tutorial_arena.gd::_build_collision`,
+  the same trimesh pass `world.gd` runs on the real island) — a glTF ships
+  none. That is the real cost of a copy, and why `MAX_SLOTS` is only 4: past
+  that a joining player starts on the island instead.
+- Bandit and villager positions are worked out from the spawn marker and
+  dropped onto the terrain with a ray, not hand-placed: the ground under a copy
+  is a whole island, and a marker left hanging in the air is not something you
+  would notice until a bandit fell through the world.
 - Server-authoritative like everything else (`scripts/world/tutorial/`):
   `tutorial_system.gd` (autoload `Tutorial`) owns the copy, its bandits and
   which step you are on; the client owns the screen and nothing else. The
@@ -213,21 +227,35 @@ mixed pile.
   the instant it is pressed, and the last wave is fought without a single
   interruption. Steps that are just a fight get a `banner` line instead — no
   box, no pause, nothing to dismiss.
+- A gate must never brick the game. `TutorialData.GATE_PATIENCE` (25s) gives in
+  and moves the lesson on if nobody answers, because a gate that cannot be
+  passed leaves a player in front of bandits frozen in place with no way out —
+  which is exactly what the heavy-swing gate did: a heavy is the attack button
+  HELD, so tapping it only ever jabbed and the gate never opened. Hence also
+  `gate_is_hold()`, which makes the prompt read "HOLD <button>" instead of the
+  button alone.
 - All the spoken text is `tut_*` in DialogData, and is PLACEHOLDER: rewriting
   those `text` fields rewrites the tutorial. Keep the `auto` beats (they are
   what makes a line play by itself) and keep the ids.
-- Placeholder art too: `scenes/world/tutorial/tutorial_arena.tscn` is boxes and
-  a wall ring, and the villager is a capsule. Replace the scene (or drop a
-  built NPC in place of `Villager`) — the logic finds everything by node name
-  through `tutorial_arena.gd`'s accessors.
+- The villager is still placeholder art — a capsule with a nametag. Drop a
+  built NPC in its place in `scenes/world/tutorial/tutorial_arena.tscn`; the
+  logic finds everything by node name through `tutorial_arena.gd`'s accessors.
 - The mayor does not exist yet: the villager's line is the hand-off, and the
   step after it is "go to the island".
 - Test: `--headless res://tests/test_tutorial.tscn` (prints
   `TUTTEST RESULT=PASS/FAIL`) — hosts a real listen server and walks the whole
-  lesson: joining lands in the city and not on the island, nothing moves until
-  the cutscene reports in, every gate holds the fight frozen until the action
-  is really done, clearing a wave advances by itself, and finishing leaves no
-  arena and no bandits behind.
+  lesson: joining lands on a copy and not the real island, the copy has the
+  island's geometry, its spawn and its collision, nothing moves until the
+  cutscene reports in, every gate holds the fight frozen until the button is
+  really pressed, clearing a wave advances by itself, finishing leaves no copy
+  and no bandits behind, the cheat restarts it on a fresh copy, and an
+  unanswered gate gives in instead of bricking.
+- The gates are driven with REAL input events (`Input.parse_input_event`), not
+  by setting `attacking`/`blocking` behind the game's back. That is the only
+  reason the heavy-gate stall was caught — every flag-level test of it passed.
+- It hosts on its own port (27140, not `Net.DEFAULT_PORT`), so running it while
+  a game is up from the editor does not fail with "pawn never spawned" because
+  ENet could not bind.
 
 ## NPC dialog
 
@@ -387,11 +415,15 @@ mixed pile.
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —
   `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
   (everything in `ItemDb.ITEMS`; picking one asks the server for a copy),
-  "Teleport" (everything in `TeleportData.DESTINATIONS`), "Start cutscene" and
-  "Start tutorial". Adding a cheat is one row in `_build_root`.
-- "Start cutscene" is the one cheat that does NOT go through the server: a
-  cutscene is one player's screen and nothing else. "Start tutorial" does, and
-  is a real restart — a fresh copy of the city with its own bandits.
+  "Teleport" (everything in `TeleportData.DESTINATIONS`), "Cutscene" (start it
+  from black, or end one that is playing) and "Start tutorial". Adding a cheat
+  is one row in `_build_root`.
+- The cutscene rows do NOT go through the server: a cutscene is one player's
+  screen and nothing else. "Start tutorial" does, and is a real restart — a
+  fresh copy of the island with its own bandits.
+- A conversation does not keep the menu shut (the box is closed on the way in).
+  Half of what these cheats are for is getting out of something that is talking
+  to you — a tutorial line, a cutscene, a gate you cannot find the button for.
 - It is editor-only at BOTH ends: the menu doesn't build unless
   `OS.has_feature("editor")`, and every `Net._server_cheat_*` refuses unless the
   SERVER is an editor run (`Net.cheats_allowed`). So an exported dedicated
