@@ -320,6 +320,7 @@ func held_item(entry: Dictionary) -> String:
 func _make_entry(username: String) -> Dictionary:
 	var entry := {"name": username, "kills": 0, "deaths": 0, "gold": 0,
 			"items": _starting_items(), "hotbar": _empty_hotbar(), "hot_slot": 0,
+			"quest": "", # id of the quest being tracked, "" for none
 			"seen": {}} # items already offered a hotbar slot (server-side only)
 	_refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
 	return entry
@@ -374,6 +375,44 @@ func my_stats() -> Dictionary:
 # that the player can afford it or actually holds it, and that they are
 # standing at the counter. A client that lies gets a refusal and a re-sync.
 
+# ---------------- quests ----------------
+#
+# The tracked quest is progression, so the server owns it and the client gets a
+# read-only copy in its private purse slice — the same deal as gold and the bag.
+# Talking to an NPC is purely local (see "NPC dialog" in CLAUDE.md), so the
+# server cannot see the conversation; it checks the one thing it CAN check, the
+# same thing a shop checks: is that pawn actually standing at that NPC.
+
+## Client -> server: the quest giver's dialog just offered me this. Asking is
+## all the client does — a patched one that asks for a quest it was never
+## offered still has to be stood at the NPC that hands it out.
+func request_start_quest(quest_id: String) -> void:
+	if multiplayer.is_server():
+		_server_start_quest(multiplayer.get_unique_id(), quest_id)
+	else:
+		rpc_id(1, "sv_start_quest", quest_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_start_quest(quest_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_start_quest(multiplayer.get_remote_sender_id(), quest_id)
+
+func _server_start_quest(id: int, quest_id: String) -> void:
+	if not players.has(id) or not QuestData.has(quest_id):
+		return
+	var giver := QuestData.giver(quest_id)
+	if giver == "" or not _near_npc(id, giver):
+		return # nobody hands this one out, or you are not standing at them
+	_set_quest(id, quest_id)
+
+## Server: put a player on a quest ("" clears it) and push the change to them.
+func _set_quest(id: int, quest_id: String) -> void:
+	if not players.has(id):
+		return
+	players[id]["quest"] = quest_id
+	_send_purse(id)
+
 ## Client -> server: I'd like to buy this. Never applied locally first.
 func request_buy(shop_id: String, item_id: String) -> void:
 	if multiplayer.is_server():
@@ -399,7 +438,7 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 	if not ShopData.has(shop_id) or not ItemDb.has(item_id):
 		_trade_reply(id, "There's nothing like that for sale here.", false)
 		return
-	if not _at_counter(id, shop_id):
+	if not _near_npc(id, shop_id):
 		_trade_reply(id, "You're too far from the counter.", false)
 		return
 
@@ -512,6 +551,35 @@ func _server_cheat_tutorial(id: int) -> void:
 	_trade_reply(id, "Tutorial restarted.", true)
 
 ## Client -> server: put my pawn at a named place. Editor builds only.
+## Cheat: put yourself on a quest (or "" to drop the one you have), skipping the
+## NPC who normally hands it out. Editor-only at the server end like every cheat.
+func request_cheat_quest(quest_id: String) -> void:
+	if multiplayer.is_server():
+		_server_cheat_quest(multiplayer.get_unique_id(), quest_id)
+	else:
+		rpc_id(1, "sv_cheat_quest", quest_id)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_cheat_quest(quest_id: String) -> void:
+	if not multiplayer.is_server():
+		return
+	_server_cheat_quest(multiplayer.get_remote_sender_id(), quest_id)
+
+func _server_cheat_quest(id: int, quest_id: String) -> void:
+	if not players.has(id):
+		return
+	if not cheats_allowed():
+		_trade_reply(id, "Cheats are off on this server.", false)
+		return
+	if quest_id != "" and not QuestData.has(quest_id):
+		_trade_reply(id, "No such quest.", false)
+		return
+	_set_quest(id, quest_id)
+	if quest_id == "":
+		_trade_reply(id, "Quest cleared.", true)
+	else:
+		_trade_reply(id, "Tracking %s." % QuestData.label(quest_id), true)
+
 func request_cheat_teleport(dest_id: String) -> void:
 	if multiplayer.is_server():
 		_server_cheat_teleport(multiplayer.get_unique_id(), dest_id)
@@ -702,13 +770,15 @@ func cl_item_used(item_id: String, message: String) -> void:
 	item_used.emit(item_id, message)
 
 ## Is this player actually standing at that NPC? The server owns every pawn's
-## position (speed-validated in sv_player_state), so this can't be spoofed.
-func _at_counter(id: int, shop_id: String) -> bool:
+## position (speed-validated in sv_player_state), so this can't be spoofed. Used
+## by both the shop counter and the quest giver — a conversation is local, so
+## being in reach of the NPC is the only part of it the server can verify.
+func _near_npc(id: int, dialog_id: String) -> bool:
 	var pawn := _pawn(id)
 	if pawn == null:
 		return false
 	for npc in get_tree().get_nodes_in_group("npc_interactable"):
-		if not is_instance_valid(npc) or npc.dialog_id != shop_id:
+		if not is_instance_valid(npc) or npc.dialog_id != dialog_id:
 			continue
 		var reach: float = float(npc.interact_range) + SHOP_RANGE_SLACK
 		if pawn.global_position.distance_to(npc.global_position) <= reach:
@@ -733,17 +803,20 @@ func _send_purse(id: int) -> void:
 	var items: Dictionary = entry.get("items", {})
 	var bar: Array = entry.get("hotbar", _empty_hotbar())
 	var slot := int(entry.get("hot_slot", 0))
+	var quest := str(entry.get("quest", ""))
 	if id == multiplayer.get_unique_id():
-		cl_purse(gold, items, bar, slot)
+		cl_purse(gold, items, bar, slot, quest)
 	else:
-		rpc_id(id, "cl_purse", gold, items, bar, slot)
+		rpc_id(id, "cl_purse", gold, items, bar, slot, quest)
 
 @rpc("authority", "call_remote", "reliable")
-func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int) -> void:
+func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
+		quest: String) -> void:
 	GameStats.coins = gold
 	GameStats.items = items.duplicate(true) # never alias the server's dictionary
 	GameStats.hotbar = hotbar.duplicate()
 	GameStats.hot_slot = hot_slot
+	GameStats.quest = quest
 	GameStats.changed.emit()
 
 # ---------------- state replication ----------------

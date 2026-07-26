@@ -419,6 +419,46 @@ mixed pile.
   middle-mouse / pad R3 only. D-pad up is also Godot's built-in `ui_up`;
   that only ever moves focus inside an open panel, so the two coexist.
 
+## Quests
+
+- A quest is a name and a THING TO WALK TO. `scripts/world/quest/quest_data.gd`
+  is the catalogue: id -> `{name, target, height, from}`. Adding one is that
+  entry plus something in the world wearing the `quest_<target>` group — the HUD
+  and the cheat menu build themselves from the table, so there is no per-quest
+  UI code anywhere.
+- A target is a NAME, never a coordinate, exactly like `TeleportData`: the star
+  reads the position off whatever is in the group as it draws, so moving the
+  place (or the NPC) in the editor moves the marker with it. Point a quest at a
+  PLACE by dropping `scenes/world/quest_anchor.tscn` there, or at a CHARACTER by
+  putting them in the group in the scene — which is how "drive off the bandits"
+  points at the bandit camp with no new node at all.
+- Server-owned like everything else you could gain by cheating:
+  `Net.players[id]["quest"]` rides the private purse slice into
+  `GameStats.quest`, a read-only mirror. Talking is local (see "NPC dialog"), so
+  the server cannot see the conversation — it checks the one thing it can, the
+  same thing a shop checks: `_near_npc`, is that pawn really standing at the NPC
+  who hands this quest out. So the dialog answer only ASKS.
+- Giving an NPC a quest to hand out is one dialog answer carrying
+  `"action": "start_quest:<id>"`, and `QuestSystem` (autoload `Quests`) turns it
+  into the request — exactly how `"open_shop"` and `ShopSystem` work. No NPC
+  needs code of its own.
+- The HUD: `quest_tracker.gd` is the heading (the quest's name, and nothing at
+  all when you are on none — it used to read "Current Quest ★" whether or not
+  there was one), and `quest_marker_overlay.gd` is the star out in the world
+  with the distance under it. Same drawn star and same gold as the wind-up star,
+  because gold is "pay attention".
+- The star does NOT hide when the objective is off screen — that is when it is
+  working. It slides to the screen edge in the direction you would have to turn.
+  A target BEHIND the camera unprojects mirrored through the centre, so
+  `place_marker` mirrors it back before clamping; skip that and the star sits on
+  the wrong side and walks you the long way round. That is why the placement is
+  a pure static function — it is the half that is invisible in a screenshot.
+- Test: `--headless res://tests/test_quest.tscn` (prints
+  `QUESTTEST RESULT=PASS/FAIL`) — the marker maths including the behind-you
+  case, and the state: a new player is on nothing, an unknown quest is refused,
+  a quest is refused to a pawn stood 80 m from the giver and granted next to
+  them, the heading follows the mirror, and it can be dropped again.
+
 ## Items and shops
 
 - Item catalogue: `scripts/items/item_db.gd` — id -> name / buy price / desc /
@@ -534,6 +574,7 @@ mixed pile.
 - Z (or the PS5 Options / Xbox Menu button) opens the cheat menu —
   `scripts/ui/debug/cheat_menu.gd`, autoload `CheatMenu`. It offers "Give item"
   (everything in `ItemDb.ITEMS`; picking one asks the server for a copy),
+  "Quest" (everything in `QuestData.QUESTS`, plus "Clear quest"),
   "Teleport" (everything in `TeleportData.DESTINATIONS`) and "Start tutorial".
   Adding a cheat is one row in `_build_root`.
 - "Start tutorial" goes through the server like everything else, and is a real

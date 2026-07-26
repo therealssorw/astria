@@ -16,6 +16,9 @@ var coins := 0
 var items := {}   # item id (see ItemDb) -> how many are carried
 var hotbar: Array = []  # 9 slots, each an item id or "" — filled by the server
 var hot_slot := 0       # which of those slots is in hand
+## Id of the quest being tracked (see QuestData), "" when there is none. Drives
+## the HUD heading and the star that leads you to it.
+var quest := ""
 
 func item_count(id: String) -> int:
 	return int(items.get(id, 0))

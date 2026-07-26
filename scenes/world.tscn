@@ -66,7 +66,7 @@ script = ExtResource("7_ocean")
 subdivisions = 50
 editor_wave_phase = 17.55
 
-[node name="BanditSpawner" type="Node3D" parent="." unique_id=638839087]
+[node name="BanditSpawner" type="Node3D" parent="." groups=["quest_bandit_camp"] unique_id=638839087]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 160.25618, 95, -110)
 script = ExtResource("14_spawner")
 

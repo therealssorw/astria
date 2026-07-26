@@ -8,6 +8,12 @@ class_name QuestTracker
 ## so a ★ in a Label comes out as tofu. It is the same polygon as the enemy
 ## wind-up star in `hud.gd`, in the same gold — the HUD's "pay attention"
 ## colour — which keeps the two reading as one language.
+##
+## It shows the quest you are actually on, and nothing at all when you are on
+## none: the heading used to read "Current Quest ★" whether or not there was
+## one. The name comes from `GameStats.quest`, the read-only mirror of the
+## server's copy, so this never decides anything — it reports.
+## `quest_marker_overlay.gd` draws the same star out in the world.
 
 ## Gold accent, shared with the wind-up star and the NPC speech bubble.
 const GOLD := Color(0.95, 0.79, 0.42)
@@ -34,7 +40,6 @@ func _ready() -> void:
 	offset_bottom = MARGIN.y + SIZE.y
 
 	_label = Label.new()
-	_label.text = "Current Quest"
 	_label.add_theme_font_size_override("font_size", 18)
 	_label.add_theme_color_override("font_color", GOLD)
 	# a thin dark outline instead of a panel behind it: the heading has to stay
@@ -48,7 +53,20 @@ func _ready() -> void:
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(_label)
 
+	GameStats.changed.connect(_refresh)
+	_refresh()
+
+## The purse sync is what carries the quest, so this rides GameStats.changed
+## rather than polling every frame.
+func _refresh() -> void:
+	var quest := str(GameStats.quest)
+	visible = quest != ""
+	_label.text = QuestData.label(quest) if visible else ""
+	queue_redraw()
+
 func _draw() -> void:
+	if str(GameStats.quest) == "":
+		return
 	var center := Vector2(size.x - STAR_OUTER, size.y * 0.5)
 	draw_colored_polygon(_star_points(center, STAR_OUTER), GOLD)
 

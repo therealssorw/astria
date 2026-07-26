@@ -68,12 +68,18 @@ const DIALOGS := {
 			"iron": {
 				"text": "From the old mine east of the ridge, or I did, before the bandits made a camp of it. Now I melt down whatever the tide brings in.",
 				"answers": [
+					{"text": "I'll clear them out for you.", "goto": "bandits_yes",
+							"action": "start_quest:bandit_camp"},
 					{"text": "Maybe I'll clear them out.", "goto": "bandits"},
 					{"text": "Rough luck.", "goto": "greeting"},
 				],
 			},
 			"bandits": {
 				"text": "Ha! Then come back with your shield still in one piece and I'll believe you. Bring me ore and I'll forge you something worth carrying.",
+				"goto": "greeting",
+			},
+			"bandits_yes": {
+				"text": "You mean it? Then keep the ridge on your left and follow the smoke — you'll smell their fires before you see them. Come back and I'll have the forge lit.",
 				"goto": "greeting",
 			},
 			"repair": {

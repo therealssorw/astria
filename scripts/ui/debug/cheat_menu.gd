@@ -113,6 +113,8 @@ func _refresh() -> void:
 		_build_give()
 	elif _page == "teleport":
 		_build_teleport()
+	elif _page == "quest":
+		_build_quest()
 	else:
 		_build_root()
 	_set_hint(_default_hint(), Color(1, 1, 1, 0.38))
@@ -128,6 +130,9 @@ func _build_root() -> void:
 	_add_row("Teleport…", "", func() -> void:
 		_page = "teleport"
 		_refresh())
+	_add_row("Quest…", "", func() -> void:
+		_page = "quest"
+		_refresh())
 	# closes the menu first so you actually see the thing you asked for
 	_add_row("Start tutorial", "island raid", func() -> void:
 		close()
@@ -142,6 +147,23 @@ func _build_teleport() -> void:
 		var placed := TeleportData.anchor(get_tree(), id) != null
 		_add_row(TeleportData.label(id), "" if placed else "not in this level",
 				func() -> void: Net.request_cheat_teleport(id))
+	_add_row("‹ Back", "", func() -> void:
+		_page = "root"
+		_refresh())
+
+## Every quest in the catalogue, plus a way off the one you are on. A quest
+## whose target is not in this level says so, exactly as teleports do — that is
+## the useful answer while the place it points at is still being built.
+func _build_quest() -> void:
+	_title.text = "Cheats  ›  Quest"
+	for id: String in QuestData.ids():
+		var placed := QuestData.target_pos(get_tree(), id) != null
+		var note := "" if placed else "target not in this level"
+		if str(GameStats.quest) == id:
+			note = "tracking" if placed else "tracking, no target here"
+		_add_row(QuestData.label(id), note,
+				func() -> void: Net.request_cheat_quest(id))
+	_add_row("Clear quest", "", func() -> void: Net.request_cheat_quest(""))
 	_add_row("‹ Back", "", func() -> void:
 		_page = "root"
 		_refresh())
