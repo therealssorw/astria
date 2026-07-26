@@ -1318,6 +1318,17 @@ mixed pile.
   Anything else that drops a body onto "the ground" indoors needs the same care.
   Test: `--headless res://tests/test_bandit_spawner.tscn` (prints
   `SPAWNTEST RESULT=PASS/FAIL`).
+- NEVER NAME THE TYPE when pruning freed objects out of a typed array. A freed
+  object cannot be passed as a `Node`, so `_spawned.filter(func(b: Node) -> ...)`
+  had its typed parameter reject the corpse, `filter` gave up and returned an
+  untyped EMPTY array, and assigning that back to an `Array[Node]` died with
+  `Trying to assign an array of type "Array" to a variable of type "Array[Node]"`.
+  That aborts the function it is in — `_alive_count` never returned, so the camp
+  stopped refilling and the error came back on every spawn attempt. It needs a
+  corpse to happen, which is exactly what a list of spawned bandits fills up
+  with, and why it looked intermittent. `is_instance_valid` is the whole point of
+  such a loop, so walk it by hand with a `Variant` element. Covered by
+  `_check_counting_survives_a_corpse` in the spawner test.
 - The spawner node itself wears the `quest_bandit_camp` group, so it IS the
   "Drive off the bandits" target: move the camp in the editor and the HUD star
   moves with it. Nothing in `QuestData` needs touching when the camp is moved.
