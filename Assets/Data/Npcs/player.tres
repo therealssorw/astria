@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="NpcDefinition" format=3 uid="uid://d1daht4isdlfe"]
+
+[ext_resource type="Script" uid="uid://d3re5nb76kyc8" path="res://scripts/entities/npc/npc_part.gd" id="1_f2bws"]
+[ext_resource type="Script" uid="uid://c5ofxco6fpte0" path="res://scripts/entities/npc/npc_definition.gd" id="2_c6lal"]
+
+[sub_resource type="Resource" id="Resource_nf8lr"]
+script = ExtResource("1_f2bws")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Arms/arms_base1.gltf"
+colors = PackedColorArray(0.65625, 0.57620674, 0.3947754, 1, 0.15348306, 0.23958331, 0.16290027, 1)
+
+[sub_resource type="Resource" id="Resource_6fk7g"]
+script = ExtResource("1_f2bws")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Body/body_base.gltf"
+colors = PackedColorArray(0.15294118, 0.23921569, 0.16470589, 1)
+
+[sub_resource type="Resource" id="Resource_r3ert"]
+script = ExtResource("1_f2bws")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Feet/feet_base1.gltf"
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+[sub_resource type="Resource" id="Resource_b6pba"]
+script = ExtResource("1_f2bws")
+model_path = "res://Assets/Models/Entity/Humanoid/VoxelNpc/Parts/Base/Head/basic_head.gltf"
+colors = PackedColorArray(0.654902, 0.5764706, 0.39607844, 1, 0, 0, 0, 1)
+
+[resource]
+script = ExtResource("2_c6lal")
+display_name = "Player"
+feet = SubResource("Resource_r3ert")
+body = SubResource("Resource_6fk7g")
+arms = SubResource("Resource_nf8lr")
+head = SubResource("Resource_b6pba")

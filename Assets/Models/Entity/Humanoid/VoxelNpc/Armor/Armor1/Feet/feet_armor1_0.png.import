@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://xs55c7m372ew"
-path="res://.godot/imported/feet_armor1_0.png-49300181984f8343cefa99b5cada648f.ctex"
+path.s3tc="res://.godot/imported/feet_armor1_0.png-49300181984f8343cefa99b5cada648f.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "8992e5c2a96a3b5c2d2eef6f9a76b6ac"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://Assets/Models/Entity/Humanoid/VoxelNpc/Armor/Armor1/Feet/feet_armor1_0.png"
-dest_files=["res://.godot/imported/feet_armor1_0.png-49300181984f8343cefa99b5cada648f.ctex"]
+dest_files=["res://.godot/imported/feet_armor1_0.png-49300181984f8343cefa99b5cada648f.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +41,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0

@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://c28hrtrfi17y1"]
+
+[ext_resource type="Script" uid="uid://bdghot0bj7ino" path="res://scripts/entities/npc/npc_character.gd" id="1_1exon"]
+[ext_resource type="Resource" uid="uid://d1daht4isdlfe" path="res://Assets/Data/Npcs/player.tres" id="2_0qnhr"]
+
+[node name="Player" type="Node3D" unique_id=746992957]
+script = ExtResource("1_1exon")
+definition = ExtResource("2_0qnhr")
