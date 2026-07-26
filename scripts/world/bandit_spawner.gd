@@ -6,8 +6,9 @@ extends Node3D
 ## through Net, so this node does nothing on their side.
 
 @export var bandit_scene: PackedScene = preload("res://scenes/enemy.tscn")
-## Seconds between spawn attempts (3 minutes).
-@export var spawn_interval := 180.0
+## Seconds between spawn attempts. A camp cleared down to nothing is back to
+## `max_alive` in about five minutes at this rate, not a quarter of an hour.
+@export var spawn_interval := 60.0
 ## No new spawns while this many of this spawner's bandits are alive.
 @export var max_alive := 5
 ## First spawn happens this many seconds after the level starts.
