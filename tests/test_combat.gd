@@ -447,8 +447,13 @@ func _test_levels() -> void:
 	var e := _spawn_enemy()
 	await get_tree().process_frame
 	e.global_position = Vector3(0, 0, 1.0)
-	ok(e.level == CombatLevels.BASE_ENEMY_LEVEL, "a bandit is level 1",
+	ok(e.level == 0, "a bandit ships one rung under the baseline",
 			"level=%d" % e.level)
+	# ...and everything below is measured against the BASELINE enemy, which is
+	# the line the exported numbers are written for. A bandit is softer than
+	# that by design, so measuring the ladder on one would be measuring two
+	# changes at once.
+	e.level = CombatLevels.BASE_ENEMY_LEVEL
 	ok(CombatLevels.level_of_target(a) == CombatLevels.BASE_ENEMY_LEVEL,
 			"a player defends as an ordinary target, whatever they carry")
 
