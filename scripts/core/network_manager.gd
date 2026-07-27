@@ -1,10 +1,24 @@
 extends Node
-## Autoload "Net": all multiplayer plumbing — hosting/joining (ENet), UPnP
-## port mapping so hosts don't need manual port forwarding, the server-
-## authoritative player registry (usernames + kills/deaths) and the whole
-## RPC protocol. The server never trusts clients: it validates movement,
-## simulates all combat itself and is the only writer of health and stats;
-## everything a client sends is treated as a request or a cosmetic claim.
+## Autoload "Net": the multiplayer WIRE — hosting/joining (ENet), the
+## server-authoritative player registry and the whole RPC protocol. The server
+## never trusts clients: it validates movement, simulates all combat itself and
+## is the only writer of health and stats; everything a client sends is treated
+## as a request or a cosmetic claim.
+##
+## What is NOT here, and why: an `@rpc` method has to live on a node both peers
+## can name, which is this autoload — so the protocol stays. Everything that is
+## only RULES moved into `scripts/core/net/`, where it can be read and tested
+## without a wire underneath it:
+##   NetRegistry — what a player entry IS: bag, purse, hotbar, equipment
+##   NetWorld    — where things are: the containers, a pawn, a spawn
+##   NetVoice    — who may be heard, and how loudly anyone may talk
+##   NetUpnp     — asking the router for a port
+##
+## THERE IS ONE CLIENT->SERVER REQUEST RPC, not one per feature. `SERVER_REQUESTS`
+## is the allowlist of what a client may ask for; `_ask` sends and `sv_request`
+## receives, so "the client asks and the server checks" is written once. Adding a
+## request is a row in that table plus its `_server_*` handler — never another
+## copy of the three-function dance this file used to repeat thirteen times.
 
 const DEFAULT_PORT := 27032
 
@@ -33,26 +47,43 @@ const GOLD_DESPAWN_SECONDS := 120.0        # unclaimed piles vanish after this
 ## cover the lag between the client's view of its position and the server's.
 const SHOP_RANGE_SLACK := 2.5
 
-## Quick-use bar: which carried item each of the 9 slots points at, and which
-## slot is in hand. Server-owned like the bag itself — what you are holding is
-## gameplay, not a screen decoration.
-const HOTBAR_SLOTS := 9
+## Re-exported so callers keep saying `Net.HOTBAR_SLOTS` / `Net.VOICE_RANGE`
+## rather than having to know which module now owns the number.
+const HOTBAR_SLOTS := NetRegistry.HOTBAR_SLOTS
+const VOICE_RANGE := NetVoice.RANGE
 
-## How far a voice carries. The server relays a speech packet only to the peers
-## whose pawns are inside this of the speaker's — measured on its OWN copies of
-## both — and the listener's audio fades to nothing at exactly the same distance,
-## so the cut-off is never audible as a pop.
-const VOICE_RANGE := 24.0
+## Everything a client is allowed to ask the server for: request name -> the
+## server-side handler, which is always called as `handler(peer_id, ...args)`.
+## A name that is not in here is silently ignored, so the RPC cannot be used to
+## reach any other method on this node.
+##
+## Anything starting "cheat_" additionally needs `cheats_allowed()`, which is
+## checked once in `_serve` rather than at the top of five near-identical
+## handlers.
+const SERVER_REQUESTS := {
+	"start_quest": "_server_start_quest",
+	"finish_quest": "_server_finish_quest",
+	"gift": "_server_take_gift",
+	"trade": "_server_trade",
+	"hotbar_select": "_server_hotbar_select",
+	"hotbar_assign": "_server_hotbar_assign",
+	"use_item": "_server_use_item",
+	"use_special": "_server_use_special",
+	"tutorial_ready": "_server_tutorial_ready",
+	"tutorial_pressed": "_server_tutorial_pressed",
+	"cheat_give": "_server_cheat_give",
+	"cheat_quest": "_server_cheat_quest",
+	"cheat_teleport": "_server_cheat_teleport",
+	"cheat_tutorial": "_server_cheat_tutorial",
+	"cheat_starter_town": "_server_cheat_starter_town",
+}
 
-## peer_id -> {"name", "kills", "deaths", "gold", "items", "hotbar", "hot_slot"}.
-## Server-owned. "gold"/"items"/"hotbar"/"hot_slot" are private to their owner:
-## they are stripped before the registry is broadcast, and each owner gets
-## theirs alone through cl_purse.
+## peer_id -> a NetRegistry entry. Server-owned. Gold, items, the hotbar and
+## progress are PRIVATE to their owner: they are stripped before the registry is
+## broadcast, and each owner gets theirs alone through cl_purse.
 var players := {}
 var is_dedicated := false
 var active := false            # hosting or connected right now
-var upnp_status := "inactive"  # inactive / searching / ok / failed
-var public_ip := ""
 var host_port := DEFAULT_PORT
 var last_error := ""           # shown by the menu after a kick/disconnect
 
@@ -66,32 +97,41 @@ signal trade_result(message: String, ok: bool)
 ## there was nothing to use; `message` is the line to show the player.
 signal item_used(item_id: String, message: String)
 
-var _upnp_thread: Thread
-var _upnp_cleanup_thread: Thread
-var _upnp_mapper = null      # UPNP instance that owns the active mapping
-var _mapped_port := 0        # 0 = nothing mapped on the router right now
+var _upnp: NetUpnp
+var _pending_username := ""
+var _pending_world_ready: Array[int] = []
 var _enemy_counter := 0
 var _gold_counter := 0
-var _player_bcast_accum := 0.0
-var _enemy_bcast_accum := 0.0
-var _vitals_accum := 0.0
-var _gold_accum := 0.0
 ## Voice flood control, server-side: peer -> [window start msec, bytes spent].
 var _voice_spend := {}
+## Accumulators for the four server broadcast cadences, keyed by the timer name
+## in `_TICKS` below — one dictionary instead of four near-identical fields and
+## four copies of "add delta, compare, reset".
+var _accum := {}
+
+## Server tick name -> [interval, method]. `_physics_process` walks this.
+const _TICKS := [
+	[PLAYER_STATE_INTERVAL, "_broadcast_player_states"],
+	[ENEMY_STATE_INTERVAL, "_broadcast_enemy_states"],
+	[VITALS_INTERVAL, "_send_vitals"],
+	[GOLD_PICKUP_INTERVAL, "_check_gold_pickups"],
+]
 
 func _ready() -> void:
+	_upnp = NetUpnp.new()
+	_upnp.name = "Upnp"
+	add_child(_upnp)
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	multiplayer.connected_to_server.connect(_on_connected_to_server)
+	multiplayer.connected_to_server.connect(func() -> void: rpc_id(1, "sv_register", _pending_username))
 	multiplayer.connection_failed.connect(_on_connection_failed)
-	multiplayer.server_disconnected.connect(_on_server_disconnected)
+	multiplayer.server_disconnected.connect(func() -> void: return_to_menu("Connection to the host was lost."))
 
-func _exit_tree() -> void:
-	if _upnp_thread and _upnp_thread.is_started():
-		_upnp_thread.wait_to_finish()
-	if _upnp_cleanup_thread and _upnp_cleanup_thread.is_started():
-		_upnp_cleanup_thread.wait_to_finish()
-	_remove_upnp_mapping(true) # blocking: the app is quitting
+## UPnP's own status, re-exported so the menu need not know about the module.
+var upnp_status: String:
+	get: return _upnp.status if _upnp else "inactive"
+var public_ip: String:
+	get: return _upnp.public_ip if _upnp else ""
 
 # ---------------- session setup ----------------
 
@@ -107,8 +147,8 @@ func host_game(username: String, dedicated := false, port := DEFAULT_PORT) -> Er
 	host_port = port
 	players.clear()
 	if not dedicated:
-		players[1] = _make_entry(_sanitize_name(username))
-	_start_upnp(port)
+		players[1] = _make_entry(username)
+	_upnp.start(port)
 	print("[Net] Hosting on port %d%s" % [port, " (dedicated)" if dedicated else ""])
 	# deferred: host_game is typically called from the menu's _ready/signals
 	get_tree().change_scene_to_file.call_deferred(WORLD_SCENE)
@@ -125,8 +165,6 @@ func join_game(ip: String, username: String, port := DEFAULT_PORT) -> Error:
 	_pending_username = username
 	return OK
 
-var _pending_username := ""
-
 func return_to_menu(message := "") -> void:
 	last_error = message
 	active = false
@@ -134,18 +172,80 @@ func return_to_menu(message := "") -> void:
 	players.clear()
 	_voice_spend.clear()
 	Voice.reset()
-	_remove_upnp_mapping(false) # the server is gone, close the router port
-	upnp_status = "inactive"
-	public_ip = ""
+	_upnp.reset() # the server is gone, close the router port
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().change_scene_to_file.call_deferred(MENU_SCENE)
 
 func should_run_dedicated() -> bool:
-	if OS.has_feature("server"):
-		return true
-	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
-	return args.has("--server")
+	return OS.has_feature("server") or _cmdline().has("--server")
+
+static func _cmdline() -> PackedStringArray:
+	return OS.get_cmdline_args() + OS.get_cmdline_user_args()
+
+# ---------------- the one client -> server request ----------------
+
+## Client side: ask the server for something in `SERVER_REQUESTS`. A listen
+## server is both ends at once, so it serves itself directly rather than
+## rpc-ing — `call_remote` never comes back round to the peer that sent it.
+func _ask(kind: String, args := []) -> void:
+	if not active:
+		return
+	if multiplayer.is_server():
+		_serve(multiplayer.get_unique_id(), kind, args)
+	else:
+		rpc_id(1, "sv_request", kind, args)
+
+@rpc("any_peer", "call_remote", "reliable")
+func sv_request(kind: String, args: Array) -> void:
+	if not multiplayer.is_server():
+		return
+	_serve(multiplayer.get_remote_sender_id(), kind, args)
+
+## The single gate every client request passes through: is it a request that
+## exists, is the sender a registered player, and — for a cheat — is this build
+## allowed to honour one at all.
+func _serve(id: int, kind: String, args: Array) -> void:
+	var handler := str(SERVER_REQUESTS.get(kind, ""))
+	if handler == "" or not players.has(id):
+		return
+	if kind.begins_with("cheat_") and not cheats_allowed():
+		_trade_reply(id, "Cheats are off on this server.", false)
+		return
+	callv(handler, [id] + args)
+
+## Server -> ONE peer, for the two-argument client halves. The host is its own
+## client, so it calls the method in-process rather than through an RPC that
+## would never arrive — `call_remote` never comes back round to the sender.
+##
+## Two of these rather than one taking an Array because `rpc_id` cannot be
+## handed a variable argument list: an arity per shape is the honest way to
+## write it, and there are only two shapes.
+func _reply2(id: int, method: String, a: Variant, b: Variant) -> void:
+	if id == multiplayer.get_unique_id():
+		call(method, a, b)
+	else:
+		rpc_id(id, method, a, b)
+
+func _reply1(id: int, method: String, a: Variant) -> void:
+	if id == multiplayer.get_unique_id():
+		call(method, a)
+	else:
+		rpc_id(id, method, a)
+
+func _trade_reply(id: int, message: String, ok: bool) -> void:
+	_reply2(id, "cl_trade_result", message, ok)
+
+func _use_reply(id: int, item_id: String, message: String) -> void:
+	_reply2(id, "cl_item_used", item_id, message)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_trade_result(message: String, ok: bool) -> void:
+	trade_result.emit(message, ok)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_item_used(item_id: String, message: String) -> void:
+	item_used.emit(item_id, message)
 
 # ---------------- connection callbacks ----------------
 
@@ -168,20 +268,16 @@ func _on_peer_disconnected(id: int) -> void:
 	rpc("cl_remove_player", id)
 	_sync_players()
 
-func _on_connected_to_server() -> void:
-	rpc_id(1, "sv_register", _pending_username)
-
 func _on_connection_failed() -> void:
 	active = false
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	join_failed.emit("Could not reach the host.")
 
-func _on_server_disconnected() -> void:
-	return_to_menu("Connection to the host was lost.")
-
 # ---------------- registration / world flow ----------------
 
-## Client -> server: first thing a client sends after connecting.
+## Client -> server: first thing a client sends after connecting. Not part of
+## `SERVER_REQUESTS` because it is what MAKES a player — every request in that
+## table is refused until this has run.
 @rpc("any_peer", "call_remote", "reliable")
 func sv_register(username: String) -> void:
 	if not multiplayer.is_server():
@@ -189,7 +285,7 @@ func sv_register(username: String) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if players.has(id):
 		return  # re-registration would reset stats — never allow it
-	players[id] = _make_entry(_sanitize_name(username))
+	players[id] = _make_entry(username)
 	print("[Net] %s joined (peer %d)" % [players[id]["name"], id])
 	# tell Discord somebody is on, so people who would play with them find out.
 	# Server-side and after registration, so the roster it reports includes them
@@ -197,46 +293,40 @@ func sv_register(username: String) -> void:
 	_sync_players()
 	rpc_id(id, "cl_load_world")
 
-## Server -> one client: registration accepted, load into the island.
 @rpc("authority", "call_remote", "reliable")
 func cl_load_world() -> void:
 	get_tree().change_scene_to_file.call_deferred(WORLD_SCENE)
 
-var _pending_world_ready: Array[int] = []
-
 ## Called by world.gd once the world scene is up on this peer.
 func on_world_ready() -> void:
-	if multiplayer.is_server():
-		print("[Net] World loaded — ready for players")
-		if not is_dedicated:
-			_server_spawn_player(1)
-		# clients that finished loading before the server's own world did
-		for id in _pending_world_ready:
-			_handle_world_ready(id)
-		_pending_world_ready.clear()
-	else:
+	if not multiplayer.is_server():
 		rpc_id(1, "sv_world_ready")
+		return
+	print("[Net] World loaded — ready for players")
+	if not is_dedicated:
+		_server_spawn_player(1)
+	# clients that finished loading before the server's own world did
+	for id in _pending_world_ready:
+		_handle_world_ready(id)
+	_pending_world_ready.clear()
 
-## Client -> server: my world is loaded, give me the snapshot + my pawn.
 @rpc("any_peer", "call_remote", "reliable")
 func sv_world_ready() -> void:
-	if not multiplayer.is_server():
-		return
-	_handle_world_ready(multiplayer.get_remote_sender_id())
+	if multiplayer.is_server():
+		_handle_world_ready(multiplayer.get_remote_sender_id())
 
 func _handle_world_ready(id: int) -> void:
 	if not players.has(id):
 		return
-	if _players_node() == null:
+	var pn := _players_node()
+	if pn == null:
 		if not _pending_world_ready.has(id):
 			_pending_world_ready.append(id)
 		return
 	# snapshot of everything that already exists, just to the newcomer
-	var pn := _players_node()
-	if pn:
-		for pawn in pn.get_children():
-			rpc_id(id, "cl_spawn_player", pawn.peer_id, pawn.username,
-					pawn.net_pos if not pawn.is_local else pawn.global_position)
+	for pawn in pn.get_children():
+		rpc_id(id, "cl_spawn_player", pawn.peer_id, pawn.username,
+				pawn.global_position if pawn.is_local else pawn.net_pos)
 	var en := _enemies_node()
 	if en:
 		for e in en.get_children():
@@ -289,8 +379,8 @@ func cl_remove_player(id: int) -> void:
 	Voice.forget(id) # their voice hung on that pawn, and their name on the HUD
 
 ## Registry broadcast — the ONLY source of usernames/kills/deaths anywhere.
-## Gold and items are stripped out (see _public_players); your own reach you
-## privately through cl_purse, which fills the GameStats mirror.
+## Gold and items are stripped out (see NetRegistry.public_slice); your own
+## reach you privately through cl_purse, which fills the GameStats mirror.
 @rpc("authority", "call_remote", "reliable")
 func cl_sync_players(server_players: Dictionary) -> void:
 	players = server_players
@@ -300,19 +390,18 @@ func _sync_players() -> void:
 	rpc("cl_sync_players", _public_players())
 	player_list_changed.emit()
 
-## What everyone is allowed to see: no one needs another player's purse or bag,
-## so those never leave the server except to the peer they belong to.
+# ---------------- reading the registry ----------------
+
 func _public_players() -> Dictionary:
-	var out := {}
-	for id in players:
-		var e: Dictionary = players[id]
-		# "held" and "equipped" are the parts of a bag everyone can see: one is
-		# in your hand and the other is on your back, so every other pawn has to
-		# draw them. The rest of the bag stays private.
-		out[id] = {"name": e["name"], "kills": e["kills"], "deaths": e["deaths"],
-				"held": held_item(e),
-				"equipped": (e.get("equipped", {}) as Dictionary).duplicate()}
-	return out
+	return NetRegistry.public_slice(players)
+
+func _empty_equipment() -> Dictionary:
+	return NetRegistry.empty_equipment()
+
+func _make_entry(username: String) -> Dictionary:
+	return NetRegistry.make_entry(
+			NetRegistry.sanitize_name(username, NetRegistry.names(players)),
+			_starting_items())
 
 ## This peer's pawn, or null if it has none right now. On the server this is
 ## the authoritative copy — the one combat and the tutorial's gates read.
@@ -323,90 +412,18 @@ func pawn_of(id: int) -> Node:
 ## reads its own bar, a client reads the "held" field of the public registry.
 func held_of(id: int) -> String:
 	var entry: Dictionary = players.get(id, {})
-	if entry.has("hotbar"):
-		return held_item(entry)
-	return str(entry.get("held", ""))
+	return NetRegistry.held_item(entry) if entry.has("hotbar") else str(entry.get("held", ""))
 
-## What a peer is WEARING, as armor slot -> item id. Works the same way
-## `held_of` does: on the server `players` is the real registry, on a client it
-## is the public copy — and what somebody has on IS public, because you can see
-## it on them.
+## What a peer is WEARING, as armor slot -> item id. Public on purpose: it is
+## drawn on their back, so every peer has to be able to see it.
 func equipment_of(peer_id: int) -> Dictionary:
 	return (players.get(peer_id, {}) as Dictionary).get("equipped", {})
 
-## Total armor level a peer has on: the levels of the pieces actually in the
-## three equipment slots, added up. One slot holds one piece, so a bag full of
-## helmets is worth exactly one helmet — and only when it is on your head.
 func armor_levels(peer_id: int) -> int:
-	var total := 0
-	var worn := equipment_of(peer_id)
-	for slot: String in ItemDb.EQUIP_SLOTS:
-		total += ItemDb.level_of(str(worn.get(slot, "")))
-	return total
+	return NetRegistry.armor_levels(players.get(peer_id, {}))
 
-## The item in an entry's selected hotbar slot, or "".
 func held_item(entry: Dictionary) -> String:
-	var bar: Array = entry.get("hotbar", [])
-	var slot := int(entry.get("hot_slot", 0))
-	if slot < 0 or slot >= bar.size():
-		return ""
-	return str(bar[slot])
-
-func _make_entry(username: String) -> Dictionary:
-	var entry := {"name": username, "kills": 0, "deaths": 0, "gold": 0,
-			"items": _starting_items(), "hotbar": _empty_hotbar(), "hot_slot": 0,
-			"quest": "", # id of the quest being tracked, "" for none
-			"quest_kills": 0, # kills counted towards it, when it asks for kills
-			"gifts": {}, # GiftData ids already handed over, so none is given twice
-			"equipped": _empty_equipment(), # armor slot -> item id worn there
-			"seen": {}} # items already offered a hotbar slot (server-side only)
-	_refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
-	return entry
-
-func _empty_equipment() -> Dictionary:
-	var worn := {}
-	for slot: String in ItemDb.EQUIP_SLOTS:
-		worn[slot] = ""
-	return worn
-
-func _empty_hotbar() -> Array:
-	var bar := []
-	bar.resize(HOTBAR_SLOTS)
-	bar.fill("")
-	return bar
-
-## Testing aid: launch the SERVER with --dev-items and everyone who joins it
-## starts with one of every item in the catalogue. It is deliberately a server
-## flag — a client passing it gains nothing, because only the server ever
-## writes a bag.
-func _starting_items() -> Dictionary:
-	if not multiplayer.is_server():
-		return {}
-	var args := OS.get_cmdline_args() + OS.get_cmdline_user_args()
-	if not args.has("--dev-items"):
-		return {}
-	var bag := {}
-	for id in ItemDb.ITEMS:
-		bag[id] = 1
-	return bag
-
-func _sanitize_name(raw: String) -> String:
-	var cleaned := ""
-	for ch in raw.strip_edges():
-		if ch >= " " and cleaned.length() < 20:
-			cleaned += ch
-	if cleaned.is_empty():
-		cleaned = "Player"
-	# dedupe against everyone already registered
-	var taken := []
-	for id in players:
-		taken.append(players[id]["name"])
-	var candidate := cleaned
-	var n := 2
-	while taken.has(candidate):
-		candidate = "%s(%d)" % [cleaned, n]
-		n += 1
-	return candidate
+	return NetRegistry.held_item(entry)
 
 func my_stats() -> Dictionary:
 	return players.get(multiplayer.get_unique_id(), _make_entry(""))
@@ -414,18 +431,19 @@ func my_stats() -> Dictionary:
 ## Everybody currently registered, by name. The scoreboard reads the registry
 ## itself; this is for anything that just wants the roster (the Discord post).
 func player_names() -> Array:
-	var names: Array = []
-	for id in players:
-		names.append(str(players[id].get("name", "")))
-	return names
+	return NetRegistry.names(players)
 
-# ---------------- purse and bag (server-owned) ----------------
-#
-# Gold and carried items live in the registry above, which only the server
-# writes. Clients hold a read-only mirror in GameStats and ASK to trade; the
-# server checks the shop stocks the item, that the price is its own price,
-# that the player can afford it or actually holds it, and that they are
-# standing at the counter. A client that lies gets a refusal and a re-sync.
+## Testing aid: launch the SERVER with --dev-items and everyone who joins it
+## starts with one of every item in the catalogue. It is deliberately a server
+## flag — a client passing it gains nothing, because only the server ever
+## writes a bag.
+func _starting_items() -> Dictionary:
+	if not multiplayer.is_server() or not _cmdline().has("--dev-items"):
+		return {}
+	var bag := {}
+	for id in ItemDb.ITEMS:
+		bag[id] = 1
+	return bag
 
 # ---------------- quests ----------------
 #
@@ -439,44 +457,27 @@ func player_names() -> Array:
 ## all the client does — a patched one that asks for a quest it was never
 ## offered still has to be stood at the NPC that hands it out.
 func request_start_quest(quest_id: String) -> void:
-	if multiplayer.is_server():
-		_server_start_quest(multiplayer.get_unique_id(), quest_id)
-	else:
-		rpc_id(1, "sv_start_quest", quest_id)
+	_ask("start_quest", [quest_id])
 
-@rpc("any_peer", "call_remote", "reliable")
-func sv_start_quest(quest_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_start_quest(multiplayer.get_remote_sender_id(), quest_id)
+func request_finish_quest(quest_id: String) -> void:
+	_ask("finish_quest", [quest_id])
+
+func request_gift(gift_id: String) -> void:
+	_ask("gift", [gift_id])
 
 func _server_start_quest(id: int, quest_id: String) -> void:
-	if not players.has(id) or not QuestData.has(quest_id):
+	if not QuestData.has(quest_id):
 		return
 	var giver := QuestData.giver(quest_id)
 	if giver == "" or not _near_npc(id, giver):
 		return # nobody hands this one out, or you are not standing at them
 	_set_quest(id, quest_id)
 
-## Client -> server: I am talking to the NPC this quest ends at, so I'd like to
-## hand it in. Refused unless you are actually on it and actually stood there.
-func request_finish_quest(quest_id: String) -> void:
-	if multiplayer.is_server():
-		_server_finish_quest(multiplayer.get_unique_id(), quest_id)
-	else:
-		rpc_id(1, "sv_finish_quest", quest_id)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_finish_quest(quest_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_finish_quest(multiplayer.get_remote_sender_id(), quest_id)
-
+## Refused unless you are actually on the quest, actually made the count, and
+## actually stood in front of whoever it is handed in to.
 func _server_finish_quest(id: int, quest_id: String) -> void:
-	if not players.has(id) or not QuestData.has(quest_id):
+	if not QuestData.has(quest_id) or str(players[id].get("quest", "")) != quest_id:
 		return
-	if str(players[id].get("quest", "")) != quest_id:
-		return # not on it: nothing to hand in
 	# a counting quest is not handed in until the count is really made. The
 	# conversation offering the answer is LOCAL, so a patched client can pick it
 	# whenever it likes — this is the server's own tally, and the only thing
@@ -494,25 +495,8 @@ func _server_finish_quest(id: int, quest_id: String) -> void:
 		players[id]["gold"] = int(players[id].get("gold", 0)) + reward
 	_set_quest(id, "") # sends the purse, so the gold rides along with it
 
-## Client -> server: the NPC I am talking to just offered me this. Same shape as
-## a quest request and for the same reason — the conversation is local, so the
-## server cannot see the offer was made and checks the part it CAN see: that the
-## pawn is standing at the NPC who gives it out, and that it has not already
-## been handed over.
-func request_gift(gift_id: String) -> void:
-	if multiplayer.is_server():
-		_server_take_gift(multiplayer.get_unique_id(), gift_id)
-	else:
-		rpc_id(1, "sv_take_gift", gift_id)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_take_gift(gift_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_take_gift(multiplayer.get_remote_sender_id(), gift_id)
-
 func _server_take_gift(id: int, gift_id: String) -> void:
-	if not players.has(id) or not GiftData.has(gift_id):
+	if not GiftData.has(gift_id):
 		return
 	var giver := GiftData.giver(gift_id)
 	if giver == "" or not _near_npc(id, giver):
@@ -530,12 +514,11 @@ func server_grant_gift(id: int, gift_id: String) -> bool:
 		return false
 	taken[gift_id] = true
 	players[id]["gifts"] = taken
-	var bag: Dictionary = players[id]["items"]
 	for item_id: String in GiftData.items(gift_id):
-		if not ItemDb.has(item_id):
+		if ItemDb.has(item_id):
+			NetRegistry.add_item(players[id], item_id)
+		else:
 			push_warning("Net: gift '%s' lists an unknown item '%s'" % [gift_id, item_id])
-			continue
-		bag[item_id] = int(bag.get(item_id, 0)) + 1
 	print("[Net] %s was given '%s'" % [players[id]["name"], gift_id])
 	_bag_changed(id) # sends the purse, so the gifts record rides along with it
 	return true
@@ -565,8 +548,8 @@ func _set_quest(id: int, quest_id: String) -> void:
 ## it. A counting quest with a `done_at` TURNS ROUND on the final kill — it
 ## stays on the HUD, the heading becomes its `done_name` and the star points
 ## back at whoever sent you — and is only cleared when you stand in front of
-## them (`_server_finish_quest`). One with no `done_at` has nobody to report
-## back to, so it finishes itself where it stands.
+## them. One with no `done_at` has nobody to report back to, so it finishes
+## itself where it stands.
 func _credit_quest_kill(id: int) -> void:
 	if not players.has(id):
 		return
@@ -581,51 +564,39 @@ func _credit_quest_kill(id: int) -> void:
 	if done < needed:
 		_send_purse(id)
 		return
-	var at := QuestData.done_at(quest_id)
-	if at != "":
+	if QuestData.done_at(quest_id) != "":
 		if done == needed:
-			print("[Net] %s counted out '%s' (%d kills), reporting to '%s'"
-					% [players[id]["name"], QuestData.label(quest_id), needed, at])
+			print("[Net] %s counted out '%s' (%d kills), reporting to '%s'" % [players[id]["name"],
+					QuestData.label(quest_id), needed, QuestData.done_at(quest_id)])
 		_send_purse(id) # the heading flips to the walk home
 		return
 	print("[Net] %s finished '%s' (%d kills)" % [players[id]["name"],
 			QuestData.label(quest_id), needed])
 	_set_quest(id, "")
 
-## Client -> server: I'd like to buy this. Never applied locally first.
+# ---------------- shops ----------------
+#
+# Gold and the bag live in the registry, which only the server writes. Clients
+# hold a read-only mirror in GameStats and ASK to trade; the server checks the
+# shop stocks the item, that the price is its own price, that the player can
+# afford it or actually holds it, and that they are standing at the counter.
+
 func request_buy(shop_id: String, item_id: String) -> void:
-	if multiplayer.is_server():
-		_server_trade(multiplayer.get_unique_id(), shop_id, item_id, true)
-	else:
-		rpc_id(1, "sv_shop_trade", shop_id, item_id, true)
+	_ask("trade", [shop_id, item_id, true])
 
 func request_sell(shop_id: String, item_id: String) -> void:
-	if multiplayer.is_server():
-		_server_trade(multiplayer.get_unique_id(), shop_id, item_id, false)
-	else:
-		rpc_id(1, "sv_shop_trade", shop_id, item_id, false)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_shop_trade(shop_id: String, item_id: String, buying: bool) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_trade(multiplayer.get_remote_sender_id(), shop_id, item_id, buying)
+	_ask("trade", [shop_id, item_id, false])
 
 func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> void:
-	if not players.has(id):
-		return
 	if not ShopData.has(shop_id) or not ItemDb.has(item_id):
 		_trade_reply(id, "There's nothing like that for sale here.", false)
 		return
 	if not _near_npc(id, shop_id):
 		_trade_reply(id, "You're too far from the counter.", false)
 		return
-
 	var entry: Dictionary = players[id]
-	var items: Dictionary = entry["items"]
 	var gold := int(entry.get("gold", 0))
 	var label := ItemDb.item_name(item_id)
-
 	if buying:
 		if not ShopData.stock(shop_id).has(item_id):
 			_trade_reply(id, "He doesn't stock that.", false)
@@ -635,127 +606,98 @@ func _server_trade(id: int, shop_id: String, item_id: String, buying: bool) -> v
 			_trade_reply(id, "Not enough gold — %s costs %d." % [label, price], false)
 			return
 		entry["gold"] = gold - price
-		items[item_id] = int(items.get(item_id, 0)) + 1
+		NetRegistry.add_item(entry, item_id)
 		_trade_reply(id, "Bought %s for %d gold." % [label, price], true)
 	else:
 		if not ShopData.buys(shop_id, item_id):
 			_trade_reply(id, "He won't take that.", false)
 			return
-		var held := int(items.get(item_id, 0))
-		if held < 1:
+		if not NetRegistry.remove_item(entry, item_id):
 			_trade_reply(id, "You have no %s to sell." % label, false)
 			return
 		var price := ItemDb.sell_price(item_id)
-		if held > 1:
-			items[item_id] = held - 1
-		else:
-			items.erase(item_id)
 		entry["gold"] = gold + price
 		_trade_reply(id, "Sold %s for %d gold." % [label, price], true)
-
 	_bag_changed(id)
 
 # ---------------- cheats (development only) ----------------
 #
 # The cheat menu is a testing tool, so it goes through the server like anything
-# else that touches a bag — a client still cannot write its own items. The
-# server refuses every request unless IT is running from the editor, so an
-# exported dedicated server ignores cheats no matter what a client sends.
+# else that touches a bag — a client still cannot write its own items. Every
+# "cheat_" request is refused by `_serve` unless the SERVER is an editor run, so
+# an exported dedicated server ignores cheats no matter what a client sends.
 
 ## Would this build honour a cheat request? False in any exported build.
 func cheats_allowed() -> bool:
 	return OS.has_feature("editor")
 
-## Client -> server: put one of this item in my bag. Editor builds only.
 func request_cheat_give(item_id: String) -> void:
-	if multiplayer.is_server():
-		_server_cheat_give(multiplayer.get_unique_id(), item_id)
-	else:
-		rpc_id(1, "sv_cheat_give", item_id)
+	_ask("cheat_give", [item_id])
 
-@rpc("any_peer", "call_remote", "reliable")
-func sv_cheat_give(item_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_cheat_give(multiplayer.get_remote_sender_id(), item_id)
+func request_cheat_quest(quest_id: String) -> void:
+	_ask("cheat_quest", [quest_id])
+
+func request_cheat_teleport(dest_id: String) -> void:
+	_ask("cheat_teleport", [dest_id])
+
+func request_cheat_tutorial() -> void:
+	_ask("cheat_tutorial")
+
+## Not only a place: from inside the tutorial this GRADUATES you — the same
+## exit the last lesson uses, so the copy of the city is torn down, its bandits
+## go with it and the follow-up quest is handed over. A plain teleport out would
+## leave the lesson running behind you, with its bandits standing in an island
+## nobody is in.
+func request_cheat_starter_town() -> void:
+	_ask("cheat_starter_town")
 
 func _server_cheat_give(id: int, item_id: String) -> void:
-	if not players.has(id):
-		return
-	if not cheats_allowed():
-		_trade_reply(id, "Cheats are off on this server.", false)
-		return
 	if not ItemDb.has(item_id):
 		_trade_reply(id, "No such item.", false)
 		return
-	var items: Dictionary = players[id]["items"]
-	items[item_id] = int(items.get(item_id, 0)) + 1
+	NetRegistry.add_item(players[id], item_id)
 	_trade_reply(id, "Gave %s." % ItemDb.item_name(item_id), true)
 	_bag_changed(id)
 
-## Client -> server: put me back at the start of the tutorial. Editor builds
-## only — and it is a real restart on the server (a fresh copy of the city, its
-## own bandits), not a client pretending to be at step one.
-func request_cheat_tutorial() -> void:
-	if multiplayer.is_server():
-		_server_cheat_tutorial(multiplayer.get_unique_id())
-	else:
-		rpc_id(1, "sv_cheat_tutorial")
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_cheat_tutorial() -> void:
-	if not multiplayer.is_server():
+func _server_cheat_quest(id: int, quest_id: String) -> void:
+	if quest_id != "" and not QuestData.has(quest_id):
+		_trade_reply(id, "No such quest.", false)
 		return
-	_server_cheat_tutorial(multiplayer.get_remote_sender_id())
+	_set_quest(id, quest_id)
+	_trade_reply(id, "Quest cleared." if quest_id == ""
+			else "Tracking %s." % QuestData.label(quest_id), true)
 
+## The server moves its OWN copy of the pawn and then tells the owner where it
+## now is. Doing it the other way round would be a client teleport, which the
+## position validator exists to reject.
+func _server_cheat_teleport(id: int, dest_id: String) -> void:
+	if not TeleportData.has(dest_id):
+		_trade_reply(id, "No such place.", false)
+		return
+	if TeleportData.anchor(get_tree(), dest_id) == null:
+		_trade_reply(id, "%s has no anchor in this level yet." % TeleportData.label(dest_id), false)
+		return
+	if _standing_pawn(id) == null:
+		return
+	server_teleport_to(id, dest_id)
+	_trade_reply(id, "Teleported to %s." % TeleportData.label(dest_id), true)
+
+## A real restart on the server — a fresh copy of the city with its own
+## bandits, not a client pretending to be at step one.
 func _server_cheat_tutorial(id: int) -> void:
-	if not players.has(id):
-		return
-	if not cheats_allowed():
-		_trade_reply(id, "Cheats are off on this server.", false)
-		return
-	var pawn := _pawn(id)
-	if pawn == null or pawn.dead:
-		_trade_reply(id, "Not while you are down.", false)
+	if _standing_pawn(id) == null:
 		return
 	var pos := Tutorial.server_begin(id)
 	if pos == Vector3.INF:
 		_trade_reply(id, "No room for another copy of the city.", false)
 		return
-	pawn.net_teleport(pos)
-	if id != 1:
-		rpc_id(id, "cl_force_position", pos)
+	_move_pawn(id, pos)
 	# a restart has nobody to report in for it, so the lesson starts at once
 	Tutorial.server_report_ready(id)
 	_trade_reply(id, "Tutorial restarted.", true)
 
-## Client -> server: put me in the starter town. Editor builds only. It is a
-## destination first and an escape hatch second: from inside the tutorial it
-## GRADUATES you — the same exit the last lesson uses, so the copy of the city
-## is torn down, its bandits go with it and the follow-up quest is handed over.
-## A plain teleport out would leave the lesson running behind you, with its
-## bandits standing in an island nobody is in.
-func request_cheat_starter_town() -> void:
-	if multiplayer.is_server():
-		_server_cheat_starter_town(multiplayer.get_unique_id())
-	else:
-		rpc_id(1, "sv_cheat_starter_town")
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_cheat_starter_town() -> void:
-	if not multiplayer.is_server():
-		return
-	_server_cheat_starter_town(multiplayer.get_remote_sender_id())
-
 func _server_cheat_starter_town(id: int) -> void:
-	if not players.has(id):
-		return
-	if not cheats_allowed():
-		_trade_reply(id, "Cheats are off on this server.", false)
-		return
-	var pawn := _pawn(id)
-	if pawn == null or pawn.dead:
-		_trade_reply(id, "Not while you are down.", false)
+	if _standing_pawn(id) == null:
 		return
 	if Tutorial.server_running(id):
 		Tutorial.server_end(id, true) # graduating already places you on the island
@@ -763,70 +705,22 @@ func _server_cheat_starter_town(id: int) -> void:
 		server_place_on_island(id)
 	_trade_reply(id, "Off to the starter town.", true)
 
-## Client -> server: put my pawn at a named place. Editor builds only.
-## Cheat: put yourself on a quest (or "" to drop the one you have), skipping the
-## NPC who normally hands it out. Editor-only at the server end like every cheat.
-func request_cheat_quest(quest_id: String) -> void:
-	if multiplayer.is_server():
-		_server_cheat_quest(multiplayer.get_unique_id(), quest_id)
-	else:
-		rpc_id(1, "sv_cheat_quest", quest_id)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_cheat_quest(quest_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_cheat_quest(multiplayer.get_remote_sender_id(), quest_id)
-
-func _server_cheat_quest(id: int, quest_id: String) -> void:
-	if not players.has(id):
-		return
-	if not cheats_allowed():
-		_trade_reply(id, "Cheats are off on this server.", false)
-		return
-	if quest_id != "" and not QuestData.has(quest_id):
-		_trade_reply(id, "No such quest.", false)
-		return
-	_set_quest(id, quest_id)
-	if quest_id == "":
-		_trade_reply(id, "Quest cleared.", true)
-	else:
-		_trade_reply(id, "Tracking %s." % QuestData.label(quest_id), true)
-
-func request_cheat_teleport(dest_id: String) -> void:
-	if multiplayer.is_server():
-		_server_cheat_teleport(multiplayer.get_unique_id(), dest_id)
-	else:
-		rpc_id(1, "sv_cheat_teleport", dest_id)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_cheat_teleport(dest_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_cheat_teleport(multiplayer.get_remote_sender_id(), dest_id)
-
-## The server moves its OWN copy of the pawn and then tells the owner where it
-## now is. Doing it the other way round would be a client teleport, which the
-## position validator exists to reject.
-func _server_cheat_teleport(id: int, dest_id: String) -> void:
-	if not players.has(id):
-		return
-	if not cheats_allowed():
-		_trade_reply(id, "Cheats are off on this server.", false)
-		return
-	if not TeleportData.has(dest_id):
-		_trade_reply(id, "No such place.", false)
-		return
-	var anchor := TeleportData.anchor(get_tree(), dest_id)
-	if anchor == null:
-		_trade_reply(id, "%s has no anchor in this level yet." % TeleportData.label(dest_id), false)
-		return
+## The pawn of a player who is in a state to be moved, or null (having said so).
+func _standing_pawn(id: int) -> Node:
 	var pawn := _pawn(id)
 	if pawn == null or pawn.dead:
 		_trade_reply(id, "Not while you are down.", false)
+		return null
+	return pawn
+
+## SERVER: move a pawn and tell its owner where it landed.
+func _move_pawn(id: int, pos: Vector3) -> void:
+	var pawn := _pawn(id)
+	if pawn == null:
 		return
-	server_teleport_to(id, dest_id)
-	_trade_reply(id, "Teleported to %s." % TeleportData.label(dest_id), true)
+	pawn.net_teleport(pos)
+	if id != multiplayer.get_unique_id():
+		rpc_id(id, "cl_force_position", pos)
 
 ## Put a player on a named `TeleportData` destination. The server moves its OWN
 ## copy of the pawn and then tells the owner where it now is — doing it the
@@ -837,59 +731,108 @@ func server_teleport_to(id: int, dest_id: String) -> bool:
 	if not multiplayer.is_server() or not players.has(id):
 		return false
 	var anchor := TeleportData.anchor(get_tree(), dest_id)
-	if anchor == null:
-		return false
 	var pawn := _pawn(id)
-	if pawn == null or pawn.dead:
+	if anchor == null or pawn == null or pawn.dead:
 		return false
-	var pos: Vector3 = anchor.global_position
-	pawn.net_teleport(pos)
-	if id != 1:
-		rpc_id(id, "cl_force_position", pos)
+	_move_pawn(id, anchor.global_position)
 	return true
 
-# ---------------- hotbar (server-owned) ----------------
-#
-# The bar is part of the registry, not a client-side view of it: what you are
-# holding decides what "use" does, so a client only ever ASKS to move the
-# selection or to put an item in a slot. Picking anything up drops it onto the
-# first free slot, and an item that leaves the bag leaves the bar with it.
+# ---------------- hotbar, using and wearing (server-owned) ----------------
 
-## Put NEWLY carried items on the first free slot, and take gone ones off.
-## Called after every change to a bag, so something just picked up is in hand
-## without a trip to the inventory screen. Only the first copy of an item does
-## this, and only once: "seen" remembers what has already been offered a slot,
-## so clearing a slot by hand stays cleared instead of filling itself back in
-## the next time anything at all changes. A full bar keeps what it has, and
-## dropping an item entirely forgets it — buy it again and it comes back.
-func _refill_hotbar(entry: Dictionary) -> void:
-	var bar: Array = entry["hotbar"]
-	var items: Dictionary = entry["items"]
-	var seen: Dictionary = entry["seen"]
-	# an item that is gone from the bag can't stay in a slot, or be remembered
-	for i in bar.size():
-		if bar[i] != "" and int(items.get(bar[i], 0)) <= 0:
-			bar[i] = ""
-	for known: String in seen.keys():
-		if int(items.get(known, 0)) <= 0:
-			seen.erase(known)
-	for item_id: String in items:
-		if seen.has(item_id):
-			continue
-		seen[item_id] = true
-		if bar.has(item_id):
-			continue
-		var free := bar.find("")
-		if free < 0:
-			continue # bar is full — this one waits in the bag
-		bar[free] = item_id
+func request_hotbar_select(slot: int) -> void:
+	_ask("hotbar_select", [slot])
+
+func request_hotbar_assign(slot: int, item_id: String) -> void:
+	_ask("hotbar_assign", [slot, item_id])
+
+func request_use_item() -> void:
+	_ask("use_item")
+
+## The SPECIAL button (L2 / RMB) on whatever is in hand. Only reaches the server
+## for an item that DECLARES a special — an empty hand and a sword just guard,
+## and the guard is client-side and validated the way it always was.
+func request_use_special() -> void:
+	_ask("use_special")
+
+func _server_hotbar_select(id: int, slot: int) -> void:
+	if slot < 0 or slot >= HOTBAR_SLOTS:
+		return
+	players[id]["hot_slot"] = slot
+	_hotbar_changed(id)
+
+func _server_hotbar_assign(id: int, slot: int, item_id: String) -> void:
+	if slot < 0 or slot >= HOTBAR_SLOTS:
+		return
+	if not NetRegistry.assign_hotbar(players[id], slot, item_id):
+		# you can only put something on the bar that you are actually carrying
+		_trade_reply(id, "You aren't carrying that.", false)
+		_send_purse(id)
+		return
+	_hotbar_changed(id)
+
+## The server decides what using an item does — never the client. Right now no
+## item in the catalogue has an effect, so this only validates; give an item one
+## by branching on item_id here, and remember to `_bag_changed(id)` if the bag
+## changed.
+##
+## Replies carry an EMPTY message on purpose: `use_item` shares R2 with
+## `attack`, so this runs on every swing, and a line on screen each time would
+## be noise. Fill the message in when a use actually does something.
+func _server_use_item(id: int) -> void:
+	var item_id := _usable_item(id)
+	if item_id != "" or _live_pawn(id):
+		_use_reply(id, item_id, "")
+
+## SERVER: run the held item's special. The request names NOTHING — not the
+## item, not the action — so the worst a patched client can do is press a button
+## it is already holding down. What happens comes off the server's own bar and
+## the catalogue.
+func _server_use_special(id: int) -> void:
+	var item_id := _usable_item(id)
+	if item_id == "":
+		return
+	match ItemDb.special_action(item_id):
+		ItemDb.SPECIAL_EQUIP:
+			_server_equip(id, item_id)
+		_:
+			pass # nothing declared: that button is the guard, and it is not ours
+
+## What a living player is actually holding AND carrying, or "" — the shared
+## front half of both button handlers.
+func _usable_item(id: int) -> String:
+	if not _live_pawn(id):
+		return ""
+	var entry: Dictionary = players[id]
+	var item_id := NetRegistry.held_item(entry)
+	return item_id if NetRegistry.carries(entry, item_id) else ""
+
+func _live_pawn(id: int) -> bool:
+	var pawn := _pawn(id)
+	return pawn != null and not pawn.dead
+
+## SERVER: put `item_id` on, or take it off if it is already worn. Everything it
+## could be lied about is checked in NetRegistry.toggle_equipped — that the
+## thing is armor, that the player is really carrying it, and which slot it
+## belongs in (the ITEM says, never the request).
+func _server_equip(id: int, item_id: String) -> void:
+	var moved := NetRegistry.toggle_equipped(players[id], item_id)
+	if str(moved[0]) == "":
+		return
+	# the owner gets the new set privately with the rest of their purse, and
+	# EVERYONE gets the registry again, because what you are wearing is drawn on
+	# your pawn for the whole server to see
+	_send_purse(id)
+	_sync_players()
+	_use_reply(id, item_id, ("Took off %s" if bool(moved[1]) else "Equipped %s")
+			% ItemDb.item_name(item_id))
 
 ## Anything that adds to or takes from a bag ends here: the bar is brought back
-## in line with what is actually carried, then the owner is re-synced.
+## in line with what is actually carried, armor you no longer own comes off, and
+## then the owner is re-synced.
 func _bag_changed(id: int) -> void:
 	if players.has(id):
-		_refill_hotbar(players[id])
-		_drop_unowned_equipment(id)
+		NetRegistry.refill_hotbar(players[id])
+		NetRegistry.drop_unowned_equipment(players[id])
 	_hotbar_changed(id)
 
 ## The bar moved: the owner gets the new bar privately, and everyone gets the
@@ -899,225 +842,21 @@ func _hotbar_changed(id: int) -> void:
 	_send_purse(id)
 	_sync_players()
 
-## Client -> server: I'm holding this slot now (R1/L1, or a click in the panel).
-func request_hotbar_select(slot: int) -> void:
-	if multiplayer.is_server():
-		_server_hotbar_select(multiplayer.get_unique_id(), slot)
-	else:
-		rpc_id(1, "sv_hotbar_select", slot)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_hotbar_select(slot: int) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_hotbar_select(multiplayer.get_remote_sender_id(), slot)
-
-func _server_hotbar_select(id: int, slot: int) -> void:
-	if not players.has(id) or slot < 0 or slot >= HOTBAR_SLOTS:
-		return
-	players[id]["hot_slot"] = slot
-	_hotbar_changed(id)
-
-## Client -> server: put this carried item in this slot (empty id clears it).
-func request_hotbar_assign(slot: int, item_id: String) -> void:
-	if multiplayer.is_server():
-		_server_hotbar_assign(multiplayer.get_unique_id(), slot, item_id)
-	else:
-		rpc_id(1, "sv_hotbar_assign", slot, item_id)
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_hotbar_assign(slot: int, item_id: String) -> void:
-	if not multiplayer.is_server():
-		return
-	_server_hotbar_assign(multiplayer.get_remote_sender_id(), slot, item_id)
-
-func _server_hotbar_assign(id: int, slot: int, item_id: String) -> void:
-	if not players.has(id) or slot < 0 or slot >= HOTBAR_SLOTS:
-		return
-	var entry: Dictionary = players[id]
-	var bar: Array = entry["hotbar"]
-	if item_id == "":
-		bar[slot] = ""
-		_hotbar_changed(id)
-		return
-	# you can only put something on the bar that you are actually carrying
-	if int(entry["items"].get(item_id, 0)) <= 0:
-		_trade_reply(id, "You aren't carrying that.", false)
-		_send_purse(id)
-		return
-	var already: int = bar.find(item_id)
-	if already >= 0:
-		bar[already] = bar[slot] # swap, so a drag never duplicates an entry
-	bar[slot] = item_id
-	entry["hot_slot"] = slot
-	_hotbar_changed(id)
-
-## Client -> server: use whatever is in the slot I'm holding.
-func request_use_item() -> void:
-	if multiplayer.is_server():
-		_server_use_item(multiplayer.get_unique_id())
-	else:
-		rpc_id(1, "sv_use_item")
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_use_item() -> void:
-	if not multiplayer.is_server():
-		return
-	_server_use_item(multiplayer.get_remote_sender_id())
-
-## The server decides what using an item does — never the client. Right now no
-## item in the catalogue has an effect, so this only validates; give an item
-## one by branching on item_id here (consume a stack, heal, equip...), and
-## remember to _bag_changed(id) if the bag changed.
-##
-## Replies carry an EMPTY message on purpose: `use_item` shares R2 with
-## `attack`, so this runs on every swing, and a line on screen each time would
-## be noise. Fill the message in when a use actually does something.
-func _server_use_item(id: int) -> void:
-	if not players.has(id):
-		return
-	var pawn := _pawn(id)
-	if pawn == null or pawn.dead:
-		return
-	var entry: Dictionary = players[id]
-	var slot := int(entry.get("hot_slot", 0))
-	var bar: Array = entry["hotbar"]
-	if slot < 0 or slot >= bar.size():
-		return
-	var item_id: String = bar[slot]
-	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
-		_use_reply(id, "", "")
-		return
-	_use_reply(id, item_id, "")
-
-## Client -> server: the SPECIAL button (L2 / RMB) on whatever is in hand.
-##
-## Only reaches here for an item that DECLARES a special — an empty hand and a
-## sword just guard, and the guard is client-side and validated the way it
-## always was, so nothing about blocking goes through this.
-func request_use_special() -> void:
-	if multiplayer.is_server():
-		_server_use_special(multiplayer.get_unique_id())
-	else:
-		rpc_id(1, "sv_use_special")
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_use_special() -> void:
-	if not multiplayer.is_server():
-		return
-	_server_use_special(multiplayer.get_remote_sender_id())
-
-## SERVER: run the held item's special. The request names NOTHING — not the
-## item, not the action — so the worst a patched client can do is press a
-## button it is already holding down. What happens comes off the server's own
-## bar and the catalogue.
-func _server_use_special(id: int) -> void:
-	if not players.has(id):
-		return
-	var pawn := _pawn(id)
-	if pawn == null or pawn.dead:
-		return
-	var entry: Dictionary = players[id]
-	var item_id := held_item(entry)
-	if item_id == "" or int(entry["items"].get(item_id, 0)) <= 0:
-		return
-	match ItemDb.special_action(item_id):
-		ItemDb.SPECIAL_EQUIP:
-			_server_equip(id, item_id)
-		_:
-			pass # nothing declared: that button is the guard, and it is not ours
-
-## SERVER: put `item_id` on, or take it off if it is already worn. Everything it
-## could be lied about is checked here — that the thing is armor, that the
-## player is really carrying it, and which slot it belongs in (the item says,
-## never the request).
-func _server_equip(id: int, item_id: String) -> void:
-	var entry: Dictionary = players[id]
-	var slot := ItemDb.armor_slot(item_id)
-	if slot == "" or int(entry["items"].get(item_id, 0)) <= 0:
-		return
-	var worn: Dictionary = entry.get("equipped", _empty_equipment())
-	var taking_off := str(worn.get(slot, "")) == item_id
-	worn[slot] = "" if taking_off else item_id
-	entry["equipped"] = worn
-	_equipment_changed(id)
-	_use_reply(id, item_id, ("Took off %s" if taking_off else "Equipped %s")
-			% ItemDb.item_name(item_id))
-
-## The armor a player has on changed: the owner gets the new set privately with
-## the rest of their purse, and EVERYONE gets the registry again, because what
-## you are wearing is drawn on your pawn for the whole server to see.
-func _equipment_changed(id: int) -> void:
-	_send_purse(id)
-	_sync_players()
-
-## SERVER: take off anything no longer in the bag. Called from _bag_changed, so
-## selling the breastplate you are wearing takes it off your back rather than
-## leaving you protected by an item you no longer own.
-func _drop_unowned_equipment(id: int) -> void:
-	var entry: Dictionary = players[id]
-	var worn: Dictionary = entry.get("equipped", _empty_equipment())
-	var changed := false
-	for slot: String in ItemDb.EQUIP_SLOTS:
-		var item_id := str(worn.get(slot, ""))
-		if item_id != "" and int(entry["items"].get(item_id, 0)) <= 0:
-			worn[slot] = ""
-			changed = true
-	if changed:
-		entry["equipped"] = worn
-
-func _use_reply(id: int, item_id: String, message: String) -> void:
-	if id == multiplayer.get_unique_id():
-		cl_item_used(item_id, message)
-	else:
-		rpc_id(id, "cl_item_used", item_id, message)
-
-@rpc("authority", "call_remote", "reliable")
-func cl_item_used(item_id: String, message: String) -> void:
-	item_used.emit(item_id, message)
-
-## Is this player actually standing at that NPC? The server owns every pawn's
-## position (speed-validated in sv_player_state), so this can't be spoofed. Used
-## by both the shop counter and the quest giver — a conversation is local, so
-## being in reach of the NPC is the only part of it the server can verify.
 func _near_npc(id: int, dialog_id: String) -> bool:
-	var pawn := _pawn(id)
-	if pawn == null:
-		return false
-	for npc in get_tree().get_nodes_in_group("npc_interactable"):
-		if not is_instance_valid(npc) or npc.dialog_id != dialog_id:
-			continue
-		var reach: float = float(npc.interact_range) + SHOP_RANGE_SLACK
-		if pawn.global_position.distance_to(npc.global_position) <= reach:
-			return true
-	return false
-
-func _trade_reply(id: int, message: String, ok: bool) -> void:
-	if id == multiplayer.get_unique_id():
-		cl_trade_result(message, ok)
-	else:
-		rpc_id(id, "cl_trade_result", message, ok)
-
-@rpc("authority", "call_remote", "reliable")
-func cl_trade_result(message: String, ok: bool) -> void:
-	trade_result.emit(message, ok)
+	return NetWorld.near_npc(get_tree(), _pawn(id), dialog_id, SHOP_RANGE_SLACK)
 
 ## Server -> one owner: here is your authoritative gold and bag. This is the
 ## ONLY thing that writes the GameStats mirror.
 func _send_purse(id: int) -> void:
-	var entry: Dictionary = players.get(id, {})
-	var gold := int(entry.get("gold", 0))
-	var items: Dictionary = entry.get("items", {})
-	var bar: Array = entry.get("hotbar", _empty_hotbar())
-	var slot := int(entry.get("hot_slot", 0))
-	var quest := str(entry.get("quest", ""))
-	var quest_kills := int(entry.get("quest_kills", 0))
-	var gifts: Dictionary = entry.get("gifts", {})
-	var worn: Dictionary = entry.get("equipped", {})
+	var e: Dictionary = players.get(id, {})
+	var args := [int(e.get("gold", 0)), e.get("items", {}),
+			e.get("hotbar", NetRegistry.empty_hotbar()), int(e.get("hot_slot", 0)),
+			str(e.get("quest", "")), int(e.get("quest_kills", 0)),
+			e.get("gifts", {}), e.get("equipped", {})]
 	if id == multiplayer.get_unique_id():
-		cl_purse(gold, items, bar, slot, quest, quest_kills, gifts, worn)
+		callv("cl_purse", args)
 	else:
-		rpc_id(id, "cl_purse", gold, items, bar, slot, quest, quest_kills, gifts, worn)
+		rpc_id(id, "cl_purse", args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])
 
 @rpc("authority", "call_remote", "reliable")
 func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
@@ -1135,32 +874,20 @@ func cl_purse(gold: int, items: Dictionary, hotbar: Array, hot_slot: int,
 # ---------------- state replication ----------------
 
 func _physics_process(delta: float) -> void:
-	if not active or not multiplayer.is_server():
+	if not active or not multiplayer.is_server() or _players_node() == null:
 		return
-	var pn := _players_node()
-	if pn == null:
-		return
-	_player_bcast_accum += delta
-	if _player_bcast_accum >= PLAYER_STATE_INTERVAL:
-		_player_bcast_accum = 0.0
-		_broadcast_player_states(pn)
-	_enemy_bcast_accum += delta
-	if _enemy_bcast_accum >= ENEMY_STATE_INTERVAL:
-		_enemy_bcast_accum = 0.0
-		_broadcast_enemy_states()
-	_vitals_accum += delta
-	if _vitals_accum >= VITALS_INTERVAL:
-		_vitals_accum = 0.0
-		_send_vitals(pn)
-	_gold_accum += delta
-	if _gold_accum >= GOLD_PICKUP_INTERVAL:
-		_gold_accum = 0.0
-		_check_gold_pickups(pn)
-	_check_fell_off_world(pn)
+	for tick: Array in _TICKS:
+		var key: String = tick[1]
+		var t := float(_accum.get(key, 0.0)) + delta
+		if t >= float(tick[0]):
+			t = 0.0
+			call(key)
+		_accum[key] = t
+	_check_fell_off_world()
 
-func _broadcast_player_states(pn: Node) -> void:
+func _broadcast_player_states() -> void:
 	var batch := []
-	for pawn in pn.get_children():
+	for pawn in _players_node().get_children():
 		batch.append(pawn.net_collect_state())
 	if not batch.is_empty():
 		rpc("cl_player_states", batch)
@@ -1199,9 +926,9 @@ func send_player_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	if active and not multiplayer.is_server():
 		rpc_id(1, "sv_player_state", pos, yaw, anim, anim_t, ratio, blocking, sprinting)
 
-func _send_vitals(pn: Node) -> void:
+func _send_vitals() -> void:
 	var connected := multiplayer.get_peers()
-	for pawn in pn.get_children():
+	for pawn in _players_node().get_children():
 		if pawn.peer_id != 1 and connected.has(pawn.peer_id):
 			rpc_id(pawn.peer_id, "cl_vitals", pawn.stamina, pawn.health)
 
@@ -1212,8 +939,8 @@ func cl_vitals(server_stamina: float, server_health: float) -> void:
 		pawn.stamina = server_stamina
 		pawn.health = server_health
 
-func _check_fell_off_world(pn: Node) -> void:
-	for pawn in pn.get_children():
+func _check_fell_off_world() -> void:
+	for pawn in _players_node().get_children():
 		if not pawn.dead and pawn.global_position.y < KILL_Y:
 			pawn.server_kill(0)
 	var en := _enemies_node()
@@ -1232,9 +959,8 @@ func _check_fell_off_world(pn: Node) -> void:
 ## worse than speech that arrives with a gap in it.
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func sv_voice(packet: PackedByteArray) -> void:
-	if not multiplayer.is_server():
-		return
-	_relay_voice(multiplayer.get_remote_sender_id(), packet)
+	if multiplayer.is_server():
+		_relay_voice(multiplayer.get_remote_sender_id(), packet)
 
 ## Server -> the peers standing close enough. `from_id` comes from the SERVER's
 ## own view of who sent it, never from inside the packet, so a client cannot put
@@ -1262,55 +988,12 @@ func _relay_voice(from_id: int, packet: PackedByteArray) -> void:
 		else:
 			rpc_id(peer, "cl_voice", from_id, packet)
 
-## SERVER: is this packet one the relay will carry at all? Size, and then a
-## budget per talker per second (VoiceCodec.MAX_BYTES_PER_SECOND).
-##
-## Voice itself cannot be validated — there is no way to tell speech from noise,
-## and it does not matter, because nothing in the game changes when somebody
-## talks. What CAN be abused is the relay: one patched client sending at ten
-## times the rate would cost the server bandwidth for every listener near it.
-## Overspend counts even though it is dropped, so a flooder stays cut off for the
-## rest of its second instead of getting a free packet whenever the window turns.
 func voice_accepts(from_id: int, packet: PackedByteArray) -> bool:
-	if not multiplayer.is_server():
-		return false
-	var n := packet.size()
-	if n == 0 or n > VoiceCodec.MAX_PACKET:
-		return false
-	var now := Time.get_ticks_msec()
-	var row: Array = _voice_spend.get(from_id, [now, 0])
-	if now - int(row[0]) >= 1000:
-		row = [now, 0]
-	var spent := int(row[1]) + n
-	_voice_spend[from_id] = [row[0], spent]
-	return spent <= VoiceCodec.MAX_BYTES_PER_SECOND
+	return multiplayer.is_server() and NetVoice.accepts(_voice_spend, from_id, packet)
 
-## SERVER: who is near enough to hear peer `from_id` right now.
-##
-## Read off the server's own copy of every pawn (server_body_pos — the last
-## position it ACCEPTED, already speed-validated), never off anything a client
-## claims: who can hear you is not the speaker's decision to make, and a client
-## that could name its own audience could listen to a conversation across the
-## island. Players inside the tutorial need no special case — their copy of the
-## city is kilometres away, so the distance rules them out by itself.
 func voice_targets(from_id: int) -> Array[int]:
 	var out: Array[int] = []
-	if not multiplayer.is_server():
-		return out
-	var speaker := _pawn(from_id)
-	if speaker == null:
-		return out
-	var origin: Vector3 = speaker.server_body_pos()
-	var reach := VOICE_RANGE * VOICE_RANGE
-	for id: int in players:
-		if id == from_id:
-			continue # you never hear yourself
-		var pawn := _pawn(id)
-		if pawn == null:
-			continue
-		if origin.distance_squared_to(pawn.server_body_pos()) <= reach:
-			out.append(id)
-	return out
+	return NetVoice.targets(get_tree(), players, from_id) if multiplayer.is_server() else out
 
 # ---------------- combat protocol ----------------
 
@@ -1348,9 +1031,7 @@ func cl_play_swing(id: int, heavy: bool, section: int) -> void:
 func server_broadcast_player_damage(id: int, health: float, result: int,
 		knockback: Vector3, stamina: float, attacker: int) -> void:
 	rpc("cl_player_damaged", id, health, result, knockback, stamina, attacker)
-	var pawn := _pawn(id)  # host applies its own fx locally too
-	if pawn:
-		pawn.net_apply_damage(health, result, knockback, stamina, attacker)
+	cl_player_damaged(id, health, result, knockback, stamina, attacker) # host's own fx
 
 @rpc("authority", "call_remote", "reliable")
 func cl_player_damaged(id: int, health: float, result: int, knockback: Vector3,
@@ -1362,9 +1043,7 @@ func cl_player_damaged(id: int, health: float, result: int, knockback: Vector3,
 ## Parried or guard-broken: everyone plays the helpless pose for the same beat.
 func server_broadcast_player_stagger(id: int, duration: float) -> void:
 	rpc("cl_player_staggered", id, duration)
-	var pawn := _pawn(id)
-	if pawn:
-		pawn.net_stagger(duration)
+	cl_player_staggered(id, duration)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_player_staggered(id: int, duration: float) -> void:
@@ -1384,9 +1063,7 @@ func server_record_player_death(victim: int, attacker: int) -> void:
 		players[attacker]["kills"] += 1
 	_sync_players()
 	rpc("cl_player_died", victim)
-	var pawn := _pawn(victim)
-	if pawn:
-		pawn.net_die()
+	cl_player_died(victim)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_player_died(id: int) -> void:
@@ -1395,8 +1072,7 @@ func cl_player_died(id: int) -> void:
 		pawn.net_die()
 
 func server_respawn_player(id: int) -> void:
-	var pn := _players_node()
-	if pn == null:
+	if _players_node() == null:
 		return
 	# dying in the tutorial puts you back in the tutorial: the island is
 	# somewhere you have not earned yet
@@ -1404,9 +1080,7 @@ func server_respawn_player(id: int) -> void:
 	if pos == Vector3.INF:
 		pos = spawn_position(randi() % 8)
 	rpc("cl_player_respawn", id, pos)
-	var pawn := _pawn(id)
-	if pawn:
-		pawn.net_respawn(pos)
+	cl_player_respawn(id, pos)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_player_respawn(id: int, pos: Vector3) -> void:
@@ -1447,9 +1121,7 @@ func _broadcast_enemy_states() -> void:
 		if audience == 0:
 			batch.append(e.net_visual_state())
 		else:
-			if not private.has(audience):
-				private[audience] = []
-			private[audience].append(e.net_visual_state())
+			private.get_or_add(audience, []).append(e.net_visual_state())
 	if not batch.is_empty():
 		rpc("cl_enemy_states", batch)
 	for peer: int in private:
@@ -1458,11 +1130,8 @@ func _broadcast_enemy_states() -> void:
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func cl_enemy_states(batch: Array) -> void:
-	var en := _enemies_node()
-	if en == null:
-		return
 	for row in batch:
-		var e := en.get_node_or_null(String(row[0]))
+		var e := _enemy(String(row[0]))
 		if e:
 			e.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6], row[7],
 					row[8], row[9], row[10])
@@ -1481,9 +1150,7 @@ func cl_enemy_damaged(enemy_name: String, health: float, result: int,
 
 func server_broadcast_enemy_stagger(enemy_name: String, duration: float) -> void:
 	rpc("cl_enemy_staggered", enemy_name, duration)
-	var e := _enemy(enemy_name)  # host plays the pose locally too
-	if e:
-		e.net_stagger(duration)
+	cl_enemy_staggered(enemy_name, duration) # host plays the pose locally too
 
 @rpc("authority", "call_remote", "reliable")
 func cl_enemy_staggered(enemy_name: String, duration: float) -> void:
@@ -1501,32 +1168,33 @@ func server_record_enemy_kill(enemy_name: String, attacker: int) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func cl_enemy_died(enemy_name: String) -> void:
-	var en := _enemies_node()
-	if en == null:
-		return
-	var e := en.get_node_or_null(enemy_name)
+	var e := _enemy(enemy_name)
 	if e:
 		e.net_die()
 
 func server_remove_enemy(enemy_name: String) -> void:
 	rpc("cl_remove_enemy", enemy_name)
 
+@rpc("authority", "call_remote", "reliable")
+func cl_remove_enemy(enemy_name: String) -> void:
+	var e := _enemy(enemy_name)
+	if e:
+		e.queue_free()
+
 # ---------------- tutorial ----------------
 #
 # The tutorial gives each player a private copy of a city (see
 # scripts/world/tutorial/). The rules are the usual ones: the SERVER owns the
 # copy, its bandits and which step you are on; the client owns nothing but the
-# screen. What is different is the audience — a tutorial bandit is spawned and
+# screen. What is different is the AUDIENCE — a tutorial bandit is spawned and
 # updated only for the one player it belongs to, because it is not in anyone
 # else's world.
 
 ## SERVER: spawn one bandit into `id`'s copy of the city and tell only them.
 func server_spawn_tutorial_bandit(id: int, pos: Vector3,
 		hold: Enemy.Hold = Enemy.Hold.NONE) -> Node:
-	if not multiplayer.is_server():
-		return null
 	var en := _enemies_node()
-	if en == null:
+	if not multiplayer.is_server() or en == null:
 		return null
 	var bandit := ENEMY_SCENE.instantiate()
 	bandit.name = next_enemy_name()
@@ -1562,32 +1230,20 @@ func server_despawn_enemy(enemy: Node) -> void:
 
 ## SERVER: out of the tutorial and onto the island, wherever that is today.
 func server_place_on_island(id: int) -> void:
-	var pawn := _pawn(id)
-	if pawn == null:
-		return
-	var pos := spawn_position(0)
-	pawn.net_teleport(pos)
-	if id != 1:
-		rpc_id(id, "cl_force_position", pos)
+	_move_pawn(id, spawn_position(0))
 
 ## SERVER -> one client: build your copy of the city / step / tear it down.
 ## The host is both ends at once, so it calls its own client half directly —
 ## `call_remote` RPCs never come back round to the peer that sent them.
 func tutorial_enter(id: int, slot: int) -> void:
-	if id == 1:
-		Tutorial.client_enter(slot)
-	else:
-		rpc_id(id, "cl_tutorial_enter", slot)
+	_reply1(id, "cl_tutorial_enter", slot)
 
 func tutorial_step(id: int, step_id: String) -> void:
-	if id == 1:
-		Tutorial.client_step(step_id)
-	else:
-		rpc_id(id, "cl_tutorial_step", step_id)
+	_reply1(id, "cl_tutorial_step", step_id)
 
 func tutorial_leave(id: int) -> void:
-	if id == 1:
-		Tutorial.client_leave()
+	if id == multiplayer.get_unique_id():
+		cl_tutorial_leave()
 	else:
 		rpc_id(id, "cl_tutorial_leave")
 
@@ -1605,33 +1261,19 @@ func cl_tutorial_leave() -> void:
 
 ## CLIENT -> server: I am standing in the world, the lesson can start.
 func report_tutorial_ready() -> void:
-	if not active:
-		return
-	if multiplayer.is_server():
-		Tutorial.server_report_ready(multiplayer.get_unique_id())
-	else:
-		rpc_id(1, "sv_tutorial_ready")
-
-@rpc("any_peer", "call_remote", "reliable")
-func sv_tutorial_ready() -> void:
-	if multiplayer.is_server():
-		Tutorial.server_report_ready(multiplayer.get_remote_sender_id())
+	_ask("tutorial_ready")
 
 ## CLIENT -> server: I did the thing this step asked for. Only the steps the
-## server cannot watch for itself are taken on trust (see TutorialData), and
-## the most a patched client wins by lying is skipping its own lesson.
+## server cannot watch for itself are taken on trust (see TutorialData), and the
+## most a patched client wins by lying is skipping its own lesson.
 func report_tutorial_pressed(step_id: String) -> void:
-	if not active:
-		return
-	if multiplayer.is_server():
-		Tutorial.server_report_pressed(multiplayer.get_unique_id(), step_id)
-	else:
-		rpc_id(1, "sv_tutorial_pressed", step_id)
+	_ask("tutorial_pressed", [step_id])
 
-@rpc("any_peer", "call_remote", "reliable")
-func sv_tutorial_pressed(step_id: String) -> void:
-	if multiplayer.is_server():
-		Tutorial.server_report_pressed(multiplayer.get_remote_sender_id(), step_id)
+func _server_tutorial_ready(id: int) -> void:
+	Tutorial.server_report_ready(id)
+
+func _server_tutorial_pressed(id: int, step_id: String) -> void:
+	Tutorial.server_report_pressed(id, step_id)
 
 # ---------------- gold drops ----------------
 # The pile itself is cosmetic on every peer; the server owns who gets paid.
@@ -1668,20 +1310,18 @@ func _do_spawn_gold(drop_name: String, pos: Vector3, amount: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func cl_remove_gold(drop_name: String) -> void:
 	var dn := _drops_node()
-	if dn == null:
-		return
-	var d := dn.get_node_or_null(drop_name)
+	var d: Node = dn.get_node_or_null(drop_name) if dn else null
 	if d:
 		d.queue_free()
 
 ## SERVER: award piles to the first living player standing on them.
-func _check_gold_pickups(pn: Node) -> void:
+func _check_gold_pickups() -> void:
 	var dn := _drops_node()
 	if dn == null:
 		return
 	for d in dn.get_children():
 		var dpos: Vector3 = d.global_position
-		for pawn in pn.get_children():
+		for pawn in _players_node().get_children():
 			if pawn.dead or not players.has(pawn.peer_id):
 				continue
 			var ppos: Vector3 = pawn.server_body_pos()
@@ -1696,141 +1336,35 @@ func _server_award_gold(id: int, drop: Node) -> void:
 	_sync_players()
 	_send_purse(id) # gold is private now, so the broadcast no longer carries it
 	rpc("cl_gold_picked", String(drop.name), drop.amount, drop.global_position)
-	_do_gold_picked(String(drop.name), drop.amount, drop.global_position)
+	cl_gold_picked(String(drop.name), drop.amount, drop.global_position)
 
 @rpc("authority", "call_remote", "reliable")
 func cl_gold_picked(drop_name: String, amount: int, pos: Vector3) -> void:
-	_do_gold_picked(drop_name, amount, pos)
-
-func _do_gold_picked(drop_name: String, amount: int, pos: Vector3) -> void:
 	var w := _world()
 	if w == null:
 		return
 	GOLD_DROP_SCRIPT.spawn_pickup_text(w, pos, amount)
-	var dn := _drops_node()
-	if dn:
-		var d := dn.get_node_or_null(drop_name)
-		if d:
-			d.queue_free()
+	cl_remove_gold(drop_name)
 
-@rpc("authority", "call_remote", "reliable")
-func cl_remove_enemy(enemy_name: String) -> void:
-	var en := _enemies_node()
-	if en == null:
-		return
-	var e := en.get_node_or_null(enemy_name)
-	if e:
-		e.queue_free()
-
-# ---------------- UPnP (no manual port forwarding) ----------------
-
-func _start_upnp(port: int) -> void:
-	if not ClassDB.class_exists("UPNP"):
-		upnp_status = "failed"
-		return
-	if _upnp_thread and _upnp_thread.is_started():
-		if _upnp_thread.is_alive():
-			return # previous attempt still running
-		_upnp_thread.wait_to_finish()
-	upnp_status = "searching"
-	_upnp_thread = Thread.new()
-	_upnp_thread.start(_upnp_worker.bind(port))
-
-## 24h lease: if the server is force-killed and never cleans up, the router
-## drops the mapping on its own. Some routers reject leases -> permanent
-## fallback, which the explicit cleanup below then handles on normal exits.
-const UPNP_LEASE := 86400
-
-func _upnp_worker(port: int) -> void:
-	var upnp := UPNP.new()
-	var result := upnp.discover()
-	if result != UPNP.UPNP_RESULT_SUCCESS or upnp.get_device_count() == 0 \
-			or upnp.get_gateway() == null or not upnp.get_gateway().is_valid_gateway():
-		call_deferred("_upnp_done", "failed", "")
-		return
-	var udp := upnp.add_port_mapping(port, port, "Astria", "UDP", UPNP_LEASE)
-	if udp != UPNP.UPNP_RESULT_SUCCESS:
-		udp = upnp.add_port_mapping(port, port, "Astria", "UDP", 0)
-	if upnp.add_port_mapping(port, port, "Astria", "TCP", UPNP_LEASE) != UPNP.UPNP_RESULT_SUCCESS:
-		upnp.add_port_mapping(port, port, "Astria", "TCP", 0)
-	var ip := upnp.query_external_address()
-	if udp == UPNP.UPNP_RESULT_SUCCESS and not ip.is_empty():
-		# set from the worker thread so a quit right after hosting can still
-		# clean up after wait_to_finish (the deferred call may never run)
-		_upnp_mapper = upnp
-		_mapped_port = port
-		call_deferred("_upnp_done", "ok", ip)
-	else:
-		call_deferred("_upnp_done", "failed", ip)
-
-## Remove the router mapping (async normally; blocking when quitting).
-func _remove_upnp_mapping(blocking: bool) -> void:
-	if _mapped_port == 0 or _upnp_mapper == null:
-		return
-	var mapper = _upnp_mapper
-	var port := _mapped_port
-	_upnp_mapper = null
-	_mapped_port = 0
-	if blocking:
-		mapper.delete_port_mapping(port, "UDP")
-		mapper.delete_port_mapping(port, "TCP")
-		print("[Net] UPnP mapping for port %d removed" % port)
-		return
-	if _upnp_cleanup_thread and _upnp_cleanup_thread.is_started():
-		_upnp_cleanup_thread.wait_to_finish()
-	_upnp_cleanup_thread = Thread.new()
-	_upnp_cleanup_thread.start(func() -> void:
-		mapper.delete_port_mapping(port, "UDP")
-		mapper.delete_port_mapping(port, "TCP")
-		print("[Net] UPnP mapping for port %d removed" % port))
-
-func _upnp_done(status: String, ip: String) -> void:
-	upnp_status = status
-	public_ip = ip
-	if status == "ok":
-		print("[Net] UPnP OK — friends can join at %s (port %d)" % [ip, host_port])
-	else:
-		print("[Net] UPnP unavailable — LAN joins still work; internet play needs a manual port forward of UDP %d" % host_port)
-
-# ---------------- helpers ----------------
+# ---------------- where things are (see NetWorld) ----------------
 
 func spawn_position(i: int) -> Vector3:
-	var markers := get_tree().get_nodes_in_group("spawn_point")
-	var base := Vector3(241.0, 95.0, -204.0)
-	if markers.size() > 0:
-		base = (markers[0] as Node3D).global_position
-	if i <= 0:
-		return base
-	var a := float(i) * 2.3999632
-	return base + Vector3(cos(a), 0, sin(a)) * 1.6
+	return NetWorld.spawn_position(get_tree(), i)
 
 func _world() -> Node:
-	return get_tree().current_scene
+	return NetWorld.world(get_tree())
 
 func _players_node() -> Node:
-	var w := _world()
-	return w.get_node_or_null("Players") if w else null
+	return NetWorld.players_node(get_tree())
 
 func _enemies_node() -> Node:
-	var w := _world()
-	return w.get_node_or_null("Enemies") if w else null
+	return NetWorld.enemies_node(get_tree())
 
-## Runtime-only container for gold piles (created on demand on each peer).
 func _drops_node(create := false) -> Node:
-	var w := _world()
-	if w == null:
-		return null
-	var dn := w.get_node_or_null("Drops")
-	if dn == null and create:
-		dn = Node3D.new()
-		dn.name = "Drops"
-		w.add_child(dn)
-	return dn
+	return NetWorld.drops_node(get_tree(), create)
 
 func _pawn(id: int) -> Node:
-	var pn := _players_node()
-	return pn.get_node_or_null(str(id)) if pn else null
+	return NetWorld.pawn(get_tree(), id)
 
 func _enemy(enemy_name: String) -> Node:
-	var en := _enemies_node()
-	return en.get_node_or_null(enemy_name) if en else null
+	return NetWorld.enemy(get_tree(), enemy_name)
