@@ -3,7 +3,7 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dd0ph0lvtmq1j"
+uid="uid://1043aed0nko6"
 path="res://.godot/imported/dungeon1.glb-878f52413a28dfaaf29c7b7796a453d0.scn"
 
 [deps]
@@ -42,8 +42,7 @@ materials/extract_path=""
 _subresources={
 "nodes": {
 "PATH:Cube": {
-"generate/physics": true,
-"physics/shape_type": 2
+"generate/physics": true
 }
 }
 }
