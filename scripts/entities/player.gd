@@ -248,6 +248,7 @@ var _srv_pending_heavy := false
 var _srv_pending_time := -10.0
 var _srv_pending_lock := NodePath("")
 var _srv_pending_aim := 0.0 # yaw the queued swing was aimed along
+var _srv_pending_section := 0 # which punch of the chain the owner queued
 var _srv_combo_deadline := -10.0
 
 var _time := 0.0
@@ -506,8 +507,9 @@ func _puppet_tick(delta: float) -> void:
 func _server_sim_tick(delta: float) -> void:
 	if dead:
 		return
-	blocking = net_blocking and not attacking and stagger_time <= 0.0 \
-			and stamina >= block_min_stamina
+	# the button the owner is holding, run through exactly the rule its own copy
+	# runs it through — including the parry re-arm, which the server used to miss
+	_set_guard(net_blocking)
 	# a run costs the same on the server's copy of the meter as on the owner's,
 	# so a sprint across the island reaches the fight with the stamina it should
 	# (nothing at all while sprint_stamina_drain is 0 — the run is free)
@@ -530,8 +532,9 @@ func _server_sim_tick(delta: float) -> void:
 		var pending_heavy := _srv_pending_heavy
 		var pending_lock := _srv_pending_lock
 		var pending_aim := _srv_pending_aim
+		var pending_section := _srv_pending_section
 		_srv_pending_time = -10.0
-		_srv_try_start(pending_heavy, pending_lock, pending_aim)
+		_srv_try_start(pending_heavy, pending_lock, pending_aim, pending_section)
 		return
 	if attack_timer >= attack_duration:
 		attacking = false
@@ -544,8 +547,9 @@ func _server_sim_tick(delta: float) -> void:
 			var h := _srv_pending_heavy
 			var lp := _srv_pending_lock
 			var aim := _srv_pending_aim
+			var sec := _srv_pending_section
 			_srv_pending_time = -10.0
-			_srv_try_start(h, lp, aim)
+			_srv_try_start(h, lp, aim, sec)
 
 ## True while the guard is up. Mirrors Enemy.is_blocking() so the HUD can ask
 ## any lock-on target the same question; `blocking` is already replicated.
@@ -580,10 +584,10 @@ func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	net_anim = PlayerNetState.clip_name(anim)
 	net_anim_t = clampf(anim_t, 0.0, 10.0)
 	net_ratio = clampf(ratio, 0.0, 3.0)
-	# the guard going up is what the parry window is measured from; a report
-	# lands within 50 ms of the press, well inside the window
-	if blocking_flag and not net_blocking:
-		block_start_time = _time
+	# the BUTTON only. When that becomes a guard — and so when the parry window
+	# opens — is _set_guard's to say on the next tick, exactly as it is on the
+	# owner's machine: this report has no edge in it for a guard coming back up
+	# after a swing, a stagger or an empty meter.
 	net_blocking = blocking_flag
 	# a sprint claim is only believed if the pawn actually covered more ground
 	# than a walk would — the drain below is charged off the server's own
@@ -801,10 +805,24 @@ func _handle_block() -> void:
 			Net.request_use_special()
 		blocking = false
 		return
+	_set_guard(Input.is_action_pressed("block"))
+
+## THE ONE RULE FOR THE GUARD, and the only place `blocking` goes up. `want` is
+## the button — held on the owner's machine, the owner's last report on the
+## server — and everything that can refuse it is judged here, so both copies of
+## a pawn raise and drop the same guard on the same beat.
+##
+## The re-arm is the half that has to be shared. A guard that comes back UP
+## parries again, and it comes back up for reasons no report carries an edge for:
+## the swing it was dropped for has finished, a stagger has run out, the meter
+## has climbed back past the minimum. The server used to date the parry window
+## from the report the button first went down in, so holding block through your
+## own punch parried on the owner's screen and merely blocked on the server's.
+func _set_guard(want: bool) -> void:
 	# punching overrides blocking: the guard only holds while not swinging,
 	# and comes back up on its own after the swing if block is still held.
 	# An empty guard meter can't hold anything up (see server_take_damage).
-	var want := Input.is_action_pressed("block") and not attacking \
+	want = want and not attacking and stagger_time <= 0.0 \
 			and stamina >= block_min_stamina
 	if want and not blocking:
 		block_start_time = _time # a fresh guard can parry
@@ -898,7 +916,10 @@ func _start_swing(heavy: bool, section: int) -> void:
 		var lock_path := NodePath("")
 		if is_instance_valid(lock_target):
 			lock_path = lock_target.get_path()
-		Net.request_attack(heavy, lock_path, body_visual.rotation.y)
+		# WHICH punch of the chain this is goes with the request. The server used
+		# to work it out from a window instead, and a window cannot tell a chain
+		# from a fresh press that happens to land inside it (see _srv_try_start).
+		Net.request_attack(heavy, lock_path, body_visual.rotation.y, section)
 
 ## A committed swing steps into a locked opponent that is out of reach, so
 ## punching at the edge of the ring closes the gap instead of hitting air.
@@ -941,7 +962,8 @@ func _tick_attack(delta: float) -> void:
 		combo_index = 0
 
 ## SERVER: a remote client pressed attack. Validate, don't trust.
-func server_handle_attack_request(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
+func server_handle_attack_request(heavy: bool, lock_path: NodePath, aim_yaw: float,
+		claim_section := 0) -> void:
 	if dead or sliding or stagger_time > 0.0:
 		return
 	if attacking:
@@ -950,19 +972,31 @@ func server_handle_attack_request(heavy: bool, lock_path: NodePath, aim_yaw: flo
 		_srv_pending_time = _time
 		_srv_pending_lock = lock_path
 		_srv_pending_aim = aim_yaw
+		_srv_pending_section = claim_section
 		return
-	_srv_try_start(heavy, lock_path, aim_yaw)
+	_srv_try_start(heavy, lock_path, aim_yaw, claim_section)
 
-func _srv_try_start(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
+func _srv_try_start(heavy: bool, lock_path: NodePath, aim_yaw: float,
+		claim_section := 0) -> void:
 	if dead or stagger_time > 0.0:
 		return
 	if stamina < (heavy_stamina_cost if heavy else stamina_cost):
 		return
+	# WHICH punch of the chain this is, the owner's word checked against the
+	# server's own: believed only when a chain is actually live here (mid-swing,
+	# or inside the combo window after the last light one) AND names the very
+	# next punch in it. Anything else is punch one.
+	#
+	# The window ALONE used to decide it, and a window cannot tell a chain from a
+	# fresh press that lands inside it: the owner threw a jab, the server ran the
+	# next punch of the old chain — a different clip, a different swing length,
+	# and at the third one the ender's damage — while the owner's screen showed
+	# the jab. The check still gates the ender behind two punches the server saw,
+	# so claiming it outright buys nothing.
 	var section := 0
-	if not heavy and _time <= _srv_combo_deadline:
-		section = (combo_index + 1) % 3
-	elif not heavy and attacking:
-		section = (combo_index + 1) % 3 # chaining straight out of a live swing
+	if not heavy and (attacking or _time <= _srv_combo_deadline) \
+			and claim_section == (combo_index + 1) % 3:
+		section = claim_section
 	# resolve the claimed lock target; the trace still range-checks it
 	lock_target = null
 	if not lock_path.is_empty():

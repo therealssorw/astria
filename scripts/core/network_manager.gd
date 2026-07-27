@@ -1188,7 +1188,9 @@ func voice_targets(from_id: int) -> Array[int]:
 # ---------------- combat protocol ----------------
 
 ## Client owner -> server: "I pressed attack" (+ claimed lock-on target, which
-## the server re-validates by range, and the yaw the swing was thrown along).
+## the server re-validates by range, the yaw the swing was thrown along, and
+## which punch of the chain it is — see Player._srv_try_start, which believes
+## that one only when its own copy of the chain says the same).
 ##
 ## The aim rides WITH the swing rather than being read off the last state report
 ## when it lands: the two are sent in the same frame and the report can arrive
@@ -1196,15 +1198,18 @@ func voice_targets(from_id: int) -> Array[int]:
 ## no more trusted than before — the reported body yaw was already the client's
 ## word, and the trace still runs off the server's own positions and reach.
 @rpc("any_peer", "call_remote", "reliable")
-func sv_request_attack(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
+func sv_request_attack(heavy: bool, lock_path: NodePath, aim_yaw: float,
+		section := 0) -> void:
 	if not multiplayer.is_server():
 		return
 	var pawn := _pawn(multiplayer.get_remote_sender_id())
 	if pawn and not pawn.is_local:
-		pawn.server_handle_attack_request(heavy, lock_path, aim_yaw)
+		pawn.server_handle_attack_request(heavy, lock_path, aim_yaw,
+				clampi(section, 0, 2))
 
-func request_attack(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
-	rpc_id(1, "sv_request_attack", heavy, lock_path, aim_yaw)
+func request_attack(heavy: bool, lock_path: NodePath, aim_yaw: float,
+		section := 0) -> void:
+	rpc_id(1, "sv_request_attack", heavy, lock_path, aim_yaw, section)
 
 ## Server: tell everyone (but the swinging owner predicted it already).
 func server_broadcast_swing(id: int, heavy: bool, section: int) -> void:

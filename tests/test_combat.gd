@@ -88,6 +88,8 @@ func _run() -> void:
 	await _test_regen()
 	print("=== combo ===")
 	await _test_combo()
+	print("=== remote ===")
+	await _test_remote()
 	print("=== stance ===")
 	await _test_stance()
 	print("=== enemy ===")
@@ -324,6 +326,82 @@ func _test_combo() -> void:
 			"combo=%d attacking=%s" % [a.combo_index, a.attacking])
 	a.free()
 	await get_tree().process_frame
+
+## The server's copy of somebody ELSE's pawn — the half of combat a listen server
+## never runs, because the host's own pawn simulates itself. Everything here was
+## invisible in the editor and only wrong for a player connected over a wire.
+##
+## `_spawn_player` with an id that is not this peer's makes `is_local` false, so
+## these are exactly the pawns `_server_sim_tick` drives.
+func _test_remote() -> void:
+	var p := _spawn_player(7, Vector3(0, 0, 60.0)) # away from anything punchable
+	await get_tree().process_frame
+	p._time = 100.0
+	p.stamina = p.max_stamina
+
+	# --- which punch of the chain the server runs ---
+	# a jab, seen through to the end, then a FRESH press a beat later: the owner
+	# starts its chain over, and so must the server. It used to read the press as
+	# the next punch of the old chain — different clip, different timing, and one
+	# more of them away from the ender's damage.
+	p.server_handle_attack_request(false, NodePath(""), 0.0, 0)
+	ok(p.attacking and p.combo_index == 0, "a first punch is punch one",
+			"combo=%d" % p.combo_index)
+	var swing: float = p.attack_duration
+	_srv_run(p, swing + 0.05)
+	ok(not p.attacking, "the swing finishes", "%.2fs" % swing)
+	_srv_run(p, 0.1) # well inside combo_input_cache_tolerance
+	p.server_handle_attack_request(false, NodePath(""), 0.0, 0)
+	ok(p.combo_index == 0, "a fresh press restarts the chain, not continues it",
+			"combo=%d" % p.combo_index)
+
+	# ...and a press the owner really did chain still chains
+	_srv_run(p, p.attack_combo_time + 0.01)
+	p.server_handle_attack_request(false, NodePath(""), 0.0, 1)
+	_srv_run(p, 1.0 / 60.0)
+	ok(p.combo_index == 1, "a chained press runs the next punch",
+			"combo=%d" % p.combo_index)
+
+	# a claim the server's own chain doesn't back is worth nothing: the ender
+	# hits for combo_finisher_mult, so it has to be earned twice over
+	_srv_run(p, 2.0)
+	p.stamina = p.max_stamina
+	p.server_handle_attack_request(false, NodePath(""), 0.0, 2)
+	ok(p.combo_index == 0, "an unearned ender claim is refused",
+			"combo=%d" % p.combo_index)
+	_srv_run(p, p.attack_duration + 2.0)
+
+	# --- the parry window re-arms on the server too ---
+	# The guard drops for your own punch and comes back up after it, and a guard
+	# that comes back up parries. No state report carries that edge — the button
+	# never moved — so the server has to notice it the same way the owner does.
+	p.stamina = p.max_stamina
+	p.net_blocking = true
+	_srv_run(p, 1.0 / 60.0)
+	ok(p.blocking, "the reported button raises the guard")
+	_srv_run(p, p.parry_window * 3.0)
+	ok(p._time - p.block_start_time > p.parry_window,
+			"a guard held a while is past its parry window",
+			"%.2fs up" % (p._time - p.block_start_time))
+	p.server_handle_attack_request(false, NodePath(""), 0.0, 0)
+	_srv_run(p, 1.0 / 60.0)
+	ok(not p.blocking, "punching drops the guard")
+	_srv_run(p, p.attack_duration + 0.05)
+	ok(p.blocking, "the guard comes back up after the swing")
+	ok(p._time - p.block_start_time <= p.parry_window,
+			"...and it can parry again",
+			"%.3fs up" % (p._time - p.block_start_time))
+	p.free()
+	await get_tree().process_frame
+
+## One server physics frame for a pawn it does not own, as _physics_process
+## would run it: the clock, the stagger countdown, then the sim.
+func _srv_run(p: Player, seconds: float) -> void:
+	var dt := 1.0 / 60.0
+	for i in int(ceilf(seconds / dt)):
+		p._time += dt
+		p.stagger_time = maxf(0.0, p.stagger_time - dt)
+		p._server_sim_tick(dt)
 
 func _test_stance() -> void:
 	var a := _spawn_player(1, Vector3.ZERO)
