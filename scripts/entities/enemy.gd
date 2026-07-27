@@ -173,11 +173,8 @@ var swings_since_retreat := 0
 var _pattern := 0.0           # golden-ratio low-discrepancy sequence
 var _player_was_attacking := false
 var _retarget_left := 0.0
-var _grunt_player: AudioStreamPlayer3D
-var _impact_player: AudioStreamPlayer3D
-var _block_player: AudioStreamPlayer3D
-var _death_player: AudioStreamPlayer3D
-var _woosh_player: AudioStreamPlayer3D
+## Every noise this fighter makes (see FighterAudio, shared with the player).
+var _sfx: FighterAudio
 
 # what _animate last showed — this is what the server replicates
 var last_anim := "idle"
@@ -200,31 +197,8 @@ func _ready() -> void:
 	health = max_health
 	add_to_group("enemies")
 	puppet = not multiplayer.is_server()
-	if hurt_grunts:
-		_grunt_player = AudioStreamPlayer3D.new()
-		_grunt_player.stream = hurt_grunts
-		_grunt_player.position.y = 1.4
-		add_child(_grunt_player)
-	if punch_impacts:
-		_impact_player = AudioStreamPlayer3D.new()
-		_impact_player.stream = punch_impacts
-		_impact_player.position.y = 1.2
-		add_child(_impact_player)
-	if block_impacts:
-		_block_player = AudioStreamPlayer3D.new()
-		_block_player.stream = block_impacts
-		_block_player.position.y = 1.2
-		add_child(_block_player)
-	if death_sounds:
-		_death_player = AudioStreamPlayer3D.new()
-		_death_player.stream = death_sounds
-		_death_player.position.y = 1.2
-		add_child(_death_player)
-	if swing_wooshes:
-		_woosh_player = AudioStreamPlayer3D.new()
-		_woosh_player.stream = swing_wooshes
-		_woosh_player.position.y = 1.2
-		add_child(_woosh_player)
+	_sfx = FighterAudio.new(self, {"grunt": hurt_grunts, "impact": punch_impacts,
+			"block": block_impacts, "death": death_sounds, "woosh": swing_wooshes})
 	if puppet:
 		collision_layer = 0
 		collision_mask = 0
@@ -409,8 +383,7 @@ func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	net_windup_prog = windup_prog
 	if is_attacking and not net_attacking:
 		# swing just started: play the stretched punch montage + woosh
-		if _woosh_player:
-			_woosh_player.play()
+		_sfx.play_swing()
 		if body_visual.has_method("on_attack_started"):
 			body_visual.on_attack_started(false, 0, atk_duration)
 	net_attacking = is_attacking
@@ -430,8 +403,7 @@ func net_die() -> void:
 	attacking = false
 	stagger_left = 0.0
 	collision_layer = 0
-	if _death_player:
-		_death_player.play()
+	_sfx.play_death()
 	body_visual.play_death()
 
 # ---------------- combat states ----------------
@@ -548,8 +520,7 @@ func _start_swing() -> void:
 	attack_timer = 0.0
 	attack_did_hit = false
 	cooldown_left = attack_cooldown
-	if _woosh_player:
-		_woosh_player.play()
+	_sfx.play_swing()
 	# exported windup/duration are authoritative; the punch animation
 	# is stretched to match attack_duration
 	if body_visual.has_method("on_attack_started"):
@@ -857,20 +828,16 @@ func net_stagger(duration: float) -> void:
 
 ## Flash + sounds — runs on the server (host view) and on every client.
 func _damage_fx(result: int) -> void:
+	_sfx.play_impact(result)
 	if result == Player.Guard.BLOCKED:
 		# the guard held: it thuds off the block and it doesn't hurt, so no
 		# flesh impact and no grunt
 		body_visual.flash(Color(0.4, 0.7, 1.0), 0.15)
-		if _block_player:
-			_block_player.play()
 		return
 	body_visual.flash(Color(1.0, 0.85, 0.3), 0.12)
 	body_visual.hit_react(0.28)
 	body_visual.hitstop(0.06)
-	if _impact_player:
-		_impact_player.play()
-	if _grunt_player and health > 0.0:
-		_grunt_player.play() # lethal hits voice the death sound instead
+	_sfx.play_grunt(health > 0.0) # a lethal hit voices the death sound instead
 
 func _die(attacker: int) -> void:
 	Net.server_record_enemy_kill(String(name), attacker) # scoreboard + tells clients

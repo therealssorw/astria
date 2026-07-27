@@ -251,8 +251,8 @@ var _srv_pending_aim := 0.0 # yaw the queued swing was aimed along
 var _srv_combo_deadline := -10.0
 
 var _time := 0.0
-## Every noise this fighter makes (see PlayerAudio).
-var _sfx: PlayerAudio
+## Every noise this fighter makes (see FighterAudio, shared with the bandits).
+var _sfx: FighterAudio
 ## The camera rig and the lock-on that steers it (see PlayerCamera). Only the
 ## local pawn has one — a puppet's rig is freed in _ready.
 var _view: PlayerCamera
@@ -284,7 +284,7 @@ func _ready() -> void:
 		spring_arm = null
 		camera = null
 		_make_nametag()
-	_sfx = PlayerAudio.new(self, {"grunt": hurt_grunts, "impact": punch_impacts,
+	_sfx = FighterAudio.new(self, {"grunt": hurt_grunts, "impact": punch_impacts,
 			"block": block_impacts, "death": death_sounds, "woosh": swing_wooshes})
 	# what this pawn is holding rides along with the public registry, so every
 	# peer draws the same thing in its hand
