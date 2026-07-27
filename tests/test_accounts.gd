@@ -188,15 +188,18 @@ func _test_a_stale_save_cannot_wedge_a_player() -> void:
 		"a chestplate was worn as a helmet")
 	_check((entry["bosses"] as Dictionary).is_empty(), "a non-numeric boss count survived")
 
-## An API blip must not eat somebody's afternoon. A write that fails goes back
-## on the queue rather than vanishing.
+## A write that cannot go out must not vanish — losing an afternoon of somebody
+## else's gold is the one bug players actually notice. This runs as a client
+## (no service key), which is also the case that must not reach the real API:
+## the anon key ships in every build, so a test that posted for real would be
+## writing to the live project every time anybody ran the suite.
 func _test_failed_write_is_requeued() -> void:
 	var entry: Dictionary = Net._make_entry("Ada")
 	entry["gold"] = 50
 	SaveStore._dirty["u1"] = entry
-	# No service key here, so the POST inside _flush fails at the first check.
 	await SaveStore._flush("u1")
-	_check(SaveStore._dirty.has("u1"), "a failed save write was dropped, not requeued")
+	_check(SaveStore._dirty.has("u1"), "a save that could not be written was dropped")
+	_check(SaveStore._in_flight.is_empty(), "a write nobody sent was left marked in flight")
 	SaveStore._dirty.clear()
 	SaveStore._in_flight.clear()
 

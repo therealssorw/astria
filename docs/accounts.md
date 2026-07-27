@@ -82,11 +82,22 @@ Both, plus the project URL, can be overridden with `ASTRIA_SUPABASE_ANON_KEY`,
 2. **Redirect allow-list** — Authentication -> URL Configuration -> Redirect
    URLs: add `http://127.0.0.1:27045`. Without this Supabase refuses to send
    the browser back to the game and login silently times out.
-3. **Migrations** — run `supabase/migrations/0001_accounts.sql`, then
-   `0002_save_everything.sql`. As of this writing the project has **neither**:
-   `list_migrations` comes back empty, so nothing has been applied yet.
-4. **Keys** — put the anon key in `Supabase.ANON_KEY` (or the env var), and set
-   `ASTRIA_SUPABASE_SERVICE_KEY` on the server box before `run_server.bat`.
+3. **Migrations** — `0001_accounts.sql`, `0002_save_everything.sql`,
+   `0003_lock_down_the_trigger_functions.sql`. All three are **applied** to
+   project `byckhykwklzjbfratzds`; the security linter comes back clean.
+4. **Keys** — the publishable key is in `Supabase.ANON_KEY` and is done. The
+   service key is not, and never goes in the repo: it belongs on the server box
+   only. The live server is a systemd unit, so that means
+   `sudo systemctl edit astria.service` and
+
+   ```
+   [Service]
+   Environment=ASTRIA_SUPABASE_SERVICE_KEY=<service key>
+   Environment=ASTRIA_DISCORD_WEBHOOK=<webhook url>
+   ```
+
+   Without the first, the server can verify a token but cannot load or write a
+   save, so every login is refused with "could not load your save".
 
 ## Testing without Discord
 

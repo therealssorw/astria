@@ -17,8 +17,13 @@ extends Node
 const PROJECT_URL := "https://byckhykwklzjbfratzds.supabase.co"
 
 ## Public, ships in the client. Safe to commit — RLS is what actually guards
-## the data. Override with ASTRIA_SUPABASE_ANON_KEY.
-const ANON_KEY := ""
+## the data, and this key's entire power is "read your own two rows". Override
+## with ASTRIA_SUPABASE_ANON_KEY.
+##
+## This is a PUBLISHABLE key (sb_publishable_...), the modern replacement for
+## the legacy anon JWT. It can be rotated in the dashboard on its own without
+## touching the service key, which is the reason to prefer it.
+const ANON_KEY := "sb_publishable_zOS0jIX9SoCYBUQ4VhUSjw_Dhjm0iYz"
 
 const ENV_URL := "ASTRIA_SUPABASE_URL"
 const ENV_ANON := "ASTRIA_SUPABASE_ANON_KEY"

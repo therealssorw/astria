@@ -161,6 +161,12 @@ func flush_now(user_id: String) -> void:
 func _flush(user_id: String) -> void:
 	if _in_flight.get(user_id, false):
 		return  # a write is already out; the next tick will pick up the newer state
+	# No service key means this build cannot write a save at all. Leave it on
+	# the queue rather than spending a round trip to be told 401 — and, since
+	# the anon key now ships in the client, this is also what stops a client
+	# build (or a test) from reaching out to the real API by accident.
+	if not available():
+		return
 	var entry: Dictionary = _dirty.get(user_id, {})
 	if entry.is_empty():
 		_dirty.erase(user_id)
