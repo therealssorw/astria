@@ -117,10 +117,18 @@ func _test_a_whole_player_survives_the_round_trip() -> void:
 	NetRegistry.apply_save(after, row)
 
 	for key: String in NetRegistry.PERSISTED:
+		if key == "hotbar":
+			continue # its own rule, below
 		_check(str(after[key]) == str(before[key]),
 			"'%s' came back as %s, not %s" % [key, after[key], before[key]])
-	# and the derived half: a bar slot only holds what the bag still has, and a
-	# worn piece is on your back rather than in the sack
+	# The bar is the one field that comes back TIDIER than it went out, and on
+	# purpose: putting the helmet on took it out of the bag but left it sitting
+	# in the slot it was already in, and a slot holding something the bag does
+	# not have would put nothing in a hand. Everything else keeps its place.
+	var bar: Array = after["hotbar"]
+	_check(bar[4] == "copper_helmet", "the bar lost the slot the player arranged")
+	_check(not bar.has("flimsy_helmet"),
+		"a slot came back pointing at the helmet the player is wearing")
 	_check(NetRegistry.held_item(after) == "copper_helmet",
 		"the player came back holding '%s'" % NetRegistry.held_item(after))
 	_check(str(after["equipped"].get("helmet", "")) == "flimsy_helmet",
