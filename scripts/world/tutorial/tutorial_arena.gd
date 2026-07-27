@@ -65,10 +65,11 @@ func villager() -> Node3D:
 func villager_start() -> Vector3:
 	return _ground_at(player_spawn() + Vector3(0.6, 0.0, 0.8).normalized() * VILLAGER_START)
 
-## A glTF has no collision shapes; the real island grows its own the same way.
+## A glTF has no collision shapes; the real island grows its own the same way —
+## the same function, so a copy of the island can never end up with a different
+## floor from the island.
 func _build_collision() -> void:
-	for mi: MeshInstance3D in $Island1.find_children("*", "MeshInstance3D", true, false):
-		mi.create_trimesh_collision()
+	IslandWorld.grow_collision($Island1)
 
 ## Where the player wakes up — the island's own spawn marker, in the same spot
 ## as the real one, so the tutorial starts where the game would.
