@@ -131,17 +131,6 @@ static func refill_hotbar(entry: Dictionary) -> void:
 		if free >= 0:
 			bar[free] = item_id # else the bar is full and this one waits in the bag
 
-## Take off anything no longer in the bag, so selling the breastplate you are
-## wearing takes it off your back rather than leaving you protected by an item
-## you do not own.
-static func drop_unowned_equipment(entry: Dictionary) -> void:
-	var worn: Dictionary = entry.get("equipped", empty_equipment())
-	for slot: String in ItemDb.EQUIP_SLOTS:
-		var item_id := str(worn.get(slot, ""))
-		if item_id != "" and not carries(entry, item_id):
-			worn[slot] = ""
-	entry["equipped"] = worn
-
 static func add_item(entry: Dictionary, item_id: String, n := 1) -> void:
 	var items: Dictionary = entry["items"]
 	items[item_id] = int(items.get(item_id, 0)) + n
@@ -176,15 +165,42 @@ static func assign_hotbar(entry: Dictionary, slot: int, item_id: String) -> bool
 	entry["hot_slot"] = slot
 	return true
 
-## Put `item_id` on, or take it off when it is already worn. Returns the slot
-## it moved and whether it was taken OFF, or ["", false] when the item is not
-## armor or is not carried. The SLOT comes from the item, never from a request.
-static func toggle_equipped(entry: Dictionary, item_id: String) -> Array:
+## Put `item_id` ON, MOVING it out of the bag. A piece you are wearing is on your
+## back and not in your sack, so it occupies an equipment slot INSTEAD of a bag
+## slot — which is also what stops you selling the breastplate you have on, and
+## why nothing has to take armor off when the bag shrinks. Whatever that slot was
+## already wearing goes back into the bag in exchange.
+##
+## Returns the slot it went into, or "" when the item is not armor, is not
+## carried, or is the piece already worn there. The SLOT comes from the ITEM,
+## never from a request.
+static func equip(entry: Dictionary, item_id: String) -> String:
 	var slot := ItemDb.armor_slot(item_id)
 	if slot == "" or not carries(entry, item_id):
-		return ["", false]
+		return ""
 	var worn: Dictionary = entry.get("equipped", empty_equipment())
-	var taking_off := str(worn.get(slot, "")) == item_id
-	worn[slot] = "" if taking_off else item_id
+	var replaced := str(worn.get(slot, ""))
+	if replaced == item_id:
+		return "" # already on: taking it off is unequip's job, not a second meaning
+	remove_item(entry, item_id)
+	if replaced != "":
+		add_item(entry, replaced)
+	worn[slot] = item_id
 	entry["equipped"] = worn
-	return [slot, taking_off]
+	return slot
+
+## Take whatever is worn in `slot` off, back into the bag. Returns the item that
+## came off, or "" when the slot is not an equipment slot or is already empty.
+## The slot is the only thing a request names here, and there is nothing to lie
+## about in it: an unknown one is refused and an empty one does nothing.
+static func unequip(entry: Dictionary, slot: String) -> String:
+	if not ItemDb.EQUIP_SLOTS.has(slot):
+		return ""
+	var worn: Dictionary = entry.get("equipped", empty_equipment())
+	var item_id := str(worn.get(slot, ""))
+	if item_id == "":
+		return ""
+	worn[slot] = ""
+	entry["equipped"] = worn
+	add_item(entry, item_id)
+	return item_id

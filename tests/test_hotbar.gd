@@ -201,29 +201,33 @@ class Runner:
 		# bag -> bar: it lands on the slot it was dropped on, not the held one
 		Net.request_hotbar_select(0)
 		await tree.physics_frame
-		inv._on_slot_drop("bar", 6, {"kind": "bag", "slot": -1, "id": carried})
+		inv._on_slot_drop(_at("bar", 6), _from("bag", -1, carried))
 		await tree.physics_frame
 		if _bar()[6] != carried:
 			_fail("a bag item dragged onto slot 6 did not land there: %s" % str(_bar()))
 			return
 
 		# bar -> bar: moved, and never duplicated
-		inv._on_slot_drop("bar", 7, {"kind": "bar", "slot": 6, "id": carried})
+		inv._on_slot_drop(_at("bar", 7), _from("bar", 6, carried))
 		await tree.physics_frame
 		if _bar()[7] != carried or _bar().count(carried) != 1:
 			_fail("dragging along the bar duplicated or lost it: %s" % str(_bar()))
 			return
 
-		# dropped back on itself: nothing happens
+		# dropped back on itself: nothing happens, and the slot says so BEFORE the
+		# drop — a panel that accepts a drop and then ignores it feels broken
 		var settled: Array = _bar().duplicate()
-		inv._on_slot_drop("bar", 7, {"kind": "bar", "slot": 7, "id": carried})
+		if inv._drop_allowed(_at("bar", 7), _from("bar", 7, carried)):
+			_fail("a slot should refuse a drop from itself")
+			return
+		inv._on_slot_drop(_at("bar", 7), _from("bar", 7, carried))
 		await tree.physics_frame
 		if _bar() != settled:
 			_fail("dropping a slot on itself changed the bar: %s" % str(_bar()))
 			return
 
 		# bar -> bag: off the bar, still in the bag
-		inv._on_slot_drop("bag", -1, {"kind": "bar", "slot": 7, "id": carried})
+		inv._on_slot_drop(_at("bag", -1), _from("bar", 7, carried))
 		await tree.physics_frame
 		if _bar()[7] != "":
 			_fail("dragging an item off the bar did not clear its slot")
@@ -234,12 +238,102 @@ class Runner:
 
 		# bag -> bag is deliberately nothing: a bag slot's position is not stored
 		settled = _bar().duplicate()
-		inv._on_slot_drop("bag", -1, {"kind": "bag", "slot": -1, "id": carried})
+		if inv._drop_allowed(_at("bag", -1), _from("bag", -1, carried)):
+			_fail("the bag should refuse a drop that came out of the bag")
+			return
+		inv._on_slot_drop(_at("bag", -1), _from("bag", -1, carried))
 		await tree.physics_frame
 		if _bar() != settled:
 			_fail("a bag-to-bag drag changed the bar: %s" % str(_bar()))
 			return
 
+		if not await _equipment_drags(tree, inv):
+			return
+
+		if not await _number_keys(tree, pawn):
+			return
+
 		print("HOTBARTEST bar=", _bar(), " slot=", Net.players[1]["hot_slot"])
 		print("HOTBARTEST RESULT=PASS")
 		get_tree().quit(0)
+
+	## 1-9 jump straight to a slot. Driven with REAL key events through the pawn's
+	## own handler rather than by calling the request: the binding, the action
+	## table and the handler are three places this can break and only an event
+	## goes through all of them.
+	func _number_keys(tree: SceneTree, pawn: Node3D) -> bool:
+		# every join lands in the tutorial, whose opening lines hold `ui_open` —
+		# and an open panel owns the keyboard, which is the rule being relied on
+		# rather than worked around. Put the pawn back in the world first.
+		if DialogSystem.is_open():
+			DialogSystem.close()
+		pawn.ui_open = false
+		await tree.process_frame
+		for slot in [4, 0, 8]:
+			var ev := InputEventKey.new()
+			ev.physical_keycode = KEY_1 + slot
+			ev.pressed = true
+			Input.parse_input_event(ev)
+			Input.flush_buffered_events()
+			await tree.process_frame
+			await tree.physics_frame
+			if int(Net.players[1]["hot_slot"]) != slot:
+				_fail("key %d did not select slot %d (on %d)"
+						% [slot + 1, slot, int(Net.players[1]["hot_slot"])])
+				return false
+		return true
+
+	## Where a drop LANDED, and where it came FROM — the two halves of a drag as
+	## the slots themselves describe them (DragSlot.where(), plus the item id).
+	func _at(kind: String, slot: int, equip := "") -> Dictionary:
+		return {"kind": kind, "slot": slot, "equip": equip}
+
+	func _from(kind: String, slot: int, id: String, equip := "") -> Dictionary:
+		return {"kind": kind, "slot": slot, "equip": equip, "id": id}
+
+	## Dragging armor onto and off the equipment cross. The piece MOVES: onto your
+	## back is out of the bag, so the checks are about the bag as much as the
+	## equipment, and a helmet over the wrong slot has to be refused BEFORE the
+	## drop rather than quietly doing nothing.
+	func _equipment_drags(tree: SceneTree, inv: Node) -> bool:
+		var helmet := "flimsy_helmet"
+		if int(Net.players[1]["items"].get(helmet, 0)) <= 0:
+			NetRegistry.add_item(Net.players[1], helmet)
+			Net._bag_changed(1)
+			await tree.physics_frame
+
+		# a helmet is refused by every slot but the one it is worn in
+		if inv._drop_allowed(_at("equip", -1, "pants"), _from("bag", -1, helmet)):
+			_fail("a helmet should not be droppable onto the Pants slot")
+			return false
+		if not inv._drop_allowed(_at("equip", -1, "helmet"), _from("bag", -1, helmet)):
+			_fail("a helmet should be droppable onto the Helmet slot")
+			return false
+		# and nothing that is not armor may go on at all
+		if inv._drop_allowed(_at("equip", -1, "torso"), _from("bag", -1, "wooden_sword")):
+			_fail("a sword should not be droppable onto an equipment slot")
+			return false
+
+		inv._on_slot_drop(_at("equip", -1, "helmet"), _from("bag", -1, helmet))
+		await tree.physics_frame
+		if str(Net.players[1]["equipped"].get("helmet", "")) != helmet:
+			_fail("dragging a helmet onto its slot did not put it on")
+			return false
+		if int(Net.players[1]["items"].get(helmet, 0)) != 0:
+			_fail("a helmet put on should have left the bag")
+			return false
+		if _bar().has(helmet):
+			_fail("a helmet put on should have left the bar")
+			return false
+
+		# dragged back out, it comes off and returns to the bag — wherever it was
+		# dropped, because a piece taken off has only one place to go
+		inv._on_slot_drop(_at("bag", -1), _from("equip", -1, helmet, "helmet"))
+		await tree.physics_frame
+		if str(Net.players[1]["equipped"].get("helmet", "")) != "":
+			_fail("dragging a helmet out of its slot did not take it off")
+			return false
+		if int(Net.players[1]["items"].get(helmet, 0)) != 1:
+			_fail("a helmet taken off should be back in the bag")
+			return false
+		return true

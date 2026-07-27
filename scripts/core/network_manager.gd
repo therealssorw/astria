@@ -77,6 +77,8 @@ const SERVER_REQUESTS := {
 	"hotbar_assign": "_server_hotbar_assign",
 	"use_item": "_server_use_item",
 	"use_special": "_server_use_special",
+	"equip": "_server_equip",
+	"unequip": "_server_unequip",
 	"portal_enter": "_server_portal_enter",
 	"tutorial_ready": "_server_tutorial_ready",
 	"tutorial_pressed": "_server_tutorial_pressed",
@@ -798,6 +800,18 @@ func request_use_item() -> void:
 func request_use_special() -> void:
 	_ask("use_special")
 
+## Put a piece of armor on. Named rather than read off the bar, because the
+## inventory equips by dragging a piece out of the BAG and the bar has nothing to
+## do with it. Naming the item gives nothing away: the server checks it is armor
+## and that you are really carrying it, and the SLOT comes from the item.
+func request_equip(item_id: String) -> void:
+	_ask("equip", [item_id])
+
+## Take off whatever is worn in an equipment slot. The slot is all it names, and
+## an unknown or empty one simply does nothing.
+func request_unequip(slot: String) -> void:
+	_ask("unequip", [slot])
+
 func _server_hotbar_select(id: int, slot: int) -> void:
 	if slot < 0 or slot >= HOTBAR_SLOTS:
 		return
@@ -854,29 +868,39 @@ func _live_pawn(id: int) -> bool:
 	var pawn := _pawn(id)
 	return pawn != null and not pawn.dead
 
-## SERVER: put `item_id` on, or take it off if it is already worn. Everything it
-## could be lied about is checked in NetRegistry.toggle_equipped — that the
-## thing is armor, that the player is really carrying it, and which slot it
+## SERVER: put `item_id` on. It LEAVES THE BAG for the equipment slot — see
+## NetRegistry.equip, where everything that could be lied about is checked: that
+## the thing is armor, that the player is really carrying it, and which slot it
 ## belongs in (the ITEM says, never the request).
 func _server_equip(id: int, item_id: String) -> void:
-	var moved := NetRegistry.toggle_equipped(players[id], item_id)
-	if str(moved[0]) == "":
+	if not _live_pawn(id) or NetRegistry.equip(players[id], item_id) == "":
 		return
-	# the owner gets the new set privately with the rest of their purse, and
-	# EVERYONE gets the registry again, because what you are wearing is drawn on
-	# your pawn for the whole server to see
-	_send_purse(id)
-	_sync_players()
-	_use_reply(id, item_id, ("Took off %s" if bool(moved[1]) else "Equipped %s")
-			% ItemDb.item_name(item_id))
+	_equipment_changed(id, item_id, "Equipped %s" % ItemDb.item_name(item_id))
+
+## SERVER: take off whatever is worn in `slot`; it goes back into the bag.
+func _server_unequip(id: int, slot: String) -> void:
+	if not _live_pawn(id):
+		return
+	var item_id := NetRegistry.unequip(players[id], slot)
+	if item_id == "":
+		return
+	_equipment_changed(id, item_id, "Took off %s" % ItemDb.item_name(item_id))
+
+## Both ways round end here. The bag moved (a piece went in or came out), so the
+## bar is brought back in line and the owner gets their purse; EVERYONE gets the
+## registry again, because what you are wearing is drawn on your pawn for the
+## whole server to see.
+func _equipment_changed(id: int, item_id: String, message: String) -> void:
+	_bag_changed(id)
+	_use_reply(id, item_id, message)
 
 ## Anything that adds to or takes from a bag ends here: the bar is brought back
-## in line with what is actually carried, armor you no longer own comes off, and
-## then the owner is re-synced.
+## in line with what is actually carried, and then the owner is re-synced.
+## Nothing has to strip equipment here — a worn piece is not in the bag at all,
+## so it cannot be sold out from under itself.
 func _bag_changed(id: int) -> void:
 	if players.has(id):
 		NetRegistry.refill_hotbar(players[id])
-		NetRegistry.drop_unowned_equipment(players[id])
 	_hotbar_changed(id)
 
 ## The bar moved: the owner gets the new bar privately, and everyone gets the
