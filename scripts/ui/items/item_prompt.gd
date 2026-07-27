@@ -102,7 +102,7 @@ func _row(indent: float) -> Array:
 func _refresh() -> void:
 	var held := _held_id()
 	var use := ItemDb.use_label(held)
-	var special := _special_label(held)
+	var special := ItemDb.special_label(held)
 	# Only touch the labels when something really changed: this is wired to
 	# every registry sync, and the bar re-syncs on each hotbar press.
 	var state := "%s|%s|%s|%s" % [held, use, special, InputDevice.kind]
@@ -128,16 +128,12 @@ func _refresh() -> void:
 	offset_right = -MARGIN.x
 	offset_bottom = -MARGIN.y
 
-## What the special reads as right now. Armor is the one that changes with the
-## state of the thing rather than being fixed: the button that puts a helmet on
-## is the same button that takes it off again, and a prompt that always said
-## "Equip" would be lying half the time.
-func _special_label(held: String) -> String:
-	if ItemDb.special_action(held) == ItemDb.SPECIAL_EQUIP \
-			and GameStats.is_equipped(held):
-		return "Take off"
-	return ItemDb.special_label(held)
-
+## Armor's special reads "Equip" and only ever "Equip". It used to have to say
+## "Take off" half the time, because a worn piece stayed in the bag and could
+## still be in your hand — it cannot now: putting it on MOVES it out of the bag
+## onto your back, so what is in your hand is by definition not being worn.
+## Taking it off is done in the inventory, at the slot it is in.
+##
 ## The hotbar slot in hand, off the local mirror. Falls back to "" — bare
 ## hands — before the first purse sync, which is the honest answer then.
 func _held_id() -> String:

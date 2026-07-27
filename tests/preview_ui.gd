@@ -90,14 +90,38 @@ func _ready() -> void:
 	# slots construct at all.
 	var inv: CanvasLayer = INVENTORY.new()
 	add_child(inv)
+	# the chestplate is WORN and so is deliberately NOT in the bag: a piece on
+	# your back has left it, and a preview that showed both would be a picture of
+	# something the game cannot do
 	GameStats.items = {"wooden_sword": 1, "copper_sword": 1, "iron_sword": 2,
-			"flimsy_helmet": 1, "flimsy_chestplate": 1, "copper_helmet": 1}
+			"flimsy_helmet": 1, "copper_helmet": 1}
 	GameStats.hotbar = ["iron_sword", "", "flimsy_helmet", "", "", "", "", "", ""]
 	GameStats.hot_slot = 0
 	GameStats.coins = 240
+	GameStats.equipped = {"helmet": "", "torso": "flimsy_chestplate", "pants": ""}
 	GameStats.changed.emit()
 	inv._toggle() # open it; there is no pawn here, which it copes with
 	await _shot("inventory")
+
+	# AND MID-DRAG, which is the half no assertion can see: the tile riding with
+	# the cursor, the slot it came out of ghosted, the Helmet slot lit because
+	# that is where a helmet goes, and everything it cannot go on stepped back.
+	# `force_drag` is the real gesture — the same notification every slot answers.
+	var picked_up := ""
+	for slot: Button in inv.item_slots:
+		if str(slot.item_id) == "flimsy_helmet":
+			get_viewport().warp_mouse(slot.global_position + slot.size * 0.5
+					+ Vector2(0, -60)) # off the slot, so the tile is not on top of it
+			await get_tree().process_frame
+			var data: Dictionary = slot.where()
+			data["id"] = slot.item_id
+			slot.dragging = true
+			slot.force_drag(data, slot._preview())
+			picked_up = str(slot.item_id)
+			break
+	if picked_up == "":
+		print("PREVIEW no helmet in the bag to drag — inventory_drag is not a real shot")
+	await _shot("inventory_drag")
 	inv._toggle()
 	inv.queue_free()
 

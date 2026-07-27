@@ -17,9 +17,15 @@ const SHOPS := {
 	# Listed by tier, blade first and then the suit that goes with it — a row
 	# ordering that reads as "here is level 1, here is level 2", which is the
 	# ladder the prices follow.
+	#
+	# The FLIMSY suit is deliberately not stocked: Bram GIVES you one the first
+	# time you speak to him (see GiftData), so selling the same three pieces over
+	# the counter would be selling something the player already has, and the
+	# forge's first rung would be a purchase with nothing to buy it for. His stock
+	# starts where the gift stops — the wooden sword and then copper upwards.
 	"blacksmith": {
 		"title": "Bram's Forge",
-		"stock": ["wooden_sword"] + ItemDb.ARMOR_SETS["flimsy"]
+		"stock": ["wooden_sword"]
 				+ ["copper_sword"] + ItemDb.ARMOR_SETS["copper"]
 				+ ["iron_sword"] + ItemDb.ARMOR_SETS["iron"],
 	},

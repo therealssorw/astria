@@ -279,6 +279,16 @@ class Runner:
 				return false
 			if not _check(GameStats.is_equipped(item_id), "using %s did not put it on" % item_id):
 				return false
+			# ON YOUR BACK IS OUT OF THE BAG. A piece you are wearing occupies an
+			# equipment slot INSTEAD of a bag slot — which is also what stops it
+			# being sold off your back at the counter.
+			if not _check(GameStats.item_count(item_id) == 0,
+					"%s should have left the bag when it went on, %d still there"
+							% [item_id, GameStats.item_count(item_id)]):
+				return false
+			if not _check(not (Net.players[1]["hotbar"] as Array).has(item_id),
+					"%s should have left the hotbar when it went on" % item_id):
+				return false
 		if not _check(Net.armor_levels(1) == 3,
 				"a full flimsy suit worn should be 3 armor levels, got %d" % Net.armor_levels(1)):
 			return false
@@ -290,14 +300,27 @@ class Runner:
 				"what a player is wearing should be public, got %s" % str(seen)):
 			return false
 
-		# Using it again takes it off — one button both ways.
-		if not await _use(tree, "flimsy_helmet"):
-			return false
+		# Taking it off is the inventory's equipment slot, not the world button:
+		# the piece is no longer in the bag, so there is nothing in hand to press.
+		# The request names the SLOT and nothing else.
+		Net.request_unequip("helmet")
+		await tree.physics_frame
 		if not _check(not GameStats.is_equipped("flimsy_helmet"),
-				"using a piece already on should have taken it off"):
+				"unequipping the helmet slot should have taken the helmet off"):
 			return false
 		if not _check(Net.armor_levels(1) == 2,
 				"taking the helmet off should drop a level, got %d" % Net.armor_levels(1)):
+			return false
+		if not _check(GameStats.item_count("flimsy_helmet") == 1,
+				"a piece taken off should be back in the bag, got %d"
+						% GameStats.item_count("flimsy_helmet")):
+			return false
+		# a slot nobody wears, and one that is not a slot at all, both do nothing
+		Net.request_unequip("helmet")
+		Net.request_unequip("hat")
+		await tree.physics_frame
+		if not _check(GameStats.item_count("flimsy_helmet") == 1,
+				"unequipping an empty or unknown slot should have changed nothing"):
 			return false
 		if not await _use(tree, "flimsy_helmet"):
 			return false
@@ -312,17 +335,21 @@ class Runner:
 				"a chestplate should put on two plates of its suit"):
 			return false
 
-		# Losing the item takes it off: selling the breastplate off your back
-		# must not leave you protected by something you no longer own.
-		var bag: Dictionary = Net.players[1]["items"]
-		bag.erase("flimsy_helmet")
+		# Swapping a slot's piece hands the old one back rather than eating it —
+		# the whole bag has to balance, or a wardrobe change would cost items.
+		NetRegistry.add_item(Net.players[1], "iron_helmet")
 		Net._bag_changed(1)
 		await tree.physics_frame
-		if not _check(not GameStats.is_equipped("flimsy_helmet"),
-				"an item that left the bag should have come off with it"):
+		Net.request_equip("iron_helmet")
+		await tree.physics_frame
+		if not _check(GameStats.is_equipped("iron_helmet"),
+				"equipping a second helmet should have swapped it in"):
 			return false
-		bag["flimsy_helmet"] = 1
-		Net._bag_changed(1)
+		if not _check(GameStats.item_count("flimsy_helmet") == 1,
+				"the helmet it replaced should be back in the bag, got %d"
+						% GameStats.item_count("flimsy_helmet")):
+			return false
+		Net.request_unequip("helmet")
 		await tree.physics_frame
 		return await _use(tree, "flimsy_helmet")
 

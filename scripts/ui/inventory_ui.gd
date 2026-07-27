@@ -6,11 +6,15 @@ extends CanvasLayer
 ## Stats (deaths / kills from the server registry). Gold is always visible at
 ## the bottom of the window; GameStats mirrors the server's gold, bag and bar.
 ##
-## Everything in here is a REQUEST. The bag, the hotbar and which slot is in
-## hand all live in the server registry — this screen draws the mirror and asks
-## Net to change it, then redraws when `GameStats.changed` says the server
-## answered. Equipment slots (Helmet / L Hand / Torso / R Hand / Pants) are
-## still decoration: nothing equips yet.
+## Everything in here is a REQUEST. The bag, the hotbar, which slot is in hand
+## and what is WORN all live in the server registry — this screen draws the
+## mirror and asks Net to change it, then redraws when `GameStats.changed` says
+## the server answered.
+##
+## The equipment cross is live: a piece of armor dragged onto its slot is put
+## ON, and it LEAVES THE BAG doing it — a breastplate is on your back or in your
+## sack, never both. Dragging it back out (or clicking the slot it sits in) takes
+## it off and returns it to the bag.
 ##
 ## Driving it: the mouse clicks any slot, and a gamepad or the arrow keys move
 ## focus between them, with the bottom face button (PS5 Cross / Xbox A, i.e.
@@ -18,8 +22,11 @@ extends CanvasLayer
 ##   - a bag slot -> puts that item in the hotbar slot you are holding
 ##   - a hotbar slot -> holds that slot; selecting the one you already hold
 ##     clears it back into the bag
-## Out in the world R1/L1 (or ] and [) walk the selection and `use_item`
-## (F / R2 — the same trigger as attack) uses whatever is in hand.
+##   - an equipment slot -> takes that piece off
+## Out in the world R1/L1 (or ] and [) walk the selection, `use_item`
+## (F / R2 — the same trigger as attack) uses whatever is in hand, and the
+## SPECIAL button (RMB / L2) puts a piece of armor on without opening anything.
+## That last one is how a pad equips: there is nothing to drag with on a stick.
 
 const SLOT_SIZE := 52
 const HOTBAR_SLOTS := 9
@@ -40,6 +47,23 @@ const FOCUS_Z := 10
 ## it, so a gold focus ring is invisible among its neighbours.
 const FOCUS_EDGE := Color(1, 1, 1)
 const USE_FLASH_TIME := 2.0
+
+## WHAT A DRAG LOOKS LIKE. The whole grid answers the moment something is picked
+## up, because the question a player is asking mid-drag is "where can this go" —
+## and a panel where every slot looks identical while you hold an item over it is
+## the reason dragging read as guesswork.
+##   DRAG_SOURCE  the slot it came out of, ghosted so you can see it has left
+##   DRAG_BLOCKED anywhere it cannot go — a helmet over the Pants slot, or the
+##                bag it is already in — pushed back so it reads as "not here"
+##   DRAG_READY   somewhere it CAN go, lifted a little brighter than resting
+## They are modulates rather than styleboxes on purpose: one line each, they
+## reach the icon as well as the box, and nothing has to be repainted back.
+const DRAG_SOURCE := Color(1, 1, 1, 0.30)
+const DRAG_BLOCKED := Color(1, 1, 1, 0.35)
+const DRAG_READY := Color(1.22, 1.18, 1.05, 1.0)
+## The tile that rides with the cursor: a real slot, at the size of the one it
+## came out of, centred UNDER the pointer rather than hanging off it.
+const PREVIEW_ALPHA := 0.9
 
 var panel_root: Control
 var inv_content: Control
@@ -138,29 +162,61 @@ func _on_bar_pressed(slot: int) -> void:
 	else:
 		Net.request_hotbar_select(slot)
 
-## Something was dragged onto a slot. `kind`/`slot` describe where it LANDED,
-## `data` where it came from. Three moves, and nothing else:
+## CAN this land here? One place decides, and everything asks it: the slot under
+## the cursor (so Godot only shows the "you may drop" cursor where a drop really
+## means something), the whole grid the moment a drag starts (so the places it
+## can go are lit before you go looking), and `_on_slot_drop` itself.
 ##
-##   bag  -> bar   put that item on that slot
-##   bar  -> bar   move it there; the server SWAPS rather than duplicating, so
-##                 dropping onto an occupied slot exchanges the two
-##   bar  -> bag   take it off the bar
+## `to` is a slot's `where()`; `data` is the drag, which is a `where()` plus the
+## item id. A move that would change nothing is NOT allowed — that is the point:
+## a panel that accepts every drop and silently ignores half of them is a panel
+## that feels broken.
+func _drop_allowed(to: Dictionary, data: Dictionary) -> bool:
+	var id := str(data.get("id", ""))
+	if id == "":
+		return false
+	var from_kind := str(data.get("kind", ""))
+	match str(to.get("kind", "")):
+		"bar":
+			# anything may go on the bar, except back onto the slot it left
+			return not (from_kind == "bar" and int(data.get("slot", -1)) == int(to.get("slot", -2)))
+		"equip":
+			# only armor, and only the piece that is worn in THIS slot: a helmet
+			# over the boots is the drop that has to say no
+			return from_kind != "equip" and ItemDb.armor_slot(id) == str(to.get("equip", ""))
+		"bag":
+			# the bag takes things OFF the bar and OFF your back. bag -> bag is
+			# deliberately nothing: a bag slot's position is not stored anywhere,
+			# it is just where that item fell in owned_ids() this frame, so a
+			# "move" would be undone by the next redraw.
+			return from_kind == "bar" or from_kind == "equip"
+	return false
+
+## Something was dragged onto a slot. `to` is where it LANDED, `data` where it
+## came from. Five moves, and nothing else:
 ##
-## bag -> bag is deliberately nothing: a bag slot's position is not stored
-## anywhere, it is just where that item happens to fall in owned_ids() this
-## frame, so "moving" one would be undone by the next redraw.
-func _on_slot_drop(kind: String, slot: int, data: Dictionary) -> void:
+##   bag   -> bar     put that item on that slot
+##   bar   -> bar     move it there; the server SWAPS rather than duplicating, so
+##                    dropping onto an occupied slot exchanges the two
+##   bar   -> bag     take it off the bar
+##   bag/bar -> equip put it on — it leaves the bag for your back
+##   equip -> any     take it off; it lands back in the bag and finds the bar by
+##                    itself, so where exactly it was dropped does not matter
+func _on_slot_drop(to: Dictionary, data: Dictionary) -> void:
+	if not _drop_allowed(to, data):
+		return
 	var id := str(data.get("id", ""))
 	var from_kind := str(data.get("kind", ""))
-	var from_slot := int(data.get("slot", -1))
-	if id == "":
+	if from_kind == "equip":
+		Net.request_unequip(str(data.get("equip", "")))
 		return
-	if kind == "bar":
-		if from_kind == "bar" and from_slot == slot:
-			return # dropped back where it started
-		Net.request_hotbar_assign(slot, id)
-	elif from_kind == "bar":
-		Net.request_hotbar_assign(from_slot, "")
+	match str(to.get("kind", "")):
+		"equip":
+			Net.request_equip(id)
+		"bar":
+			Net.request_hotbar_assign(int(to.get("slot", -1)), id)
+		"bag":
+			Net.request_hotbar_assign(int(data.get("slot", -1)), "")
 
 # ---------------- construction ----------------
 
@@ -172,25 +228,56 @@ func _slot_style(selected := false) -> StyleBoxFlat:
 	style.set_corner_radius_all(3)
 	return style
 
-## An equipment slot: a plain slot that draws whatever is worn in it, with the
+## An equipment slot: a real slot that draws whatever is worn in it, with the
 ## slot's own name showing through while it is empty. `key` is an
 ## ItemDb.EQUIP_SLOTS name, or "hand" for the one that mirrors the hotbar.
-func _equip_slot(key: String, label_text: String) -> Panel:
-	var p := _slot(label_text)
-	var hint := p.get_child(0) as Label
-	hint.name = "SlotHint"
-	_add_item_labels(p)
-	equip_slots[key] = p
-	return p
+##
+## It is a DragSlot like every other: armor is dropped onto it to put it on and
+## dragged off it to take it off, and a click (or `ui_accept` on a pad, which has
+## nothing to drag with) takes it off too.
+func _equip_slot(key: String, label_text: String) -> Button:
+	var b := _slot_button()
+	var slot := b as DragSlot
+	if key == "hand":
+		slot.kind = "hand"
+	else:
+		slot.kind = "equip"
+		slot.equip = key
+	_add_slot_hint(b, label_text)
+	b.pressed.connect(func() -> void:
+		if not slot.click_is_real():
+			return
+		if key == "hand":
+			_on_bar_pressed(GameStats.hot_slot) # it IS the held slot, with a label
+		else:
+			Net.request_unequip(key))
+	equip_slots[key] = b
+	return b
 
-## Fills the equipment cross from the mirror. Nothing here can equip anything —
-## the panel draws what the server has already decided (see Net._server_equip),
-## which is why there is no click handler on these.
+## The slot's own name, drawn behind whatever is in it — "Helmet" until there is
+## a helmet there. Added after the item labels so it can be hidden on its own.
+func _add_slot_hint(host: Control, label_text: String) -> void:
+	var l := Label.new()
+	l.name = "SlotHint"
+	l.text = label_text
+	l.add_theme_font_size_override("font_size", 9)
+	l.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
+	l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	host.add_child(l)
+
+## Fills the equipment cross from the mirror. Nothing here decides anything: the
+## panel draws what the server has already put on (see Net._server_equip) and
+## every gesture over it is a request like any other.
 func _refresh_equipment() -> void:
 	for key: String in equip_slots:
-		var p: Panel = equip_slots[key]
+		var p: Button = equip_slots[key]
 		var id := GameStats.held_id() if key == "hand" else GameStats.equipped_in(key)
 		_draw_item(p, id, "")
+		# the hand slot wears the same gold edge as the bar slot it mirrors
+		_paint_slot(p, key == "hand" and id != "")
 		# the slot's name is a hint, so it steps aside once there is a thing in it
 		var hint := p.get_node_or_null("SlotHint") as Label
 		if hint != null:
@@ -265,50 +352,121 @@ func _add_item_labels(host: Control) -> void:
 ## Dragging is ADDED, not swapped in for clicking. The slots are walked with the
 ## focus and taken with ui_accept on a pad, and there is nothing to drag with.
 class DragSlot extends Button:
-	## What this slot is, which is what a drop onto it means: "bag" or "bar".
+	## What this slot is, which is what a drop onto it means: "bag", "bar",
+	## "equip", or "hand" — the one that mirrors whatever the bar has in hand.
 	var kind := "bag"
-	## Which hotbar slot this is. Bar slots only; -1 in the bag.
+	## Which hotbar slot this is. Bar slots only; -1 everywhere else.
 	var slot := -1
+	## Which equipment slot this is (an ItemDb.EQUIP_SLOTS name). Equip slots
+	## only; "" everywhere else.
+	var equip := ""
 	## The item drawn here right now, kept by _draw_item so a drag knows what it
 	## has picked up without going back to the mirror for it.
 	var item_id := ""
 	var ui: Node
+	## True from picking this slot's item up until the drag is over. It is what
+	## ghosts the slot, and what eats the click that ends the gesture.
+	var dragging := false
+
+	## Where this slot IS, which is the whole of what a drop onto it means. The
+	## hand slot answers as the bar slot it mirrors, so "R Hand" needs no rule of
+	## its own anywhere — it is simply the held slot with another label on it.
+	func where() -> Dictionary:
+		if kind == "hand":
+			return {"kind": "bar", "slot": GameStats.hot_slot, "equip": ""}
+		return {"kind": kind, "slot": slot, "equip": equip}
 
 	func _get_drag_data(_at: Vector2) -> Variant:
 		if item_id == "":
 			return null
+		var data := where()
+		data["id"] = item_id
 		set_drag_preview(_preview())
-		return {"kind": kind, "slot": slot, "id": item_id}
+		dragging = true
+		button_pressed = false
+		return data
 
-	## Anything carrying an item can be dropped on any slot; what it MEANS is
-	## decided in one place (InventoryUI._on_slot_drop) rather than here.
+	## Only where the drop MEANS something — the rules live in one place
+	## (InventoryUI._drop_allowed) and this is one of the three things asking.
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
-		return data is Dictionary and str((data as Dictionary).get("id", "")) != ""
+		return data is Dictionary and ui != null \
+				and ui._drop_allowed(where(), data as Dictionary)
 
 	func _drop_data(_at: Vector2, data: Variant) -> void:
-		if ui and ui.has_method("_on_slot_drop"):
-			ui._on_slot_drop(kind, slot, data as Dictionary)
+		if ui:
+			ui._on_slot_drop(where(), data as Dictionary)
 
-	## What rides with the cursor: the item's icon, or its name when it has no
-	## art — the same fallback the slots themselves use.
+	## A drag EATS the click that ends it. Godot hands the button its release
+	## after the drop, so a piece dragged from the bag onto the bar was also
+	## being clicked into the held slot on the way there — one gesture doing two
+	## different things, which is most of what made dragging feel wrong. The flag
+	## is cleared deferred rather than here, so it survives the release whether
+	## or not the button ever sees it.
+	func click_is_real() -> bool:
+		return not dragging
+
+	## The whole grid answers a drag, not just the slot under the cursor: the
+	## source ghosts, the places this can go brighten, and everywhere else steps
+	## back. NOTIFICATION_DRAG_BEGIN/END reach every Control in the tree, so
+	## there is nothing to drive from the outside.
+	func _notification(what: int) -> void:
+		match what:
+			NOTIFICATION_DRAG_BEGIN:
+				var data: Variant = get_viewport().gui_get_drag_data()
+				if dragging:
+					modulate = DRAG_SOURCE
+				elif data is Dictionary and ui != null \
+						and ui._drop_allowed(where(), data as Dictionary):
+					modulate = DRAG_READY
+				else:
+					modulate = DRAG_BLOCKED
+			NOTIFICATION_DRAG_END:
+				modulate = Color.WHITE
+				set_deferred("dragging", false)
+
+	## What rides with the cursor: a whole slot, gold-edged and centred under the
+	## pointer. A bare icon floating with no box under it was the other half of
+	## "it looks weird" — nothing on screen said the thing had been picked UP.
 	func _preview() -> Control:
+		# Godot puts the preview's ORIGIN at the pointer, so the tile is a child
+		# offset back by half itself rather than the root — a root moved by its
+		# own position would be moved right back.
 		var holder := Control.new()
+		holder.modulate = Color(1, 1, 1, PREVIEW_ALPHA)
+		var tile := Panel.new()
+		tile.size = Vector2(SLOT_SIZE, SLOT_SIZE)
+		tile.position = -tile.size * 0.5
+		var style := StyleBoxFlat.new()
+		style.bg_color = UiTheme.tint(UiTheme.SLATE, 0.96)
+		style.border_color = GOLD
+		style.set_border_width_all(2)
+		style.set_corner_radius_all(3)
+		tile.add_theme_stylebox_override("panel", style)
+		holder.add_child(tile)
+
 		var tex := ItemDb.icon(item_id)
 		if tex:
 			var icon := TextureRect.new()
 			icon.texture = tex
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			icon.size = Vector2(SLOT_SIZE, SLOT_SIZE) * 0.8
-			icon.position = -icon.size * 0.5 # under the cursor, not beside it
-			icon.modulate = Color(1, 1, 1, 0.85)
-			holder.add_child(icon)
+			icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+			icon.offset_left = 4
+			icon.offset_top = 4
+			icon.offset_right = -4
+			icon.offset_bottom = -4
+			tile.add_child(icon)
 		else:
+			# the same fallback the slots themselves use: art that does not exist
+			# yet is the item's name
 			var name_label := Label.new()
 			name_label.text = ItemDb.item_name(item_id)
-			name_label.add_theme_font_size_override("font_size", 12)
-			name_label.position = Vector2(-20, -8)
-			holder.add_child(name_label)
+			name_label.add_theme_font_size_override("font_size", 9)
+			name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			name_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+			name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			tile.add_child(name_label)
 		return holder
 
 func _slot_button() -> Button:
@@ -518,7 +676,15 @@ func _build_inventory_tab() -> Control:
 	eq.add_child(_slot("L Hand"));  eq.add_child(_equip_slot("torso", "Torso"))
 	eq.add_child(_equip_slot("hand", "R Hand"))
 	eq.add_child(_spacer());        eq.add_child(_equip_slot("pants", "Pants"));   eq.add_child(_spacer())
-	row.add_child(eq)
+	var eq_title := Label.new()
+	eq_title.text = "Worn"
+	eq_title.add_theme_font_size_override("font_size", 16)
+	eq_title.add_theme_color_override("font_color", GOLD)
+	var eq_col := VBoxContainer.new()
+	eq_col.add_theme_constant_override("separation", 6)
+	eq_col.add_child(eq_title)
+	eq_col.add_child(eq)
+	row.add_child(eq_col)
 
 	# The bag: the hotbar IS its top row (labelled and framed so it reads as
 	# special), with the general slots filling the rows underneath. Two columns
@@ -554,9 +720,12 @@ func _build_inventory_tab() -> Control:
 	panel_bar_slots.clear()
 	for i in HOTBAR_SLOTS:
 		var b := _slot_button()
-		(b as DragSlot).kind = "bar"
-		(b as DragSlot).slot = i
-		b.pressed.connect(_on_bar_pressed.bind(i))
+		var drag := b as DragSlot
+		drag.kind = "bar"
+		drag.slot = i
+		b.pressed.connect(func() -> void:
+			if drag.click_is_real():
+				_on_bar_pressed(i))
 		panel_bar_slots.append(b)
 		bar.add_child(b)
 	bar_frame.add_child(bar)
@@ -574,8 +743,11 @@ func _build_inventory_tab() -> Control:
 	item_slots.clear()
 	for i in ITEM_COLS * ITEM_ROWS:
 		var slot := _slot_button()
+		var drag := slot as DragSlot
 		# read the id at press time: the bag reorders as things come and go
 		slot.pressed.connect(func() -> void:
+			if not drag.click_is_real():
+				return
 			var ids := GameStats.owned_ids()
 			_on_item_pressed(str(ids[i]) if i < ids.size() else ""))
 		item_slots.append(slot)
@@ -608,11 +780,14 @@ func _update_hint() -> void:
 	if not _hint:
 		return
 	if InputDevice.kind == InputDeviceTracker.Kind.KEYBOARD:
-		_hint.text = "Drag an item onto a hotbar slot · drag it off the bar to clear it" \
-				+ " · or click to put it in the held slot · wheel / R1 / L1 in the world"
+		_hint.text = "Drag armor onto a Worn slot to put it on · drag it off to take it off" \
+				+ "\nDrag an item onto a hotbar slot, or click to put it in the held slot" \
+				+ " · 1-9, the wheel or [ ] in the world"
 	else:
-		_hint.text = "%s an item to put it in the held hotbar slot · the held slot again to clear it · R1 / L1 in the world" \
-				% InputDevice.accept_label()
+		_hint.text = "%s an item to put it in the held hotbar slot · the held slot again to clear it" \
+				% InputDevice.accept_label() \
+				+ "\n%s a Worn slot to take that piece off · %s in the world puts armor on · R1 / L1 walks the bar" \
+				% [InputDevice.accept_label(), InputDevice.action_label("block")]
 
 func _build_stats_tab() -> Control:
 	var vbox := VBoxContainer.new()
