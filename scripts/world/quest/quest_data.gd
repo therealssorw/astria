@@ -52,13 +52,20 @@ const QUESTS := {
 		"done_target": "king",
 		"done_height": 2.9,
 	},
-	## What the Knight beside the throne asks of you the moment the bandits are
-	## reported in. NOTE: the catacombs are not in the level yet, so this quest
-	## has no star (`target_pos` answers null, which is a normal answer here)
-	## and no way to finish. When the place is built, drop a `QuestAnchor` with
-	## `target_id = "catacombs"` at its door and give this entry a `kills` count
-	## or a `done_at`; until then it is deliberately open-ended rather than
-	## handing out a reward for walking nowhere.
+	## What the Knight beside the throne WILL ask of you once the catacombs are
+	## built. NOBODY HANDS IT OUT RIGHT NOW: the place is out of world.tscn while
+	## it is being made, and the King's conversation no longer reaches the
+	## Knight's offer (see the "service" line in DialogData), so the only way onto
+	## this quest is the cheat menu — which lists it as "target not in this level"
+	## because `target_pos` answers null, the normal answer for a quest whose
+	## place is not in the world.
+	##
+	## To turn it back on: put the catacombs back in world.tscn (the entrance
+	## scene already carries the `QuestAnchor` with `target_id = "catacombs"`),
+	## point "service" at "catacombs" again, and give this entry a `kills` count
+	## or a `done_at` so it can actually be finished rather than paying out for
+	## walking nowhere. `from` stays as it is so the server's giver check is
+	## already right when that happens.
 	"clear_catacombs": {
 		"name": "Clear out the catacombs",
 		"target": "catacombs",

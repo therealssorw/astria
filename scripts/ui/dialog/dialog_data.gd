@@ -212,7 +212,12 @@ Don't worry, we'll put you down.",
 			},
 			"service": {
 				"text": "Very well.\nI hope this means we no longer have to deal with them.\nThank you for your service.",
-				"goto": "catacombs",
+				# ENDS HERE while the catacombs are being built. The Knight's offer
+				# below is still written and still correct — it is just nothing's
+				# `goto` any more, so no conversation reaches it and the quest
+				# cannot be taken. Point this back at "catacombs" to hand it out
+				# again, and put the place back in world.tscn at the same time.
+				"goto": END,
 			},
 			# The Knight standing beside the throne cuts in. A line may name its
 			# own speaker, and `speaker_at` is the dialog_id of who in the WORLD

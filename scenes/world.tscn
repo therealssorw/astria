@@ -8,8 +8,6 @@
 [ext_resource type="PackedScene" uid="uid://duhlu47gbvmld" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/house2.gltf" id="6_7iits"]
 [ext_resource type="Script" uid="uid://ccnll1i5iuigg" path="res://scripts/world/world.gd" id="6_world"]
 [ext_resource type="Script" uid="uid://c4apsnqkotlma" path="res://scripts/world/ocean.gd" id="7_ocean"]
-[ext_resource type="PackedScene" uid="uid://1h1ve1kcpl4y" path="res://scenes/starterDungeon.tscn" id="30_catacombs"]
-[ext_resource type="PackedScene" path="res://scenes/world/catacombs_entrance.tscn" id="31_cataent"]
 [ext_resource type="PackedScene" uid="uid://bjx1pxn2obibu" path="res://Assets/Models/World/Prefab/Anvil.gltf" id="12_jhx03"]
 [ext_resource type="PackedScene" uid="uid://vuk4ug80h0u8" path="res://Assets/Models/World/Islands/StarterIsland/Buildings/BlackSmithWorkshop.gltf" id="12_q5onr"]
 [ext_resource type="PackedScene" uid="uid://7oxdq6vuqnge" path="res://scenes/effects/furnace_fire.tscn" id="13_fire"]
@@ -99,11 +97,16 @@ script = ExtResource("14_spawner")
 [node name="InventoryUI" type="CanvasLayer" parent="." unique_id=1012517542]
 script = ExtResource("15_inv")
 
-[node name="Catacombs" parent="." instance=ExtResource("30_catacombs")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3000, 0, 0)
-
-[node name="CatacombsEntrance" parent="." instance=ExtResource("31_cataent")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 176, 92.2, -192)
+; THE CATACOMBS ARE OUT OF THE LEVEL while the place is being built. Both
+; scenes are still here — put them back with:
+;   [node name="Catacombs" parent="." instance=ExtResource("30_catacombs")]
+;   transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3000, 0, 0)
+;   [node name="CatacombsEntrance" parent="." instance=ExtResource("31_cataent")]
+;   transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 176, 92.2, -192)
+; ...and their two ext_resources (scenes/starterDungeon.tscn as "30_catacombs",
+; scenes/world/catacombs_entrance.tscn as "31_cataent") at the top of the file.
+; The BossSpawner lives inside starterDungeon.tscn, so this takes the boss with
+; it: nothing spawns one anywhere else.
 
 [node name="Players" type="Node3D" parent="." unique_id=1940836347]
 

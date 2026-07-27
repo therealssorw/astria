@@ -82,9 +82,14 @@ class Runner:
 		var scene := tree.current_scene
 		var entrance: Node3D = scene.find_child("CatacombsEntrance", true, false)
 		var dungeon: Node3D = scene.find_child("Catacombs", true, false)
+		# NOT A FAILURE while the place is out of the level: the catacombs were
+		# pulled from world.tscn to be rebuilt, and everything below is about a
+		# door that is not currently there. It says SKIP rather than PASS so the
+		# whole file cannot be quietly deleted as "the test that always passes" —
+		# put the two nodes back in world.tscn and this test runs again as it is.
 		if entrance == null or dungeon == null:
-			print("CATATEST RESULT=FAIL (the entrance or the dungeon is not in world.tscn)")
-			tree.quit(1)
+			print("CATATEST RESULT=SKIP (the catacombs are not in world.tscn yet)")
+			tree.quit(0)
 			return
 
 		var inside := TeleportData.anchor(tree, "catacombs")
