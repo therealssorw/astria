@@ -31,6 +31,14 @@ const DEFAULT_SERVER := "3.137.184.94"
 const MAX_PLAYERS := 16
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
+## Which body a client rebuilds a replicated fighter from, by its `enemy_kind`.
+## "" is the ordinary bandit; anything else is spawned by name, because a boss
+## and a bandit are not the same scene and a puppet has to be the right one.
+## Adding a new kind of enemy is a row here and nothing else on the wire.
+const ENEMY_SCENES := {
+	"": ENEMY_SCENE,
+	"juggernaut": preload("res://scenes/boss.tscn"),
+}
 const WORLD_SCENE := "res://scenes/world.tscn"
 const MENU_SCENE := "res://scenes/ui/main_menu.tscn"
 
@@ -332,7 +340,8 @@ func _handle_world_ready(id: int) -> void:
 		for e in en.get_children():
 			# another player's tutorial bandits are not in this player's world
 			if not e.dead and int(e.owner_peer) in [0, id]:
-				rpc_id(id, "cl_spawn_enemy", String(e.name), e.global_position)
+				rpc_id(id, "cl_spawn_enemy", String(e.name), e.global_position,
+						String(e.enemy_kind))
 	var dn := _drops_node()
 	if dn:
 		for d in dn.get_children():
@@ -1095,15 +1104,20 @@ func next_enemy_name() -> String:
 	return "Bandit_%d" % _enemy_counter
 
 func server_broadcast_enemy_spawn(enemy: Node3D) -> void:
-	rpc("cl_spawn_enemy", String(enemy.name), enemy.global_position)
+	rpc("cl_spawn_enemy", String(enemy.name), enemy.global_position,
+			String(enemy.get("enemy_kind")))
 
 @rpc("authority", "call_remote", "reliable")
-func cl_spawn_enemy(enemy_name: String, pos: Vector3) -> void:
+func cl_spawn_enemy(enemy_name: String, pos: Vector3, kind := "") -> void:
 	var en := _enemies_node()
 	if en == null or en.has_node(enemy_name):
 		return
-	var e := ENEMY_SCENE.instantiate()
+	# an unknown kind falls back to the bandit rather than spawning nothing: a
+	# fighter you cannot see is worse than one wearing the wrong body
+	var scene: PackedScene = ENEMY_SCENES.get(kind, ENEMY_SCENE)
+	var e := scene.instantiate()
 	e.name = enemy_name
+	e.enemy_kind = kind
 	en.add_child(e)
 	e.global_position = pos
 	e.net_pos = pos
@@ -1133,8 +1147,12 @@ func cl_enemy_states(batch: Array) -> void:
 	for row in batch:
 		var e := _enemy(String(row[0]))
 		if e:
+			# a boss appends its move and its phase; a bandit's row stops at the
+			# guard, and the defaults here are what "an ordinary fighter" means
 			e.net_apply_state(row[1], row[2], row[3], row[4], row[5], row[6], row[7],
-					row[8], row[9], row[10])
+					row[8], row[9], row[10],
+					String(row[11]) if row.size() > 11 else "",
+					int(row[12]) if row.size() > 12 else 1)
 
 ## The host already ran its own fx inside take_damage — clients only.
 func server_broadcast_enemy_damage(enemy_name: String, health: float,
@@ -1171,6 +1189,24 @@ func cl_enemy_died(enemy_name: String) -> void:
 	var e := _enemy(enemy_name)
 	if e:
 		e.net_die()
+
+## SERVER: a boss move just LANDED (the slam went off, the charge set off). The
+## damage is already done and was never a client's business; this is the felt
+## half — the lens kicks, scaled by how close that screen's own player was
+## standing. Cosmetic, so it is fire-and-forget and a dropped packet costs a
+## shake and nothing else.
+func server_broadcast_boss_move(boss_name: String, move_id: String, pos: Vector3) -> void:
+	rpc("cl_boss_move", boss_name, move_id, pos)
+	cl_boss_move(boss_name, move_id, pos) # the host is watching it too
+
+@rpc("authority", "call_remote", "unreliable")
+func cl_boss_move(_boss_name: String, move_id: String, pos: Vector3) -> void:
+	var pawn := get_tree().get_first_node_in_group("local_player")
+	if pawn == null or not is_instance_valid(pawn):
+		return
+	var shake := Boss.move_shake(move_id, (pawn as Node3D).global_position.distance_to(pos))
+	if shake > 0.0:
+		Player.local_shake(get_tree(), shake)
 
 func server_remove_enemy(enemy_name: String) -> void:
 	rpc("cl_remove_enemy", enemy_name)
@@ -1314,7 +1350,9 @@ func cl_remove_gold(drop_name: String) -> void:
 	if d:
 		d.queue_free()
 
-## SERVER: award piles to the first living player standing on them.
+## SERVER: award drops to the first living player standing on them. One walk for
+## both kinds — a pile of gold and a dropped item are collected by exactly the
+## same gesture, and only what is awarded differs.
 func _check_gold_pickups() -> void:
 	var dn := _drops_node()
 	if dn == null:
@@ -1327,7 +1365,10 @@ func _check_gold_pickups() -> void:
 			var ppos: Vector3 = pawn.server_body_pos()
 			if Vector2(ppos.x - dpos.x, ppos.z - dpos.z).length() <= GOLD_PICKUP_RANGE \
 					and absf(ppos.y - dpos.y) < 2.0:
-				_server_award_gold(pawn.peer_id, d)
+				if d is ItemDrop:
+					_server_award_item(pawn.peer_id, d)
+				else:
+					_server_award_gold(pawn.peer_id, d)
 				break
 
 func _server_award_gold(id: int, drop: Node) -> void:
@@ -1344,6 +1385,57 @@ func cl_gold_picked(drop_name: String, amount: int, pos: Vector3) -> void:
 	if w == null:
 		return
 	GOLD_DROP_SCRIPT.spawn_pickup_text(w, pos, amount)
+	cl_remove_gold(drop_name)
+
+# ---------------- item drops ----------------
+# The same deal as the gold above, and deliberately the same container, the same
+# proximity check and the same despawn: a thing lying on the floor is one idea.
+# What differs is only what is awarded — an id into the bag rather than a number
+# into the purse — which is the one branch in `_check_gold_pickups`.
+
+## SERVER: drop an item where something died (the juggernaut's club).
+func server_spawn_item(pos: Vector3, item_id: String) -> void:
+	if not multiplayer.is_server() or not ItemDb.has(item_id):
+		return
+	_gold_counter += 1 # one counter: two drops must never share a node name
+	var drop_name := "Item_%d" % _gold_counter
+	rpc("cl_spawn_item", drop_name, pos, item_id)
+	_do_spawn_item(drop_name, pos, item_id)
+	get_tree().create_timer(GOLD_DESPAWN_SECONDS).timeout.connect(func() -> void:
+		var dn := _drops_node()
+		var d: Node = dn.get_node_or_null(drop_name) if dn else null
+		if d: # never claimed — quietly rot away, exactly like a pile of gold
+			rpc("cl_remove_gold", drop_name)
+			d.queue_free())
+
+@rpc("authority", "call_remote", "reliable")
+func cl_spawn_item(drop_name: String, pos: Vector3, item_id: String) -> void:
+	_do_spawn_item(drop_name, pos, item_id)
+
+func _do_spawn_item(drop_name: String, pos: Vector3, item_id: String) -> void:
+	var dn := _drops_node(true)
+	if dn == null or dn.has_node(drop_name):
+		return
+	var drop := ItemDrop.new()
+	drop.name = drop_name
+	drop.item_id = item_id
+	dn.add_child(drop)
+	drop.global_position = pos
+
+func _server_award_item(id: int, drop: Node) -> void:
+	var item_id := String(drop.item_id)
+	NetRegistry.add_item(players[id], item_id, 1)
+	print("[Net] %s picked up %s" % [players[id]["name"], ItemDb.item_name(item_id)])
+	_bag_changed(id) # the bar refills off this, exactly like a purchase
+	rpc("cl_item_picked", String(drop.name), item_id, drop.global_position)
+	cl_item_picked(String(drop.name), item_id, drop.global_position)
+
+@rpc("authority", "call_remote", "reliable")
+func cl_item_picked(drop_name: String, item_id: String, pos: Vector3) -> void:
+	var w := _world()
+	if w == null:
+		return
+	ItemDrop.spawn_pickup_text(w, pos, item_id)
 	cl_remove_gold(drop_name)
 
 # ---------------- where things are (see NetWorld) ----------------

@@ -114,6 +114,23 @@ const ITEMS := {
 		"hold": {"model": SWORD_MODEL, "scale": Vector3(3.2, 1.15, 3.0),
 				"anim_set": "sword"},
 	},
+	# The juggernaut's own weapon, and the only thing in the catalogue no shop
+	# stocks: it is not for sale at any price, it is what is lying on the floor
+	# after the boss is not. Level 4 puts it one rung above the best forged blade,
+	# which is the whole reward — the price is only what it sells back for.
+	#
+	# It shares the sword model (the one weapon art the game has) at a much
+	# heavier cross-section and a dull iron tint, so it reads as a bludgeon rather
+	# than a fourth sword. Give it art of its own and only this block changes.
+	"juggernaut_club": {
+		"name": "Juggernaut's Club",
+		"level": 4,
+		"price": 900,
+		"desc": "Too heavy to have been made for a person.",
+		"use": "Swing",
+		"hold": {"model": SWORD_MODEL, "scale": Vector3(6.0, 2.0, 6.0),
+				"tint": Color(0.34, 0.32, 0.30), "anim_set": "sword"},
+	},
 	# --- armor ---
 	#
 	# The three suits in Assets/Data/Armor/, a piece at a time. An armor item

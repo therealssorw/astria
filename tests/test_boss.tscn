@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://btestboss0astria"]
+
+[ext_resource type="Script" path="res://tests/test_boss.gd" id="1_boss"]
+
+[node name="TestBoss" type="Node"]
+script = ExtResource("1_boss")

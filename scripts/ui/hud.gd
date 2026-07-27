@@ -10,6 +10,7 @@ const QUEST_MARKER := preload("res://scripts/ui/quest/quest_marker_overlay.gd")
 const TUTORIAL_OVERLAY := preload("res://scripts/ui/tutorial/tutorial_overlay.gd")
 const VOICE_OVERLAY := preload("res://scripts/ui/voice/voice_overlay.gd")
 const ITEM_PROMPT := preload("res://scripts/ui/items/item_prompt.gd")
+const BOSS_BAR := preload("res://scripts/ui/boss/boss_bar.gd")
 
 var player: Player
 var hp_fill: ColorRect
@@ -55,6 +56,9 @@ func _ready() -> void:
 	root.add_child(ITEM_PROMPT.new())
 	root.add_child(QUEST_MARKER.new())
 	root.add_child(QUEST_TRACKER.new())
+	var boss_bar: Control = BOSS_BAR.new()
+	boss_bar.name = "BossBar" # found by name from the boss test
+	root.add_child(boss_bar)
 	var tut_overlay: Control = TUTORIAL_OVERLAY.new()
 	tut_overlay.name = "TutorialOverlay" # found by name from the tutorial test
 	root.add_child(tut_overlay)
@@ -134,10 +138,26 @@ func _process(_delta: float) -> void:
 
 class TelegraphControl:
 	extends Control
-	## Small star above an enemy's head that lights up during its attack wind-up.
+	## The star above a fighter's head through its attack wind-up — and, for
+	## anything whose attack has a FOOTPRINT, the ring on the ground where that
+	## attack is about to land.
+	##
+	## What it draws comes from the fighter, not from here: `telegraph_style()`
+	## says the colour, how much bigger the star gets, and the ring's radius in
+	## metres (see Enemy / Boss). An ordinary bandit answers gold and no ring, so
+	## nothing about a normal fight changed — but a boss looks DIFFERENT per move,
+	## which is what lets the player read which attack is coming rather than only
+	## that one is.
 
 	const STAR_OUTER := 9.0
 	const STAR_INNER := 4.0
+	## Points around the ground ring. Enough to read as a circle at any distance
+	## without paying for a curve nobody is looking at.
+	const RING_STEPS := 28
+	const RING_WIDTH := 2.5
+	## The ring GROWS to its full radius as the wind-up runs out, so how long you
+	## have is readable off it without a number.
+	const RING_MIN_SCALE := 0.35
 
 	func _process(_delta: float) -> void:
 		queue_redraw()
@@ -151,13 +171,39 @@ class TelegraphControl:
 				continue
 			if not e.has_method("is_winding_up") or not e.is_winding_up():
 				continue
-			var world_pos: Vector3 = e.global_position + Vector3.UP * 2.1
+			var glow: float = e.windup_progress()
+			var style: Dictionary = e.telegraph_style() if e.has_method("telegraph_style") \
+					else {"color": Color(1.0, 0.85, 0.25), "scale": 1.0, "ring": 0.0,
+							"height": 2.1}
+			var base: Color = style["color"]
+			var color := Color(base.r, base.g, base.b, 0.35 + 0.65 * glow)
+			var ring: float = float(style.get("ring", 0.0))
+			if ring > 0.0:
+				_draw_ring(cam, e.global_position, ring, glow, color)
+			var world_pos: Vector3 = e.global_position \
+					+ Vector3.UP * float(style.get("height", 2.1))
 			if cam.is_position_behind(world_pos):
 				continue
 			var p := cam.unproject_position(world_pos)
-			var glow: float = e.windup_progress()
-			var color := Color(1.0, 0.85, 0.25, 0.35 + 0.65 * glow)
-			draw_colored_polygon(_star_points(p, STAR_OUTER * (1.0 + 0.35 * glow)), color)
+			var grow: float = 1.0 + 0.35 * glow
+			draw_colored_polygon(
+					_star_points(p, STAR_OUTER * float(style.get("scale", 1.0)) * grow), color)
+
+	## The footprint of a radial attack, projected onto the screen. Drawn as the
+	## camera sees it (a circle on the floor is an ellipse from anywhere but
+	## overhead) by projecting the points themselves rather than drawing a 2D
+	## circle around the fighter — which would be a lie about where it lands.
+	func _draw_ring(cam: Camera3D, centre: Vector3, radius: float, glow: float,
+			color: Color) -> void:
+		var r: float = radius * lerpf(RING_MIN_SCALE, 1.0, glow)
+		var pts := PackedVector2Array()
+		for i in RING_STEPS + 1:
+			var a := TAU * float(i) / RING_STEPS
+			var world := Vector3(centre.x + cos(a) * r, centre.y + 0.06, centre.z + sin(a) * r)
+			if cam.is_position_behind(world):
+				return # half a ring is worse than none: it reads as a wall
+			pts.append(cam.unproject_position(world))
+		draw_polyline(pts, color, RING_WIDTH, true)
 
 	func _star_points(center: Vector2, outer: float) -> PackedVector2Array:
 		var pts := PackedVector2Array()
@@ -217,12 +263,17 @@ class ReticleControl:
 		else:
 			draw_circle(p, 3.0, ring)
 
-	## Enemies count down `stagger_left`, players `stagger_time` — either way
-	## the target is helpless right now.
+	## Is the target helpless right now? An enemy ANSWERS this (`is_open`), because
+	## a boss is also wide open through the recovery of a move it committed to and
+	## that is not a stagger — the ring must promise exactly what `take_damage`
+	## will honour. Players have no such method, so they are read off the field:
+	## they count down `stagger_time` where an enemy counts `stagger_left`.
 	func _target_is_open(target: Node) -> bool:
-		var left: Variant = target.get("stagger_left")
+		if target.has_method("is_open"):
+			return bool(target.call("is_open"))
+		var left: Variant = target.get("stagger_time")
 		if left == null:
-			left = target.get("stagger_time")
+			left = target.get("stagger_left")
 		return left != null and float(left) > 0.0
 
 	func _draw_shield(c: Vector2) -> void:

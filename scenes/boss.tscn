@@ -1,0 +1,55 @@
+[gd_scene load_steps=7 format=3 uid="uid://bboss0astria"]
+
+[ext_resource type="Script" path="res://scripts/entities/boss.gd" id="1_boss"]
+[ext_resource type="Script" path="res://scripts/entities/boss_visual.gd" id="2_visual"]
+[ext_resource type="AudioStream" path="res://Assets/Audio/SFX/Grunts/Boss/boss_pain.mp3" id="3_pain"]
+[ext_resource type="AudioStream" path="res://Assets/Audio/SFX/Deaths/Boss/boss_body_fall.mp3" id="4_fall"]
+[ext_resource type="AudioStream" path="res://Assets/Audio/SFX/Footsteps/Boss/boss_footsteps.mp3" id="5_steps"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_boss"]
+radius = 0.65
+height = 2.6
+
+[node name="Boss" type="CharacterBody3D"]
+script = ExtResource("1_boss")
+level = 5
+max_health = 900.0
+knockback_resistance = 0.95
+move_speed = 3.4
+turn_speed_deg = 200.0
+separation_radius = 1.8
+separation_push = 3.0
+attack_damage = 26.0
+attack_range = 2.9
+attack_cone_deg = 70.0
+attack_reach = 2.2
+attack_radius = 0.9
+attack_windup = 0.7
+attack_duration = 1.5
+attack_cooldown = 1.7
+hurt_grunts = ExtResource("3_pain")
+death_sounds = ExtResource("4_fall")
+footsteps = ExtResource("5_steps")
+sight_range = 30.0
+deaggro_range = 60.0
+engage_range = 10.0
+swoop_speed_mult = 1.7
+strafe_speed = 2.6
+retreat_min_dist = 3.4
+retreat_max_dist = 5.4
+block_damage_mult = 0.15
+block_arc_deg = 100.0
+flinch_knockback = 6.5
+stagger_damage_mult = 1.6
+despawn_delay = 20.0
+gold_min = 250
+gold_max = 400
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0)
+shape = SubResource("CapsuleShape3D_boss")
+
+[node name="Visual" type="Node3D" parent="."]
+script = ExtResource("2_visual")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]

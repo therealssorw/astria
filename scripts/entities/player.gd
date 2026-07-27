@@ -1301,6 +1301,14 @@ func net_apply_damage(new_health: float, result: int, knockback: Vector3,
 		local_hit_feedback(get_tree(), result)
 
 ## Impact feedback for whoever threw the punch, wherever their pawn is.
+## Kick THIS screen's camera. For the things that shake a room rather than a
+## fist — a boss landing a slam — where the event belongs to the world and not to
+## whoever threw it, so there is no puncher to hang it off.
+static func local_shake(tree: SceneTree, amount: float) -> void:
+	var pawn := tree.get_first_node_in_group("local_player")
+	if pawn is Player:
+		(pawn as Player)._add_shake(amount)
+
 static func local_hit_feedback(tree: SceneTree, result: int) -> void:
 	var puncher := tree.get_first_node_in_group("local_player")
 	if puncher is Player:
