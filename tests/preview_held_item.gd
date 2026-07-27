@@ -8,7 +8,7 @@ extends Node3D
 ## It needs a real window — do NOT pass --headless, there is nothing to draw
 ## into. Change ITEM to preview a different one.
 
-const ITEM := "iron_sword"
+const ITEM := "juggernaut_club"
 ## Which pose to hold: "idle", "run", "attack_light_0"... anything tick() takes.
 const ANIM := "idle"
 ## How many 60ths of a second to let it run before the shot — bump it to catch

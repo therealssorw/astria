@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://btestboss0astria"]
+[gd_scene format=3 uid="uid://6506rh0hamrk"]
 
 [ext_resource type="Script" path="res://tests/test_boss.gd" id="1_boss"]
 

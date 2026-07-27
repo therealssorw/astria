@@ -2033,7 +2033,12 @@ mixed pile.
   differs (`_server_award_item` vs `_server_award_gold`). The model is the item's
   OWN art through `ItemDb.build_model`, so there is nothing per-item to draw.
   `juggernaut_club` is level 4 — one rung above the best forged blade — and no
-  shop stocks it, which the test asserts: it is not for sale at any price.
+  shop stocks it, which the test asserts: it is not for sale at any price. It is
+  the only weapon with art of ITS OWN (`Assets/Models/Items/Weapons/Clubs/`)
+  rather than a tinted copy of the sword, so it carries no tint: the wood is in
+  its own texture. Its `scale` is sized for the BOSS's hand, which is the hand it
+  is nearly always in — fit it with `tests/preview_boss.tscn`, not with
+  `preview_held_item.tscn`, since the two rigs' hand bones are not one size.
 - WHERE IT LIVES: `scripts/world/boss/boss_spawner.gd` on a node in
   `scenes/starterDungeon.tscn`, at the far end of the catacombs' big hall (82m
   from the way in, so you walk to the fight rather than arriving in it). Exactly
@@ -2354,7 +2359,7 @@ is one line for the same reason: it is third party and unmodified.
 - `Assets/Models/World/` — islands, buildings, dungeon prefabs.
 - `Assets/Models/World/Prefab/grass.tscn` — the blade the grass brush instances.
 - `Assets/Models/World/wave_mesh.tscn` — one tile of the ocean.
-- `Assets/Models/Items/` — the things characters carry.
+- `Assets/Models/Items/` — the things characters carry (swords, and the boss's club).
 - `Assets/Textures/` — character, world and UI textures; `UI/panel_grunge.jpg` is every panel's paint.
 - `Assets/Fonts/EBGaramond/` — the game's one typeface, with its licence.
 

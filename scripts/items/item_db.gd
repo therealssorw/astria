@@ -76,6 +76,7 @@ const SPECIAL_EQUIP := "equip"
 const FIST_LEVEL := 0
 
 const SWORD_MODEL := "res://Assets/Models/Items/Weapons/Swords/tony_sword.fbx"
+const CLUB_MODEL := "res://Assets/Models/Items/Weapons/Clubs/club.gltf"
 
 ## The suits the armor items below are pieces of, by tier. A tier's four items
 ## are that one file's four pieces, so what an iron helmet looks like is what
@@ -119,17 +120,16 @@ const ITEMS := {
 	# after the boss is not. Level 4 puts it one rung above the best forged blade,
 	# which is the whole reward — the price is only what it sells back for.
 	#
-	# It shares the sword model (the one weapon art the game has) at a much
-	# heavier cross-section and a dull iron tint, so it reads as a bludgeon rather
-	# than a fourth sword. Give it art of its own and only this block changes.
+	# It has art of its own (the only weapon that does not borrow the sword), so
+	# no tint: the club is painted in its own texture and a tint would only
+	# darken what is already there.
 	"juggernaut_club": {
 		"name": "Juggernaut's Club",
 		"level": 4,
 		"price": 900,
 		"desc": "Too heavy to have been made for a person.",
 		"use": "Swing",
-		"hold": {"model": SWORD_MODEL, "scale": Vector3(6.0, 2.0, 6.0),
-				"tint": Color(0.34, 0.32, 0.30), "anim_set": "sword"},
+		"hold": {"model": CLUB_MODEL, "scale": 1.05, "anim_set": "sword"},
 	},
 	# --- armor ---
 	#

@@ -4,12 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://bnhbcn2dw2y3w"
-path="res://.godot/imported/club.gltf-27671491f05c56c200fc23ca6f90edc0.scn"
+path="res://.godot/imported/club.gltf-f9f2c9fa79957e54d16059be72cc7896.scn"
 
 [deps]
 
-source_file="res://scenes/entities/npc/Boss/BigZombie/club.gltf"
-dest_files=["res://.godot/imported/club.gltf-27671491f05c56c200fc23ca6f90edc0.scn"]
+source_file="res://Assets/Models/Items/Weapons/Clubs/club.gltf"
+dest_files=["res://.godot/imported/club.gltf-f9f2c9fa79957e54d16059be72cc7896.scn"]
 
 [params]
 
