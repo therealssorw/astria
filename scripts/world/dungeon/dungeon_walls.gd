@@ -34,6 +34,13 @@ extends Node3D
 ## modelled into the floor, would otherwise get its own little wall ring in the
 ## middle of the room. Anything enclosed is treated as floor.
 ##
+## THE SHELL IS CLOSED: walls up to a flat ceiling, and a roof across it. The
+## dungeon is a place you are INSIDE, so it gets a lid rather than open sky, and
+## the ceiling is one height for the whole plan (see `ceiling_height`) so a
+## staircase cannot open a slit where two different ceiling heights would meet.
+## Walls are therefore not all the same height — each stands from the floor it
+## borders up to that one ceiling, tiled in courses to fit exactly.
+##
 ## Everything is regenerated from scratch on _ready, on both the server and
 ## every client. That is safe precisely because it is deterministic and static
 ## — no networking, same geometry everywhere, nothing to replicate.
@@ -46,9 +53,38 @@ const WALL_SCENE := preload("res://Assets/Models/World/Prefab/stoneWall.gltf")
 const WALL_SIZE := Vector3(23, 19, 8)
 const WALL_MIN := Vector3(-11, 0, -4)   # so the long axis is X, and Y starts at the floor
 
-## The player capsule is 1.92 m tall. At 0.2 a wall stands 3.8 m — comfortably
-## over head height without the chunky voxel blocks dwarfing everyone.
+## The player capsule is 1.92 m tall. At 0.2 one COURSE of wall stands 3.8 m;
+## how tall the dungeon actually is comes from `ceiling_height` below, which
+## stacks as many courses as it takes.
 @export var prefab_scale := 0.2: set = _set_scale
+
+## Head room over the HIGHEST bit of floor, in metres, and so the height of the
+## ceiling everywhere: one flat lid rather than one that steps with the stairs,
+## because two ceilings at different heights meet in a slit you can see the sky
+## through. Every wall is built up to it, so this is the one dial for how tall
+## the dungeon feels.
+@export var ceiling_height := 6.0: set = _set_ceiling
+
+## Off leaves the dungeon open to the sky, which is what it was before it had a
+## lid. Kept as a switch because a roof hides everything inside it from an
+## editor camera looking down.
+@export var build_roof := true: set = _set_roof
+
+## The ceiling's own shade. It is a flat slab rather than voxel blocks — a
+## roof's worth of the wall prefab is about a million triangles overhead that
+## nobody can get close enough to see the bumps on.
+@export var roof_colour := Color(0.30, 0.29, 0.27)
+
+## A roofed room loses the sun, and the island's ambient alone reads as flat
+## grey. These are the lamps that put some shape back; 0 turns them off.
+##
+## The COUNT is capped at `MAX_LIGHTS` and not by this spacing, because the
+## Compatibility renderer only lets a handful of lights touch any one object
+## and the dungeon floor is a single mesh — a ninth lamp would simply not light
+## it. So the spacing is what the grid AIMS for, and the cap is what it gets.
+@export var light_energy := 3.0
+@export var light_spacing := 18.0
+@export var light_colour := Color(1.0, 0.86, 0.66)
 
 ## Node holding the floor mesh; its triangles are what get traced.
 @export var floor_path := NodePath("..")
@@ -62,6 +98,11 @@ const WALL_MIN := Vector3(-11, 0, -4)   # so the long axis is X, and Y starts at
 
 ## Tick in the editor to regenerate after changing anything above.
 @export var rebuild_now := false: set = _set_rebuild
+
+## No more lamps than the Compatibility renderer will apply to one mesh
+## (`rendering/limits/opengl/max_lights_per_object`, 8 by default). The floor is
+## one mesh, so past this the extra lights light nothing and cost anyway.
+const MAX_LIGHTS := 8
 
 var _built := false
 
@@ -80,11 +121,24 @@ var _solid := PackedByteArray()      # 1 where the floor covers the cell
 var _top := PackedFloat32Array()     # highest floor Y in the cell
 var _outside := PackedByteArray()    # 1 where the flood from the edge reached
 
+## Y of the ceiling's underside, and so the top of every wall.
+var _ceiling := 0.0
+
 func _ready() -> void:
 	build()
 
 func _set_scale(v: float) -> void:
 	prefab_scale = maxf(0.01, v)
+	if is_inside_tree():
+		build()
+
+func _set_ceiling(v: float) -> void:
+	ceiling_height = maxf(0.5, v)
+	if is_inside_tree():
+		build()
+
+func _set_roof(v: bool) -> void:
+	build_roof = v
 	if is_inside_tree():
 		build()
 
@@ -106,10 +160,29 @@ func build() -> void:
 		push_warning("[DungeonWalls] the floor has no footprint — nothing built.")
 		return
 	_flood_outside()
+	_ceiling = _highest_floor() + ceiling_height
 
 	for run in _runs():
 		_tile(run)
+	if build_roof:
+		_roof()
+		_lamps()
 	_built = true
+
+## The top of the ceiling's underside — what every wall is built up to. Public
+## so a test can assert the shell is closed without re-deriving it.
+func ceiling_y() -> float:
+	return _ceiling
+
+## The highest bit of floor in the plan. The ceiling is measured off THIS rather
+## than off each wall's own floor, so the lid is one flat surface with no step
+## in it for a player to see daylight through.
+func _highest_floor() -> float:
+	var best := -INF
+	for i in _solid.size():
+		if _solid[i] == 1 and _top[i] > best:
+			best = _top[i]
+	return 0.0 if best == -INF else best
 
 ## Every triangle of the floor, in this node's own space.
 ##
@@ -343,64 +416,298 @@ func _tile(run: Dictionary) -> void:
 	var nominal := WALL_SIZE.x * prefab_scale
 	var count := maxi(1, int(round(length / nominal)))
 	var seg := length / count
-	# Stretch only the long axis; thickness and height stay uniform, or the
-	# wall would visibly change depth from one stretch to the next.
-	var long_scale := seg / WALL_SIZE.x
 	var yaw := atan2(-dir.y, dir.x)
-	# The mesh's long axis is centred half a voxel off its origin, so back the
-	# node off by that much to make neighbours meet flush.
-	var offset := (WALL_MIN.x + WALL_SIZE.x * 0.5) * long_scale
+	var step := _bite() * _inward(run)
 
 	for i in count:
-		var centre: Vector2 = start + dir * ((i + 0.5) * seg)
-		_place(centre - dir * offset, _floor_under(run, centre), yaw,
-			Vector3(long_scale, prefab_scale, prefab_scale),
-			Vector3(seg, WALL_SIZE.y * prefab_scale, WALL_SIZE.z * prefab_scale))
+		var a: Vector2 = start + dir * (i * seg)
+		var b: Vector2 = start + dir * ((i + 1) * seg)
+		_place_wall((a + b) * 0.5 + step, _floor_under(run, a, b), yaw, seg)
 
-## How high the floor is on the inside of the run at this point, so a wall
+## Which way the room is, from a run's boundary line.
+func _inward(run: Dictionary) -> Vector2:
+	var side := float(run["inside"])
+	return Vector2(0, side) if run["axis"] == "x" else Vector2(side, 0)
+
+## How far a wall is pushed INTO the room past its boundary line — the fix for
+## the crack that used to run along the bottom of every wall.
+##
+## The grid is deliberately conservative (see `_rasterise`), so the outline can
+## sit up to one cell OUTSIDE the real edge of the floor. Centred on that line a
+## block reaches only half its thickness back in, which left the floor stopping
+## short of the wall's inner face by up to a fifth of a metre — a slot at ankle
+## height you could see straight through into the void. Stepping in by the
+## difference guarantees the inner face always lands ON floor.
+##
+## Derived rather than dialled: it is exactly the worst case the grid can be
+## wrong by, so a finer `cells_per_wall` shrinks it to nothing by itself.
+func _bite() -> float:
+	return maxf(0.0, _cell - WALL_SIZE.z * prefab_scale * 0.5)
+
+## How high the floor is on the inside of the run under this block, so a wall
 ## running up a staircase climbs with it instead of sinking into the steps.
-func _floor_under(run: Dictionary, at: Vector2) -> float:
+##
+## The LOWEST floor under the block's whole length, not the height at its
+## middle: a cell records the highest floor in it, so a block spanning a step
+## would otherwise stand on the top of that step with a gap under the rest of
+## it — the same crack as above, turned on its side. Standing on the lowest and
+## burying the difference is the right way to be wrong.
+func _floor_under(run: Dictionary, from: Vector2, to: Vector2) -> float:
 	var line_i: int = run["line"]
 	var side: int = run["inside"]
-	var cx := int(floor((at.x - _origin.x) / _cell))
-	var cz := int(floor((at.y - _origin.y) / _cell))
-	# Step off the boundary line into the floor it belongs to.
-	if run["axis"] == "x":
-		cz = line_i if side == 1 else line_i - 1
-	else:
-		cx = line_i if side == 1 else line_i - 1
-	cx = clampi(cx, 0, _w - 1)
-	cz = clampi(cz, 0, _h - 1)
-	var y := _top[cz * _w + cx]
-	return 0.0 if y == -INF else y
+	var along_x: bool = run["axis"] == "x"
+	var steps := maxi(1, int(ceil((to - from).length() / (_cell * 0.5))))
+	var best := INF
+	for i in steps + 1:
+		var p: Vector2 = from.lerp(to, float(i) / float(steps))
+		var cx := int(floor((p.x - _origin.x) / _cell))
+		var cz := int(floor((p.y - _origin.y) / _cell))
+		# Step off the boundary line into the floor it belongs to.
+		if along_x:
+			cz = line_i if side == 1 else line_i - 1
+		else:
+			cx = line_i if side == 1 else line_i - 1
+		cx = clampi(cx, 0, _w - 1)
+		cz = clampi(cz, 0, _h - 1)
+		var y := _top[cz * _w + cx]
+		if y != -INF:
+			best = minf(best, y)
+	return 0.0 if best == INF else best
 
-## One prefab instance, plus the collision that stops a player walking through
-## it. The art has no collision of its own, so a box per piece is added here —
-## these are rectangular blocks, so a box is exact, not an approximation.
-func _place(at: Vector2, top: float, yaw: float, scale3: Vector3, size: Vector3) -> void:
-	var node := WALL_SCENE.instantiate()
-	node.name = "Wall%d" % get_child_count()
-	node.transform = Transform3D(Basis(Vector3.UP, yaw).scaled(scale3),
-		Vector3(at.x, top, at.y))
-	add_child(node)
-	if Engine.is_editor_hint():
-		node.owner = get_tree().edited_scene_root
+## One wall: as many courses of the prefab as it takes to reach the ceiling,
+## plus the single box of collision that stops a player walking through it.
+##
+## Courses rather than one stretched block, so a taller dungeon does not mean
+## visibly taller voxels; and tiled to fit exactly for the same reason the run
+## is, so the top course lands ON the ceiling instead of poking through it or
+## leaving a gap under it.
+func _place_wall(at: Vector2, base: float, yaw: float, seg: float) -> void:
+	var height := maxf(WALL_SIZE.y * prefab_scale * 0.5, _ceiling - base)
+	var courses := maxi(1, int(round(height / (WALL_SIZE.y * prefab_scale))))
+	var course := height / courses
 
+	var root := Node3D.new()
+	root.name = "Wall%d" % get_child_count()
+	root.transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(at.x, base, at.y))
+	add_child(root)
+	_own(root)
+
+	# Stretch only along the run and up; thickness stays uniform, or the wall
+	# would visibly change depth from one stretch to the next.
+	var long_scale := seg / WALL_SIZE.x
+	var tall_scale := course / WALL_SIZE.y
+	# The mesh is centred half a voxel off its own origin on the long axis, so
+	# back it off by that much to make neighbours meet flush.
+	var off_x := -(WALL_MIN.x + WALL_SIZE.x * 0.5) * long_scale
+	var off_z := -(WALL_MIN.z + WALL_SIZE.z * 0.5) * prefab_scale
+	for c in courses:
+		var node := WALL_SCENE.instantiate()
+		node.name = "Course%d" % c
+		node.transform = Transform3D(
+			Basis().scaled(Vector3(long_scale, tall_scale, prefab_scale)),
+			Vector3(off_x, c * course - WALL_MIN.y * tall_scale, off_z))
+		root.add_child(node)
+		_own(node)
+
+	# One box for the whole column. The art has no collision of its own, and
+	# these are rectangular blocks, so a box is exact rather than an
+	# approximation. It is lifted half its height because the wall's origin sits
+	# at its base.
+	_collide(root, BoxShape3D.new(), Vector3(0, height * 0.5, 0),
+		Vector3(seg, height, WALL_SIZE.z * prefab_scale))
+
+# ---------------- the lid ----------------
+
+## The ceiling: one flat slab over every cell the flood could not reach, at
+## `_ceiling`.
+##
+## Built as a mesh rather than out of the wall prefab, which is the same
+## decision the walls made the other way. A voxel block is ~3.5k triangles; a
+## roof's worth of them is about a million overhead, on a surface nobody can get
+## within four metres of. Cells are merged into runs along X first, so a plain
+## rectangular room is a handful of quads rather than one per cell.
+##
+## It reaches to the boundary LINE, which is the middle of the wall, so the wall
+## top and the roof always overlap by half a wall's thickness — there is no
+## seam to line up and nothing to keep in step if either moves.
+func _roof() -> void:
+	var verts := PackedVector3Array()
+	for cz in _h:
+		var cx := 0
+		while cx < _w:
+			if not _inside(cx, cz):
+				cx += 1
+				continue
+			var run_end := cx
+			while run_end < _w and _inside(run_end, cz):
+				run_end += 1
+			var x0 := _origin.x + cx * _cell
+			var x1 := _origin.x + run_end * _cell
+			var z0 := _origin.y + cz * _cell
+			var z1 := _origin.y + (cz + 1) * _cell
+			# Wound so the visible face points DOWN, at the room under it.
+			var a := Vector3(x0, _ceiling, z0)
+			var b := Vector3(x1, _ceiling, z0)
+			var c := Vector3(x1, _ceiling, z1)
+			var d := Vector3(x0, _ceiling, z1)
+			verts.append_array([a, b, c, a, c, d])
+			cx = run_end
+	if verts.is_empty():
+		return
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	var normals := PackedVector3Array()
+	normals.resize(verts.size())
+	normals.fill(Vector3.DOWN)
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = roof_colour
+	mat.roughness = 1.0
+	# Seen only from below, but the dungeon is out in the open world: a
+	# single-sided lid would let an editor camera looking down see straight in.
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.surface_set_material(0, mat)
+
+	var roof := Node3D.new()
+	roof.name = "Roof"
+	add_child(roof)
+	_own(roof)
+	var mi := MeshInstance3D.new()
+	mi.name = "Ceiling"
+	mi.mesh = mesh
+	roof.add_child(mi)
+	_own(mi)
+
+	# Collision off the same triangles: a player who gets up there on a
+	# staircase has to stop at the lid rather than walk out over the dungeon.
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(verts)
+	_collide(roof, shape, Vector3.ZERO, Vector3.ZERO)
+
+## Lamps under the ceiling. A roof takes the sun away, and the island's sky
+## ambient on its own renders the whole dungeon one flat grey.
+##
+## The grid is sized to `light_spacing` but CAPPED at `MAX_LIGHTS`, because the
+## Compatibility renderer only applies a few lights to any one mesh and the
+## floor is a single mesh — see the export above.
+func _lamps() -> void:
+	if light_energy <= 0.0:
+		return
+	var cells := _inside_bounds()
+	if cells == Rect2i():
+		return
+	var span := Vector2(cells.size.x, cells.size.y) * _cell
+	var nx := clampi(int(round(span.x / maxf(1.0, light_spacing))), 1, MAX_LIGHTS)
+	var nz := clampi(int(round(span.y / maxf(1.0, light_spacing))), 1, MAX_LIGHTS)
+	while nx * nz > MAX_LIGHTS:
+		if nx >= nz:
+			nx -= 1
+		else:
+			nz -= 1
+
+	var lamps := Node3D.new()
+	lamps.name = "Lamps"
+	add_child(lamps)
+	_own(lamps)
+	var reach := maxf(span.x / nx, span.y / nz)
+	for ix in nx:
+		for iz in nz:
+			var cx := cells.position.x + int((ix + 0.5) * cells.size.x / nx)
+			var cz := cells.position.y + int((iz + 0.5) * cells.size.y / nz)
+			var at := _nearest_floor(cx, cz)
+			if at.x < 0:
+				continue
+			var lamp := OmniLight3D.new()
+			lamp.name = "Lamp%d" % lamps.get_child_count()
+			lamp.light_color = light_colour
+			lamp.light_energy = light_energy
+			lamp.omni_range = reach
+			# Just under the ceiling, so the light reads as coming off it.
+			lamp.position = Vector3(_origin.x + (at.x + 0.5) * _cell,
+				_ceiling - ceiling_height * 0.25,
+				_origin.y + (at.y + 0.5) * _cell)
+			lamps.add_child(lamp)
+			_own(lamp)
+
+## The cell bounds of everything the flood could not reach — the plan itself,
+## without the padding the grid carries around it.
+func _inside_bounds() -> Rect2i:
+	var lo := Vector2i(_w, _h)
+	var hi := Vector2i(-1, -1)
+	for cz in _h:
+		for cx in _w:
+			if not _inside(cx, cz):
+				continue
+			lo = Vector2i(mini(lo.x, cx), mini(lo.y, cz))
+			hi = Vector2i(maxi(hi.x, cx), maxi(hi.y, cz))
+	if hi.x < 0:
+		return Rect2i()
+	return Rect2i(lo, hi - lo + Vector2i.ONE)
+
+## The nearest cell of REAL floor to a point, so a lamp placed on an even grid
+## over an L-shaped plan does not end up hanging over a courtyard the plan has
+## no floor in. Solid, not merely `_inside`: the flood counts an enclosed hole
+## as inside, which is right for walling it and wrong for hanging a lamp in it.
+## Returns (-1, -1) if there is none.
+func _nearest_floor(cx: int, cz: int) -> Vector2i:
+	for r in range(0, maxi(_w, _h)):
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if maxi(absi(dx), absi(dz)) != r:
+					continue  # only the new ring
+				var nx := cx + dx
+				var nz := cz + dz
+				if nx < 0 or nx >= _w or nz < 0 or nz >= _h:
+					continue
+				if _open_floor(nx, nz):
+					return Vector2i(nx, nz)
+	return Vector2i(-1, -1)
+
+## Floor with floor all around it. A single solid cell can be one an edge
+## clipped the corner of — the rasteriser is deliberately generous — and its
+## middle is then out over nothing. Asking for the whole neighbourhood is what
+## puts a lamp over a room rather than over its lip.
+func _open_floor(cx: int, cz: int) -> bool:
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var nx := cx + dx
+			var nz := cz + dz
+			if nx < 0 or nx >= _w or nz < 0 or nz >= _h:
+				return false
+			if _solid[nz * _w + nx] != 1:
+				return false
+	return true
+
+# ---------------- shared plumbing ----------------
+
+## A static body carrying one shape, under `parent`. `size` is only read for a
+## BoxShape3D; anything else arrives already built.
+func _collide(parent: Node3D, shape_res: Shape3D, at: Vector3, size: Vector3) -> void:
 	var body := StaticBody3D.new()
 	body.name = "Body"
 	var shape := CollisionShape3D.new()
 	# Named explicitly. A node parented before its parent is in the tree gets an
 	# auto-name like "@CollisionShape3D@48", which nothing can look up by name —
-	# the previous test quietly matched none of them and passed on an empty set.
+	# an old test quietly matched none of them and passed on an empty set.
 	shape.name = "Shape"
-	var box := BoxShape3D.new()
-	box.size = size
-	shape.shape = box
-	# The art sits with its base on the floor and its origin at the base, so the
-	# box has to be lifted half its height to line up with it.
-	shape.position = Vector3(0, size.y * 0.5, 0)
+	if shape_res is BoxShape3D:
+		(shape_res as BoxShape3D).size = size
+	shape.shape = shape_res
+	shape.position = at
 	body.add_child(shape)
-	node.add_child(body)
+	parent.add_child(body)
+	_own(body)
+	_own(shape)
+
+## Anything built in the editor has to be owned by the scene being edited or it
+## is invisible in the tree and lost on save.
+func _own(n: Node) -> void:
+	if Engine.is_editor_hint():
+		n.owner = get_tree().edited_scene_root
 
 func _clear() -> void:
 	for c in get_children():

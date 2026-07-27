@@ -47,7 +47,11 @@ func _ready() -> void:
 	_test_no_wall_stands_in_open_floor()
 	_test_the_floor_is_walled_all_the_way_round()
 	_test_walls_stand_on_the_floor_they_border()
+	_test_no_crack_along_the_bottom()
 	_test_a_player_cannot_see_over_them(walls)
+	_test_every_wall_reaches_the_ceiling(walls)
+	_test_there_is_a_roof_over_the_floor(walls)
+	_test_the_dungeon_is_lit(walls)
 	_test_pieces_do_not_overlap()
 	_test_every_piece_has_collision(walls)
 	_test_rebuilding_does_not_duplicate(walls)
@@ -115,7 +119,7 @@ func _floor_top(x: float, z: float):
 # ---------------- what the builder produced ----------------
 
 func _measure_walls(walls: Node3D) -> void:
-	for p in walls.get_children():
+	for p in _wall_pieces(walls):
 		# By TYPE, not by name: a runtime-built node can end up auto-named
 		# "@CollisionShape3D@48", and a name lookup then silently matches
 		# nothing — which reads as "no walls were built" rather than as a
@@ -208,18 +212,66 @@ func _test_walls_stand_on_the_floor_they_border() -> void:
 			wrong += 1
 	_check(wrong == 0, "%d walls do not stand at the height of the floor beside them" % wrong)
 
+## THE CRACK ALONG THE BOTTOM. The grid the outline comes off is conservative,
+## so a boundary line can sit up to one cell outside the real edge of the floor;
+## a block centred on that line then reaches only half its thickness back in,
+## and the floor stops short of its inner face. From inside that reads as a slot
+## at ankle height with the void behind it, the whole length of the wall.
+##
+## Measured the way a player sees it: walk in from outside until the floor
+## starts, and check that happened before the wall's inner face, not after.
+func _test_no_crack_along_the_bottom() -> void:
+	var cracked := 0
+	var worst := 0.0
+	for w in _walls:
+		var perp: Vector2 = w["perp"]
+		var at: Vector2 = w["at"]
+		# Which side the room is on. A piece with floor both sides (an inside
+		# corner) has no crack to have.
+		var inward := Vector2.ZERO
+		for sgn in [1.0, -1.0]:
+			if _is_floor(at.x + perp.x * 2.5 * sgn, at.y + perp.y * 2.5 * sgn) \
+				and not _is_floor(at.x - perp.x * 2.5 * sgn, at.y - perp.y * 2.5 * sgn):
+				inward = perp * sgn
+		if inward == Vector2.ZERO:
+			continue
+		var edge := 3.0
+		for i in 61:
+			var d := -2.0 + i * 0.05
+			if _is_floor(at.x + inward.x * d, at.y + inward.y * d):
+				edge = d
+				break
+		var gap: float = edge - float(w["half_thick"])
+		worst = maxf(worst, gap)
+		if gap > 0.05:
+			cracked += 1
+	_check(cracked == 0,
+		"%d of %d walls have the floor stopping short of their inner face — worst %.2f m of daylight along the bottom"
+			% [cracked, _walls.size(), worst])
+	print("  bottom seam: worst overshoot %.2f m over %d walls" % [worst, _walls.size()])
+
 ## The "scale it to the players" half of the job, asserted rather than
 ## eyeballed: a wall a player can see over is scenery, not a dungeon.
 func _test_a_player_cannot_see_over_them(walls: Node3D) -> void:
-	var s: float = walls.prefab_scale
-	var wall_h: float = walls.WALL_SIZE.y * s
-	_check(wall_h > PLAYER_HEIGHT * 1.5,
-		"walls are %.2f m — a %.2f m player sees straight over them" % [wall_h, PLAYER_HEIGHT])
-	_check(wall_h < PLAYER_HEIGHT * 4.0,
-		"walls are %.2f m — so tall the dungeon reads as a canyon" % wall_h)
+	var head: float = walls.ceiling_height
+	_check(head > PLAYER_HEIGHT * 1.5,
+		"the ceiling is %.2f m over the floor — a %.2f m player sees straight over the walls"
+			% [head, PLAYER_HEIGHT])
+	_check(head < PLAYER_HEIGHT * 6.0,
+		"the ceiling is %.2f m up — so tall the dungeon reads as a canyon" % head)
+	print("  head room %.2f m, ceiling at y=%.2f" % [head, walls.ceiling_y()])
+
+## Every wall runs from its own floor up to the ONE ceiling. Walls all the same
+## height would leave a gap over the low end of a staircase, and a wall that
+## stops short of the lid is a window into the sky.
+func _test_every_wall_reaches_the_ceiling(walls: Node3D) -> void:
+	var ceiling: float = walls.ceiling_y()
+	var wrong := 0
 	for w in _walls:
-		_check(absf(w["height"] - wall_h) < 0.01,
-			"%s is %.2f m tall, not %.2f m" % [w["node"].name, w["height"], wall_h])
+		if absf(float(w["y"]) + float(w["height"]) - ceiling) > 0.01:
+			wrong += 1
+	_check(wrong == 0,
+		"%d of %d walls do not reach the ceiling at y=%.2f" % [wrong, _walls.size(), ceiling])
 
 ## Two blocks sharing a cell means two coincident surfaces fighting over the
 ## same pixels, which reads in game as the wall flickering inside out.
@@ -244,8 +296,84 @@ func _test_pieces_do_not_overlap() -> void:
 			_check(not hit, "%s and %s occupy the same space at %v"
 				% [a["node"].name, b["node"].name, a["at"]])
 
+## The lid. Checked by projecting the ceiling's own triangles back down onto
+## this file's copy of the floor plan: every bit of floor should have some roof
+## over it, or the dungeon has a hole in its roof rather than a roof.
+func _test_there_is_a_roof_over_the_floor(walls: Node3D) -> void:
+	var roof: Node = walls.find_child("Roof", false, false)
+	_check(roof != null, "the dungeon has no Roof node — it is open to the sky")
+	if roof == null:
+		return
+	var mi: MeshInstance3D = roof.find_child("Ceiling", true, false)
+	_check(mi != null and mi.mesh != null, "the Roof node has no ceiling mesh")
+	if mi == null or mi.mesh == null:
+		return
+
+	var covered := {}
+	var arrays := mi.mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var y := verts[0].y
+	for i in range(0, verts.size() - 2, 3):
+		var a := verts[i]
+		var b := verts[i + 1]
+		var c := verts[i + 2]
+		_check(absf(a.y - y) < 0.001, "the ceiling is not flat — it steps at %v" % a)
+		# Cover the triangle's own bounding box: the quads are axis-aligned, so
+		# stamping the box of each half-quad covers exactly the quad.
+		var lo := Vector2(minf(a.x, minf(b.x, c.x)), minf(a.z, minf(b.z, c.z)))
+		var hi := Vector2(maxf(a.x, maxf(b.x, c.x)), maxf(a.z, maxf(b.z, c.z)))
+		var x := lo.x
+		while x <= hi.x:
+			var z := lo.y
+			while z <= hi.y:
+				covered[Vector2i(int(floor(x / SAMPLE)), int(floor(z / SAMPLE)))] = true
+				z += SAMPLE * 0.5
+			x += SAMPLE * 0.5
+
+	var open := 0
+	for cell in _floor:
+		if not covered.has(cell):
+			open += 1
+	var frac := float(open) / maxf(1.0, float(_floor.size()))
+	# The floor model runs a little way under the walls and past them; the roof
+	# stops at the middle of the wall, so a fringe of floor is legitimately
+	# uncovered. A real hole is a room, which is far more than this.
+	_check(frac < 0.15, "%.0f%% of the floor has no ceiling over it — the roof has a hole in it"
+		% (frac * 100.0))
+	_check(y > _highest_floor() + PLAYER_HEIGHT,
+		"the ceiling is at y=%.2f, under the head of a player stood on the highest floor (%.2f)"
+			% [y, _highest_floor()])
+	print("  ceiling covers %.0f%% of the floor plan" % ((1.0 - frac) * 100.0))
+
+## A roofed room loses the sun, so it has to bring its own light. The count is
+## capped by what the Compatibility renderer will apply to one mesh — a ninth
+## lamp would light nothing at all.
+func _test_the_dungeon_is_lit(walls: Node3D) -> void:
+	var lamps: Node = walls.find_child("Lamps", false, false)
+	_check(lamps != null, "the roofed dungeon has no lamps — it is lit by ambient alone")
+	if lamps == null:
+		return
+	var lit := 0
+	for l in lamps.get_children():
+		if l is OmniLight3D:
+			lit += 1
+			_check(_is_floor((l as Node3D).position.x, (l as Node3D).position.z),
+				"%s hangs outside the rooms at %v" % [l.name, (l as Node3D).position])
+	_check(lit > 0, "the Lamps node is empty")
+	_check(lit <= walls.MAX_LIGHTS,
+		"%d lamps — past %d the renderer stops applying them to the floor"
+			% [lit, walls.MAX_LIGHTS])
+
+func _highest_floor() -> float:
+	var best := -INF
+	for cell in _floor:
+		best = maxf(best, _floor[cell])
+	return best
+
 func _test_every_piece_has_collision(walls: Node3D) -> void:
-	for p in walls.get_children():
+	for p in _wall_pieces(walls) + [walls.find_child("Roof", false, false)]:
+		if p == null:
+			continue
 		var body: Node = p.find_child("Body", true, false)
 		_check(body != null and body is StaticBody3D,
 			"%s has no collision — players walk through it" % p.name)
@@ -265,6 +393,15 @@ func _test_rebuilding_does_not_duplicate(walls: Node3D) -> void:
 		"rebuilding changed the piece count from %d to %d" % [before, walls.get_child_count()])
 
 # ---------------- helpers ----------------
+
+## The wall columns only — the shell also carries a Roof and a Lamps node, and
+## neither is a wall to be measured as one.
+func _wall_pieces(walls: Node3D) -> Array:
+	var out := []
+	for p in walls.get_children():
+		if p.name.begins_with("Wall"):
+			out.append(p)
+	return out
 
 func _find_shape(n: Node) -> CollisionShape3D:
 	if n is CollisionShape3D:

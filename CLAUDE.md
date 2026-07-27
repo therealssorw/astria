@@ -1871,9 +1871,41 @@ mixed pile.
 - Flood-filling from the OUTSIDE rather than taking every inside/outside edge
   is what fills holes in: a gap the mesh happens to leave, or a pillar modelled
   into the floor, would otherwise get its own little wall ring mid-room.
-- `prefab_scale` (0.2) converts the raw voxel prefab to player scale: a wall
-  3.8 m tall against a 1.92 m capsule. `cells_per_wall` (4) is how closely the
-  outline hugs the real floor edge. Tune both there, not by scaling nodes.
+- `prefab_scale` (0.2) converts the raw voxel prefab to player scale: one COURSE
+  of wall 3.8 m tall against a 1.92 m capsule. `cells_per_wall` (4) is how
+  closely the outline hugs the real floor edge. Tune both there, not by scaling
+  nodes.
+- HOW TALL THE DUNGEON IS, is `ceiling_height` (6 m) and nothing else. It is
+  head room over the HIGHEST bit of floor, so the lid is one flat surface for
+  the whole plan and walls are NOT all the same height — each runs from the
+  floor it borders up to that one ceiling, stacking courses of the prefab to
+  reach it. A ceiling that stepped with the stairs would meet itself in a slit
+  you could see the sky through; courses rather than one stretched block is so
+  that a taller dungeon does not mean visibly taller voxels.
+- THE ROOF IS A FLAT MESH, not blocks. A voxel wall is ~3.5k triangles, and a
+  roof's worth of them is about a million overhead on a surface nobody can get
+  within four metres of; the ceiling is quads (merged into runs along X) in
+  `roof_colour`, with collision off the same triangles. It reaches to the
+  boundary LINE, which is the middle of a wall, so roof and wall always overlap
+  by half a wall's thickness and there is no seam to keep in step.
+- A ROOFED ROOM LOSES THE SUN. The island's sky ambient still reaches inside, so
+  it is not black, but it reads flat — hence the lamps under the ceiling
+  (`light_energy`, `light_spacing`, `light_colour`; 0 energy turns them off).
+  Their COUNT is capped at `MAX_LIGHTS` (8) rather than by the spacing, because
+  the Compatibility renderer only applies a handful of lights to any one mesh
+  and the dungeon floor is a single mesh — a ninth lamp would light nothing.
+  Each is nudged to the nearest cell of floor with floor all round it, or an
+  even grid over an L-shaped plan hangs lamps in the courtyard.
+- THE CRACK ALONG THE BOTTOM, and why `_bite()` exists. The grid is deliberately
+  conservative (stair risers, above), so a boundary line can sit up to one cell
+  OUTSIDE the real floor edge; a block centred on that line reached only half
+  its thickness back in, and the floor stopped short of its inner face by up to
+  0.2 m — a slot at ankle height with the void behind it, the length of the
+  wall. Every wall is therefore stepped INTO the room by exactly the worst case
+  the grid can be wrong by, which is derived rather than dialled: a finer
+  `cells_per_wall` shrinks it to nothing by itself. The same fault turned on its
+  side is why a block stands on the LOWEST floor under its whole length rather
+  than the height at its middle.
 - Solid stretches are tiled to FIT (count rounded, length stretched), never at
   a fixed size with the last block hanging over — the overhang pushes blocks
   through each other at junctions, giving coplanar faces that z-fight exactly
@@ -1908,9 +1940,9 @@ mixed pile.
   inherits this; do not "simplify" it away.
 - The dungeon is parked at `-3000, 0, 0` — far enough that the two ends of the
   portal cannot sit in each other's radius, which `test_catacombs` asserts. It
-  is at its natural height rather than buried, because the shell has no ceiling
-  and being under the sea would look worse than having sky over it. Where it
-  actually belongs is a level-editing decision: drag the `Catacombs` node.
+  is at its natural height rather than buried; now that it has a lid, burying it
+  is a level-editing decision nothing in the code cares about either way. Where
+  it belongs is the same kind of decision: drag the `Catacombs` node.
 - Test: `--headless res://tests/test_catacombs.tscn` (prints
   `CATATEST RESULT=PASS/FAIL`) — the round trip on a real listen server: the
   door really lands you in the dungeon, the dungeon really is somewhere else,
@@ -1925,7 +1957,20 @@ mixed pile.
   rebuilding does not duplicate. Note the collision shape is found by TYPE: a
   node parented before its parent is in the tree auto-names to
   `@CollisionShape3D@48`, and the old test's name lookup silently matched none
-  of them, so its overlap check passed on an empty set.
+  of them, so its overlap check passed on an empty set. It also walks in from
+  outside each wall to find where the floor really starts, which is the crack
+  along the bottom measured the way a player sees it, and checks every wall
+  reaches the ceiling, that the ceiling is flat and covers the plan, and that
+  the lamps hang over rooms.
+- Eyeballing it: `godot --path . res://tests/preview_dungeon.tscn` (NO
+  `--headless` — it renders) stands where the portal drops a player and saves
+  four shots into `user://dungeon_preview`: `seam` is at ankle height with its
+  nose against a wall (where the crack was, and where an eye-height shot looks
+  straight over it), `room` and `lamp` are how the place reads with the sun shut
+  out, and `ceiling` looks up at the lid. It stands at the ArrivalAnchor rather
+  than at the average of the geometry — the middle of a ring of walls is as
+  likely to be inside a block as inside a room, which is how the first draft
+  photographed the inside of a wall four times.
 
 ## Multiplayer
 
@@ -2116,7 +2161,7 @@ is one line for the same reason: it is third party and unmodified.
 - `scripts/world/spawn_point.gd` — marks where players spawn and respawn.
 - `scripts/world/bandit_spawner.gd` — refills a bandit camp, keeping them out of each other and off roofs.
 - `scripts/world/gold_drop.gd` — a dropped pile; the server decides who gets it.
-- `scripts/world/dungeon/dungeon_walls.gd` — generates a dungeon's stone shell from its floor and door markers.
+- `scripts/world/dungeon/dungeon_walls.gd` — generates a dungeon's shell from its floor: walls, ceiling and lamps.
 - `scripts/world/quest/quest_data.gd` — every quest: name, target, giver, and where it is handed in.
 - `scripts/world/quest/quest_anchor.gd` — a marker that IS a quest's destination.
 - `scripts/world/teleport/teleport_data.gd` — the places the teleport cheat can send you.
@@ -2178,7 +2223,7 @@ is one line for the same reason: it is third party and unmodified.
 - `tests/test_teleport.gd` — the teleport cheat's refusals and its landing.
 - `tests/test_gold_drops.gd` — dropped gold and who is paid for it.
 - `tests/test_bandit_spawner.gd` — where a camp puts its bandits, and surviving a corpse.
-- `tests/test_dungeon_walls.gd` — the generated dungeon shell: doors, gaps, overlaps, collision.
+- `tests/test_dungeon_walls.gd` — the generated dungeon shell: gaps, the bottom seam, the ceiling, the lamps.
 - `tests/test_ui_theme.gd` — the palette, the font, and no screen painted black.
 - `tests/test_menu_scroll.gd` — long menus following the highlight for a pad.
 - `tests/test_discord.gd` — the message that would be posted; it posts nothing.
@@ -2187,6 +2232,7 @@ is one line for the same reason: it is third party and unmodified.
 - `tests/preview_get_up.gd` — the intro's getting-up, four frames across the clip.
 - `tests/preview_sword_swings.gd` — each sword swing going in, at the strike, and out.
 - `tests/preview_held_item.gd` — a weapon in the player's hand, for fitting the grip.
+- `tests/preview_dungeon.gd` — inside the catacombs: the wall's foot, the room, the ceiling, a lamp.
 - `tests/preview_npc_armor.gd` — a villager bare, suited, and in a recoloured suit.
 - `tests/preview_item_icons.gd` — every item icon on one sheet, with a colour-wash report.
 - `tests/preview_voice.gd` — the voice HUD in each of its states.
