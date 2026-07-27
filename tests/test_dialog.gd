@@ -90,6 +90,8 @@ func _run() -> void:
 		return
 	DialogSystem.close()
 
+	if not await _number_keys():
+		return
 	if not _blacksmith():
 		return
 	if not _report_back():
@@ -97,6 +99,60 @@ func _run() -> void:
 
 	print("DIALOGTEST RESULT=PASS")
 	get_tree().quit(0)
+
+## The answers are numbered on screen, so the numbers pick them. Driven with
+## REAL key events rather than by calling the handler: the binding, the action
+## table and the box's own input are three places this can break, and only an
+## event goes through all three.
+##
+## Also that a number does NOTHING while the line is still typing — a key press
+## answering a question that has not finished being asked is the failure this
+## guards, and it is invisible from the text alone.
+func _number_keys() -> bool:
+	if not _check(DialogSystem.start(CONV), "the King has no conversation"):
+		return false
+	var typing_body := _body()
+	if not _check(_answer_count() == 0, "a line still typing should offer nothing yet"):
+		return false
+	await _press_number(1)
+	if not _check(DialogSystem.is_open() and _body() == typing_body,
+			"a number pressed mid-line should not have answered anything"):
+		return false
+
+	# down to the line the branches hang off — the only one with a real CHOICE on
+	# it, and so the only one where picking the second answer means anything
+	_skip_typing()
+	if not _check(_pick("defeated the bandits"), "the greeting has no way on"):
+		return false
+	_skip_typing()
+	if not _check(_pick("want to help"), "the caravan line has no way on"):
+		return false
+	_skip_typing()
+	if not _check(_answer_count() >= 2,
+			"the hideout should offer a choice, got %d answers" % _answer_count()):
+		return false
+	var asked := _body()
+	var second := str((DialogSystem._answers.get_child(1) as Button).text)
+	await _press_number(2)
+	if not _check(_body() != asked,
+			"pressing 2 should have taken the second answer ('%s')" % second):
+		return false
+	# out of range does nothing rather than taking the last one
+	_skip_typing()
+	var here := _body()
+	await _press_number(9)
+	if not _check(_body() == here, "a number past the last answer should do nothing"):
+		return false
+	DialogSystem.close()
+	return true
+
+func _press_number(n: int) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_1 + n - 1
+	ev.pressed = true
+	Input.parse_input_event(ev)
+	Input.flush_buffered_events()
+	await get_tree().process_frame
 
 ## Walking back to the King with the bandits done. Two things this is guarding,
 ## and both are invisible in the text: the conversation opens somewhere ELSE

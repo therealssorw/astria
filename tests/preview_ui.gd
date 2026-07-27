@@ -54,7 +54,17 @@ func _ready() -> void:
 	await _shot("shop_scrolled")
 	ShopSystem.close()
 
+	# Shot with its CHOICES up, not mid-sentence: that is the state the player
+	# spends the conversation in, and the only one that shows the numbered rows
+	# and the hint that says the number keys pick them. The typing is skipped the
+	# way a player skips it, page by page.
 	DialogSystem.start("blacksmith")
+	await get_tree().process_frame
+	for _i in 16:
+		DialogSystem._finish_typing()
+		if DialogSystem._page >= DialogSystem._pages.size() - 1:
+			break
+		DialogSystem._next_page()
 	await _shot("dialog")
 	DialogSystem.close()
 

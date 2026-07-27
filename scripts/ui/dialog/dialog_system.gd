@@ -256,8 +256,17 @@ func _build_answers(line: Dictionary) -> void:
 		btn.pressed.connect(_on_answer.bind(answer))
 		_answers.add_child(btn)
 	_answers.visible = true
-	_hint.text = "%s — choose      %s — move" % [InputDevice.menu_accept_label(),
-			"stick" if InputDevice.kind != InputDeviceTracker.Kind.KEYBOARD else "W S"]
+	if InputDevice.kind == InputDeviceTracker.Kind.KEYBOARD:
+		# the rows are numbered, so say that the numbers work — it is the fastest
+		# way through a conversation and invisible otherwise
+		# capped at the nine keys there are, however long a line's list gets, and
+		# a lone "Continue" is "1" rather than the nonsense of "1-1"
+		var last := mini(_answers.get_child_count(), InputDevice.NUMBER_ACTIONS.size())
+		var keys := "1" if last <= 1 else "1-%d" % last
+		_hint.text = "%s or %s — choose      W S — move" \
+				% [keys, InputDevice.menu_accept_label()]
+	else:
+		_hint.text = "%s — choose      stick — move" % InputDevice.menu_accept_label()
 	if _answers.get_child_count() > 0:
 		(_answers.get_child(0) as Button).grab_focus()
 
@@ -319,6 +328,16 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		close()
+		return
+	# THE ANSWERS ARE NUMBERED, SO THE NUMBERS PICK THEM. Every choice is already
+	# drawn as "1.  ...", which was a label promising something the box did not
+	# do. Only while the choices are actually up: a number over a line still
+	# typing itself would be answering a question that has not been asked.
+	var number := InputDevice.number_pressed(event)
+	if number > 0:
+		if _answers.visible and number <= _answers.get_child_count():
+			get_viewport().set_input_as_handled()
+			(_answers.get_child(number - 1) as Button).pressed.emit()
 		return
 	var accept := InputDevice.is_menu_accept(event)
 	if not accept and not event.is_action_pressed("interact"):
