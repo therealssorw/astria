@@ -15,11 +15,16 @@ extends CharacterBody3D
 # node in the scene and edit under "Enemy" — overrides these defaults) ---
 @export_group("Level")
 ## This enemy's rank, which is how much a weapon has to out-class it before it
-## starts dying faster (`CombatLevels`). Level 1 is the ORDINARY enemy — every
-## bandit in the game — and at that level nothing is scaled at all: the
-## exported numbers below are exactly what it has and exactly what it takes,
-## against a level 0 fist. Raising it here is the one dial that makes something
-## tougher without touching a single stat.
+## starts dying faster (`CombatLevels`). Level 1 (`BASE_ENEMY_LEVEL`) is the
+## ORDINARY enemy, and at that level nothing is scaled at all: the exported
+## numbers below are exactly what it has and exactly what it takes, against a
+## level 0 fist. Raising it here is the one dial that makes something tougher
+## without touching a single stat.
+##
+## THE BANDIT ITSELF IS LEVEL 0, set on `scenes/enemy.tscn` rather than here —
+## one rung UNDER the baseline, so the common enemy of the starter island both
+## dies quicker and hits softer than the numbers below say. The default stays
+## on the baseline so anything new is an ordinary enemy until it says otherwise.
 @export var level := CombatLevels.BASE_ENEMY_LEVEL
 @export_group("Health")
 @export var max_health := 100.0
@@ -753,9 +758,10 @@ func _attack_trace() -> void:
 		if fwd.dot(flat) < cos(deg_to_rad(attack_cone_deg)):
 			continue
 		# `self` goes along so a parried swing staggers us in return.
-		# Scaled by our level the same way our health is: a level 1 bandit is
+		# Scaled by our level the same way our health is: a level 1 enemy is
 		# the baseline and hits for exactly the exported number, and anything
 		# above or below hits harder or softer to match how long it lives.
+		# A bandit is level 0, so it lands under the number exported above.
 		p.server_take_damage(attack_damage * CombatLevels.enemy_power(level),
 				flat * 3.0 + Vector3.UP * 1.5, 0, self)
 

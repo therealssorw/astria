@@ -1320,8 +1320,12 @@ mixed pile.
   a piece, so a full suit costs four blades). FISTS ARE LEVEL 0
   (`ItemDb.FIST_LEVEL`), which is also what an empty hand, an unknown id and an
   item that forgot the key all come out as, so a missing level is never a free
-  upgrade. Every enemy has a `level` too (an `@export` on `enemy.gd`) and every
-  bandit in the game is level 1.
+  upgrade. Every enemy has a `level` too (an `@export` on `enemy.gd`, defaulting
+  to `CombatLevels.BASE_ENEMY_LEVEL`). THE BANDIT IS LEVEL 0, set on
+  `scenes/enemy.tscn` — one rung UNDER the baseline the exported numbers are
+  written for, so the enemy you meet first both dies quicker and hits softer
+  than `enemy.gd` says. The juggernaut is level 5, on `scenes/boss.tscn`. A
+  level is a per-scene number, never a code default to edit.
 - The maths lives in exactly ONE file, `scripts/combat/combat_levels.gd`, and
   nothing else may invent a curve of its own or two weapons will disagree about
   what a level is worth. Three ladders that never have to know about each
@@ -1332,7 +1336,7 @@ mixed pile.
 - EVERYTHING HITS 40% SOFTER THAN THE LADDERS FIRST SAID, and it is done at BOTH
   ends of a blow rather than by cutting the exported damage numbers: a weapon
   level is worth 40% less than it was (0.35 -> 0.21) and an armor level 40% more
-  (0.09 -> 0.126). Fists against an ordinary bandit are therefore still EXACTLY
+  (0.09 -> 0.126). Fists against a BASELINE enemy are therefore still EXACTLY
   the exported numbers — the one line everything else here is measured against
   never moves — and only what your gear does to that baseline changed. The
   weapon ladder is now deliberately SHALLOWER than the enemy one, so a level 3
@@ -1342,9 +1346,9 @@ mixed pile.
   measures both halves at the same enemy level for exactly that reason.
 - An enemy's level moves what it SHRUGS OFF and what it HITS FOR, by the same
   factor (`enemy_scale`, floored at `MIN_ENEMY_SCALE`). Level 1 is still exactly
-  the exported numbers, so nothing in the game changed — but a level 0 bandit
-  now dies quicker AND punches softer, which is what makes it a weaker enemy
-  rather than just a squishier one. Before this it only died quicker.
+  the exported numbers — but a level 0 enemy dies quicker AND punches softer,
+  which is what makes it a weaker enemy rather than just a squishier one.
+  Before this it only died quicker. That is the rung the bandits sit on.
 - ARMOR IS THE DEFENSIVE HALF, and it is protection, never health: your 100 hp
   is your 100 hp, a plate only makes each blow take less of it. Levels add up
   across the four slots — `Net.armor_levels(peer_id)`, the BEST piece per slot,
@@ -1366,7 +1370,9 @@ mixed pile.
   weaker ones for the same trip to the edge is what falling one level below the
   baseline is worth: a level 0 enemy both dies quicker and hits softer, so it
   costs about `0.65 * 0.65 = 0.42` of a level 1, and six of them come to about
-  three. Where that lands today, with everything 40% softer: a level 1 bandit
+  three — and the BANDITS are the level 0 case, so six of them is what the
+  starter island actually asks. Where that lands today, with everything 40%
+  softer: a level 1 enemy
   takes 9 light swings to put down and costs you 13.3 a hit, so you can afford
   about 2.5 hits from each of three; a level 0 takes 6 swings and costs 8.6,
   about 1.9 hits from each of six. Fights are longer and more forgiving than the
@@ -1374,12 +1380,12 @@ mixed pile.
   take depends on how well you block and dodge, and on the health you regen
   between fights, neither of which a formula here can know. Play it, don't
   assert it.
-- Both baselines are 1.0 today ON PURPOSE. Fists against a bandit scale
-  *nothing*, so the exported numbers on `player.gd` and `enemy.gd` are still
-  literally what happens — "base the stats off fists" and "the bandits are
-  level 1" are the same statement — and a weapon is the first thing that ever
-  moves that fraction. It is why the whole system could be added without
-  retuning a single fight.
+- Fists against a BASELINE enemy scale *nothing* — both sides of the fraction
+  are 1.0 — so the exported numbers on `player.gd` and `enemy.gd` are literally
+  what happens at level 1, which is the one line every other number here is
+  measured against. It is why the whole system could be added without retuning
+  a single fight. The bandits then sit a rung below that line deliberately: the
+  starter island is the gentle end of the ladder, not the yardstick.
 - ONLY DAMAGE SCALES. Knockback is deliberately left alone: which hits rock an
   enemy back (`Enemy.flinch_knockback`, the combo ender's
   `combo_finisher_mult`) is a readability promise to the player, and a good
@@ -1397,9 +1403,12 @@ mixed pile.
   wording can never drift apart between them.
 - Test: the `=== levels ===` section of `--headless res://tests/test_combat.tscn`
   — every catalogue item declaring one, the curve's shape, and then real swings
-  through `_do_attack_trace` with the server's bar loaded: bare hands dealing
-  precisely `light_damage`, each blade beating the last, a level 3 enemy eating
-  part of a level 3 blade, and a levelled jab still not staggering. The
+  through `_do_attack_trace` with the server's bar loaded: the bandit scene
+  shipping at level 0, and then — with that same enemy put ON the baseline, so
+  the ladder is measured against the line it is written for — bare hands
+  dealing precisely `light_damage`, each blade beating the last, a level 3
+  enemy eating part of a level 3 blade, and a levelled jab still not
+  staggering. The
   defensive half is in `--headless res://tests/test_gift.tscn`: each suit
   letting less through than the last, every suit matching its blade in level and
   price, a level 0 enemy costing roughly half a level 1, and the same blow

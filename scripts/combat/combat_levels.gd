@@ -13,12 +13,14 @@ extends RefCounted
 ##             it was tuned is the game you play with nothing equipped, and
 ##             every weapon you pick up is a straight gain.
 ##   DEFENCE — what you are swinging at. BASE_ENEMY_LEVEL (1) is the ordinary
-##             enemy — every bandit in the game is one — and each level away
-##             from that is worth another TOUGHNESS_PER_ENEMY_LEVEL, BOTH
-##             ways: a higher-level enemy takes less and hits harder, a lower
-##             one takes more and hits softer. A level 1 enemy therefore has
-##             NO modifier at all: its exported health and damage are its real
-##             ones.
+##             enemy — the level `enemy.gd`'s exported numbers are written for
+##             — and each level away from that is worth another
+##             TOUGHNESS_PER_ENEMY_LEVEL, BOTH ways: a higher-level enemy takes
+##             less and hits harder, a lower one takes more and hits softer. A
+##             level 1 enemy therefore has NO modifier at all: its exported
+##             health and damage are its real ones. THE BANDIT IS LEVEL 0, one
+##             rung under that, so the starter island's common enemy is the
+##             gentler end of the ladder; the juggernaut is level 5.
 ##   ARMOR   — what you are wearing when something hits YOU. Nothing is the
 ##             baseline (1.0, take it all) and every armor level divides what
 ##             lands by another PROTECTION_PER_ARMOR_LEVEL. Levels come from
@@ -27,19 +29,21 @@ extends RefCounted
 ##   damage = base * offence(weapon) / defence(target)
 ##   damage taken = incoming / protection(armor)
 ##
-## which is why "make the bandits level 1" and "base the stats off fists"
-## are the same statement: both sides of that fraction are 1 today, and
-## picking up a wooden sword is the first thing that moves it.
+## Fists against a BASELINE enemy scale nothing at all — both sides of that
+## fraction are 1 — which is the one line every other number here is measured
+## against. A bandit sits a level under it, so bare hands against the enemy you
+## actually meet first already deal a little more than the exported jab.
 ##
 ## WHAT THE LADDERS ARE TUNED TO. The yardstick, written down so a change to
 ## any number above can be checked against something: carrying a full level 1
 ## set — wooden sword and all four flimsy pieces — you should be able to take
 ## on SIX level 0 enemies, or THREE level 1 enemies, and finish almost dead
-## either way. Twice as many of the weaker ones for the same trip to the edge
-## is exactly what falling one level either side of the baseline is worth: a
-## level 0 enemy both dies quicker and hits softer, so it costs you about half
-## as much (0.65 * 0.65 = 0.42 of a level 1) and six of them come to about
-## three.
+## either way — and the BANDITS ARE THE LEVEL 0 CASE, so six of them is what
+## the starter island actually asks of you. Twice as many of the weaker ones
+## for the same trip to the edge is what falling one level below the baseline
+## is worth: a level 0 enemy both dies quicker and hits softer, so it costs you
+## about half as much (0.65 * 0.65 = 0.42 of a level 1) and six of them come to
+## about three.
 ##
 ## It is a TARGET, not a promise the code can keep. How much you actually
 ## take depends on how well you block and dodge, which no formula here can
@@ -49,7 +53,7 @@ extends RefCounted
 ## EVERYTHING HITS 40% SOFTER THAN THE LADDERS FIRST SAID, and it is done at
 ## BOTH ends of a blow rather than by cutting the exported damage numbers: a
 ## weapon level is worth 40% less than it was (0.35 -> 0.21) and an armor level
-## is worth 40% more (0.09 -> 0.126). So fists against an ordinary bandit are
+## is worth 40% more (0.09 -> 0.126). So fists against a BASELINE enemy are
 ## still EXACTLY the exported numbers — the one line every other number here is
 ## measured against is untouched — and it is only what your gear does to that
 ## baseline that moved. Note the deliberate asymmetry it leaves behind: the
