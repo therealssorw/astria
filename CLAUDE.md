@@ -1927,6 +1927,101 @@ mixed pile.
   `@CollisionShape3D@48`, and the old test's name lookup silently matched none
   of them, so its overlap check passed on an empty set.
 
+## The juggernaut (the boss)
+
+- A boss is an `Enemy` SUBCLASS, never a copy: `scripts/entities/boss.gd` gets
+  the state machine, the puppet replication, the guard, the damage path, the
+  kill credit and the drop for free, and only writes down what a boss does
+  differently. Three small virtuals on `Enemy` are the whole seam —
+  `_tick_moves` (a frame taken by a move of its own), `_on_health_changed` (where
+  a phase threshold is noticed) and `is_open` (is it helpless right now). An
+  ordinary bandit answers all three with "nothing special". A second boss is a
+  new subclass and a new `MOVES` table, not a second copy of `enemy.gd`.
+- ITS MOVES ARE A TABLE: `Boss.MOVES`, one row per move, and `_tick_moves` walks
+  it. A row carries the beats (`windup` / `active` / `recovery` / `cooldown`),
+  what it costs you, the band it is chosen from, and how it is DRAWN. Adding a
+  third move is a row and a case in `_commit_move`, not a branch in the AI.
+- POISE: it does not flinch. `flinch_knockback` is the bar a hit has to clear to
+  rock an enemy back, and `poise` puts it out of reach — so it opens up in
+  exactly two ways, and both are EARNED: parry it (the ordinary stagger, which
+  works on anything), or punish the RECOVERY of a move it committed to. That is
+  what every `windup`/`recovery` pair in the table is for, and it is why they
+  are per move: learning which is which IS the fight.
+- `is_open()` is what the HUD's lock-on ring asks, rather than reading
+  `stagger_left` — a boss in recovery is wide open and is not staggered, and a
+  ring that promised otherwise would be lying about what `take_damage` does.
+- TWO PHASES, at `phase_two_at` of its health. It gets faster, its armour comes
+  off (`BossVisual.strip_armor`, which is a rebuild of the definition MINUS its
+  armor layer — the same gesture as taking a suit off a player), it stops
+  guarding and retreating ENTIRELY (`_decide` / `_decide_after_swing` /
+  `_reflex_check` in phase two only ever close), and the charge unlocks. Phase
+  one still fights like a very large bandit, so the turn is something the player
+  watches happen. The phase rides the replicated state, so every screen sees it.
+- Server-authoritative like everything else: the AI, the phase, every move and
+  all of its damage run on the server, against its own speed-validated copy of
+  each pawn. A boss APPENDS two fields to the enemy state row (which move, which
+  phase); the reader fills them in for a short row, so a bandit pays nothing.
+- Three things are LOCAL and cosmetic, and deliberately so: the bar across the
+  top of the screen, the telegraph, and the entrance shot (`Cinematic.focus` the
+  first time the local player comes within `INTRO_RANGE`). Where one player's
+  camera points changes nothing anyone else can see.
+- THE TELEGRAPH IS PER MOVE. `telegraph_style()` says the colour, how much the
+  star grows, how far over the head it floats, and the radius of a GROUND RING
+  for an attack with a footprint — so the slam draws an orange circle where it
+  is about to land and the charge is a big red star with no ring. The ring grows
+  as the wind-up runs out, so how long you have is readable without a number. It
+  is projected point by point (a circle on the floor is an ellipse from anywhere
+  but overhead), and it is skipped entirely when any of it is behind the camera:
+  half a ring reads as a wall. The height is ASKED FOR rather than assumed —
+  2.1m clears a bandit and sits on a juggernaut's chest.
+- `scripts/ui/boss/boss_bar.gd` is the bar: `UiTheme` like every screen, with a
+  notch drawn at the boss's OWN `phase_two_at` so moving the threshold moves the
+  mark. It shows the nearest living thing in the group `"boss"` within
+  `SHOW_RANGE`, and reads the replicated health — nothing about it is
+  authoritative.
+- A CLIENT HAS TO BE TOLD WHICH BODY: `Net.ENEMY_SCENES` maps an `enemy_kind` to
+  a scene and the spawn carries it, because a boss and a bandit are not the same
+  puppet. A new kind of enemy is a row there and nothing else on the wire.
+- IT DROPS ITS CLUB. `scripts/world/item_drop.gd` is an item lying on the floor —
+  the same container, the same proximity check and the same despawn as a pile of
+  gold, because "a thing on the ground" is one idea; only what is awarded
+  differs (`_server_award_item` vs `_server_award_gold`). The model is the item's
+  OWN art through `ItemDb.build_model`, so there is nothing per-item to draw.
+  `juggernaut_club` is level 4 — one rung above the best forged blade — and no
+  shop stocks it, which the test asserts: it is not for sale at any price.
+- WHERE IT LIVES: `scripts/world/boss/boss_spawner.gd` on a node in
+  `scenes/starterDungeon.tscn`, at the far end of the catacombs' big hall (82m
+  from the way in, so you walk to the fight rather than arriving in it). Exactly
+  one, respawning on a long timer. Move the NODE, not the numbers — `test_boss`
+  asserts it is standing over real floor, and prints a map of where the floor IS
+  when it is not.
+- ITS VOICE IS THE BANDIT GRUNTS, SLOWED AND PUT IN A ROOM. `FighterAudio` gained
+  a `yell` and looping `steps`, plus `voice_pitch` / `voice_reverb` — a shape for
+  the voice rather than a second set of recordings to keep in step. The reverb
+  bus is built at runtime (`FighterAudio.ensure_voice_bus`) instead of saved in a
+  bus layout, which would be another file to keep true. Only the VOICE is pitched
+  and sent to the room: a footstep is the floor and an impact is the world, and
+  neither belongs to whoever made it. Footsteps are ticked off the ground speed
+  on EVERY peer (the replicated ratio on a client, the measured one on the
+  server), so anything that moves it gets them with no code at the other end.
+- It animates off the SHARED humanoid clips today — a slam is the heavy swing
+  stretched over its own wind-up. A dedicated pack would be a `CLIPS`-style table
+  in `BossVisual` and nothing else would change.
+- Its body is an ordinary built NPC: `Assets/Data/Npcs/juggernaut.tres`, the Base
+  parts at 3.2m in `Armor1` repainted iron. Recolour it in the NPC Builder and
+  every copy in the game changes with it.
+- Test: `--headless res://tests/test_boss.tscn` (prints
+  `BOSSTEST RESULT=PASS/FAIL`) — the table (every move telegraphs and every move
+  can be punished), the catalogue, and then a real listen server: poise, both
+  earned openings, the punish paying more, the slam landing on someone stood in
+  it and NOT on someone stood out of it, the phase turning, the charge unlocking,
+  the club on the floor and into a bag, and the spawner standing over floor.
+- Eyeballing it: `godot --path . res://tests/preview_boss.tscn` (NO `--headless`
+  — the telegraph is a `_draw()` and never runs without a window). It stands the
+  boss next to a villager for scale and photographs each move's wind-up through
+  the REAL HUD, plus the armour before and after phase two. Every one of those is
+  invisible to an assertion: the first version's armour photographed bright red.
+
 ## Multiplayer
 
 - Boot flow: main scene is `scenes/ui/main_menu.tscn`. Players do not run
@@ -2072,6 +2167,9 @@ is one line for the same reason: it is third party and unmodified.
 
 - `scripts/entities/player.gd` — the player pawn: movement, swings, guard, and every request the client sends.
 - `scripts/entities/enemy.gd` — bandit AI, its fight states, and the tutorial's "hold" levels.
+- `scripts/entities/boss.gd` — the juggernaut: its move table, its two phases, and its poise.
+- `scripts/entities/boss_visual.gd` — the boss's body: the "Juggernaut" voxel character, fully clipped.
+- `scripts/entities/fighter_audio.gd` — every noise a fighter makes, and the shape of its voice.
 - `scripts/entities/humanoid_visual.gd` — the shared rig, the clip table, and the tick that picks a pose.
 - `scripts/entities/player_visual.gd` — the player's body: the "Player" voxel character with the full clip list.
 - `scripts/entities/rouge_visual.gd` — Rouge, the enemies' model and the skeleton every voxel NPC borrows.
@@ -2096,6 +2194,7 @@ is one line for the same reason: it is third party and unmodified.
 
 - `scripts/ui/theme/ui_theme.gd` — the palette and panel builders every screen is made from.
 - `scripts/ui/hud.gd` — the code-built HUD, and the host of every drawn overlay.
+- `scripts/ui/boss/boss_bar.gd` — the boss's health across the top of the screen, notched at its phase.
 - `scripts/ui/inventory_ui.gd` — the bag, the hotbar, the equipment cross, and drag and drop.
 - `scripts/ui/items/item_prompt.gd` — the bottom-right "use / special" hint for whatever is in hand.
 - `scripts/ui/scoreboard.gd` — the hold-P scoreboard, read from the server registry.
@@ -2116,6 +2215,8 @@ is one line for the same reason: it is third party and unmodified.
 - `scripts/world/spawn_point.gd` — marks where players spawn and respawn.
 - `scripts/world/bandit_spawner.gd` — refills a bandit camp, keeping them out of each other and off roofs.
 - `scripts/world/gold_drop.gd` — a dropped pile; the server decides who gets it.
+- `scripts/world/item_drop.gd` — an item lying on the floor, drawn from its own art.
+- `scripts/world/boss/boss_spawner.gd` — puts the one boss in the dungeon, and puts it back.
 - `scripts/world/dungeon/dungeon_walls.gd` — generates a dungeon's stone shell from its floor and door markers.
 - `scripts/world/quest/quest_data.gd` — every quest: name, target, giver, and where it is handed in.
 - `scripts/world/quest/quest_anchor.gd` — a marker that IS a quest's destination.
@@ -2130,6 +2231,7 @@ is one line for the same reason: it is third party and unmodified.
 - `scenes/world.tscn` — the real island: the game's main scene.
 - `scenes/player.tscn` — the player pawn, camera rig and all.
 - `scenes/enemy.tscn` — a bandit.
+- `scenes/boss.tscn` — the juggernaut, tuned in the inspector like any other fighter.
 - `scenes/main.tscn` — the old test arena.
 - `scenes/starterDungeon.tscn` — the dungeon floor and door markers; its walls are generated.
 - `scenes/ui/main_menu.tscn` — the boot scene.
@@ -2164,6 +2266,7 @@ is one line for the same reason: it is third party and unmodified.
 
 - `tests/helpers/test_host.gd` — the shared boot for any test needing a world: hosts and waits for the pawn.
 - `tests/test_combat.gd` — swings, the guard, combos and the level ladders.
+- `tests/test_boss.gd` — the juggernaut: its moves, its openings, its phases and its drop.
 - `tests/test_hotbar.gd` — auto-placement, selection, swaps, use, and the drag rules.
 - `tests/test_shop.gd` — buying and selling, and who moves the coins.
 - `tests/test_quest.gd` — the marker maths and the server's quest state.
@@ -2188,16 +2291,18 @@ is one line for the same reason: it is third party and unmodified.
 - `tests/preview_sword_swings.gd` — each sword swing going in, at the strike, and out.
 - `tests/preview_held_item.gd` — a weapon in the player's hand, for fitting the grip.
 - `tests/preview_npc_armor.gd` — a villager bare, suited, and in a recoloured suit.
+- `tests/preview_boss.gd` — the boss beside a villager, each telegraph, and both phases.
 - `tests/preview_item_icons.gd` — every item icon on one sheet, with a colour-wash report.
 - `tests/preview_voice.gd` — the voice HUD in each of its states.
 - `tests/*.tscn` — one scene per test or preview above; each just hosts its script.
 
 ### Data resources and assets
 
-- `Assets/Data/Npcs/*.tres` — the built characters (player, villager, king, kingnpc, knight).
+- `Assets/Data/Npcs/*.tres` — the built characters (player, villager, king, kingnpc, knight, juggernaut).
 - `Assets/Data/Armor/*.tres` — the three suits: flimsy, copper, iron.
 - `Assets/Models/Entity/Humanoid/bonemap_*.tres` — retarget maps: Manny, Mixamo, MotusMan.
 - `Assets/Audio/SFX/**/*.tres` — the random-pick sound sets (grunts, impacts, wooshes, deaths).
+- `Assets/Audio/SFX/{Grunts,Deaths,Footsteps}/Boss/` — the juggernaut's pain, its fall, and its feet.
 - `Assets/Animations/Humanoid/` — every clip, grouped by purpose (Movement, Combat, Sword, Cutscene).
 - `Assets/Models/Entity/Humanoid/` — Rouge, and the voxel NPC parts and armor libraries.
 - `Assets/Models/World/` — islands, buildings, dungeon prefabs.

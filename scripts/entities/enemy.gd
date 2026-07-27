@@ -107,6 +107,11 @@ extends CharacterBody3D
 enum CombatState { CHASE, ATTACK, RETREAT, BLOCK }
 
 var puppet := false   # true on clients: no AI, just replicated state
+## WHICH SCENE a client rebuilds this fighter from — a key of Net.ENEMY_SCENES,
+## and "" for the ordinary bandit. The server picks it when it spawns one; a
+## client is told it with the spawn, because a bandit and a boss are not the same
+## body and the puppet has to be the right one.
+var enemy_kind := ""
 ## 0 = a bandit of the shared world. Anything else is a tutorial bandit
 ## belonging to that peer's private copy of the city: it only ever fights that
 ## player, and only that player is told it exists (see Net).
@@ -197,8 +202,7 @@ func _ready() -> void:
 	health = max_health
 	add_to_group("enemies")
 	puppet = not multiplayer.is_server()
-	_sfx = FighterAudio.new(self, {"grunt": hurt_grunts, "impact": punch_impacts,
-			"block": block_impacts, "death": death_sounds, "woosh": swing_wooshes})
+	_sfx = FighterAudio.new(self, _audio_streams(), _audio_opts())
 	if puppet:
 		collision_layer = 0
 		collision_mask = 0
@@ -276,7 +280,9 @@ func _physics_process(delta: float) -> void:
 	_face_player(delta)
 	_reflex_check(dist)
 
-	if attacking:
+	if _tick_moves(delta, dist):
+		pass # a fighter with moves of its own has taken this frame (see Boss)
+	elif attacking:
 		_tick_attack(delta)
 		velocity.x = move_toward(velocity.x, 0.0, 20.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, 20.0 * delta)
@@ -351,6 +357,51 @@ func _acquire_player() -> void:
 			best = p
 	player = best
 
+## Every noise this fighter makes, by the name FighterAudio knows it as. An
+## ordinary bandit has the five every character has; a boss adds a shout and
+## footsteps to the same table rather than building a second audio rig.
+func _audio_streams() -> Dictionary:
+	return {"grunt": hurt_grunts, "impact": punch_impacts, "block": block_impacts,
+			"death": death_sounds, "woosh": swing_wooshes}
+
+## The shape of this character's VOICE — pitch and whether it carries a room with
+## it. Ordinary size, ordinary room.
+func _audio_opts() -> Dictionary:
+	return {}
+
+# ---------------- hooks a bigger fighter overrides ----------------
+#
+# Three small virtuals rather than a second copy of this file. The ordinary
+# bandit answers all of them with "nothing special", so they cost a comparison
+# and a subclass gets the whole state machine, the replication and the damage
+# path for free (see Boss).
+
+## A frame taken by a move of this fighter's own. True means the state machine
+## above stands down for it; the shared tail (gravity, separation, movement,
+## animation) still runs either way.
+func _tick_moves(_delta: float, _dist: float) -> bool:
+	return false
+
+## Health just changed inside take_damage, before anything is broadcast — where
+## a phase threshold is noticed.
+func _on_health_changed() -> void:
+	pass
+
+## Is this fighter helpless RIGHT NOW? The HUD's lock-on ring asks this rather
+## than reading a field, so what the amber ring promises is always what
+## `take_damage` actually does — a boss is also open through the recovery of a
+## move, which is not a stagger.
+func is_open() -> bool:
+	return stagger_left > 0.0
+
+## How this fighter's wind-up is DRAWN: the colour of the star, how much it
+## grows, how far OVER ITS HEAD it floats, and the radius of a ground ring for an
+## attack with a footprint (0 = none). Gold and plain for everything ordinary —
+## see hud.gd. The height is asked for rather than assumed because the cast is
+## not one size: 2.1m clears a bandit and sits on a boss's chest.
+func telegraph_style() -> Dictionary:
+	return {"color": Color(1.0, 0.85, 0.25), "scale": 1.0, "ring": 0.0, "height": 2.1}
+
 # ---------------- puppet (client) side ----------------
 
 func _puppet_tick(delta: float) -> void:
@@ -362,9 +413,14 @@ func _puppet_tick(delta: float) -> void:
 		body_visual.rotation.y = lerp_angle(body_visual.rotation.y, net_yaw, minf(delta * 12.0, 1.0))
 	if dead:
 		return
+	# footsteps run on EVERY peer, off the replicated speed: they are the sound of
+	# something walking about, and only the server ever runs _animate
+	_sfx.tick_steps(net_ratio)
 	body_visual.tick(delta, net_anim, net_anim_t, net_ratio)
 
-## What the server replicates about this enemy every tick.
+## What the server replicates about this enemy every tick. A boss APPENDS two
+## more of its own (which move is running, which phase it is in); the reader
+## fills those in for a short row, so a bandit pays nothing for them.
 func net_visual_state() -> Array:
 	return [String(name), global_position, body_visual.rotation.y,
 			last_anim, last_anim_t, last_ratio,
@@ -373,7 +429,8 @@ func net_visual_state() -> Array:
 
 func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 		ratio: float, windup: bool, windup_prog: float,
-		is_attacking: bool, atk_duration: float, guarding := false) -> void:
+		is_attacking: bool, atk_duration: float, guarding := false,
+		_move := "", _phase := 1) -> void:
 	net_pos = pos
 	net_yaw = yaw
 	net_anim = anim
@@ -786,6 +843,7 @@ func take_damage(amount: float, knockback: Vector3, attacker := 0,
 		if Vector2(knockback.x, knockback.z).length() >= flinch_knockback:
 			server_stagger(flinch_time)
 	health -= amount
+	_on_health_changed() # where a boss notices it has crossed into phase two
 	velocity += knockback * (1.0 - knockback_resistance)
 	Net.server_broadcast_enemy_damage(String(name), health, result, attacker)
 	_damage_fx(result)
@@ -885,4 +943,5 @@ func _animate(delta: float) -> void:
 	last_anim = anim
 	last_anim_t = t
 	last_ratio = ratio
+	_sfx.tick_steps(ratio)
 	body_visual.tick(delta, anim, t, ratio)
