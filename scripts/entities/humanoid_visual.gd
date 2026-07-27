@@ -61,28 +61,38 @@ const CLIPS := {
 	"sword_idle": {"path": ANIM_DIR + "Sword/Idle/Sword Idle.fbx", "speed": 1.0, "loop": true},
 	"sword_walk": {"path": ANIM_DIR + "Sword/Walking/Sword Walk.fbx", "speed": 1.0, "loop": true},
 	"sword_run": {"path": ANIM_DIR + "Sword/Running/Sword Run.fbx", "speed": 1.0, "loop": true},
-	# --- swinging it (three cuts from Awesome Sword Animations V4 on the UE
-	# mannequin, one from the Mocap Online TC pack) ---
+	# --- swinging it (Mocap Online TC pack, the same one the idle and the walk
+	# come from) ---
 	# FOUR SLASHES, one per swing, and PLAIN ones: a blade lifted, swung across
-	# the fighter and brought to rest. Nothing here spins, vaults or flourishes,
-	# and picking them was the whole job — both packs ship choreographed COMBOS,
-	# several strikes to a take, danced by somebody turning through a full circle
-	# as they go.
+	# the fighter and brought to rest. Nothing here spins, vaults or flourishes.
+	#
+	# ALL FOUR COME OUT OF ONE TAKE, and that is not laziness — it is the only
+	# take in the project whose grip can be trusted. This FBX ships the sword it
+	# was performed with (`TonySword_01` on a prop bone in the hand), which is
+	# what ItemDb.HOLD_DEFAULTS is fitted to; the other pack ships none, and a
+	# retarget does not preserve the wrist's ROLL between two source rigs. So a
+	# blade lined up with this pack sits a quarter turn wrong in that one's
+	# swings, and the sword sails through the cut edge-up. Its swings looked
+	# right in every still and wrong the moment the blade was in shot.
+	#
+	# So: a new sword clip wants to come from a take that carries its own sword,
+	# or the grip has to be re-fitted against whatever pack it does come from
+	# (tests/diag_grip_fit.tscn), and then every OTHER clip re-checked against
+	# the new grip.
 	#
 	# EVERY ONE IS UNSPUN — see HumanoidClips.unspin. Without it a strike cut out
 	# of the middle of a combo plays with the fighter's back to whatever they are
 	# swinging at, which is what these used to do.
 	#
 	# THE UNSPIN IS ALSO WHY A SLICE CANNOT BE PICKED BY THE HAND'S SPEED. Where
-	# the strike IS the spin — combo 6's, the fastest hand in the pack by every
-	# other measure — taking the yaw out takes the cut out with it, and what is
-	# left on screen is a fighter waving a sword over their head. Nor by the
-	# hand's TRAVEL: a hand that slides without turning carries the blade
-	# broadside, so the sword goes past the target flat. What a slash needs is
-	# both, the hand crossing the body AND the grip rotating through it, measured
-	# after the yaw is gone. tests/diag_sword.tscn scores every window of every
-	# take on exactly that, and prints where the strike lands inside the window —
-	# because a window that ENDS on the strike is all wind-up and no cut.
+	# a strike IS the spin — and the other pack's fastest hand is exactly that —
+	# taking the yaw out takes the cut out with it, and what is left on screen is
+	# a fighter waving a sword over their head. Nor by the hand's TRAVEL: a hand
+	# that slides without turning carries the blade broadside. What a slash needs
+	# is both, the hand crossing the body AND the grip rotating through it,
+	# measured after the yaw is gone. tests/diag_sword.tscn scores every window
+	# of every take on exactly that, and prints where the strike lands inside the
+	# window — because a window that ENDS on the strike is all wind-up and no cut.
 	#
 	# Each slice is cut WIDE and the strike sits in the MIDDLE of it: blade
 	# lifting, the cut, the follow-through. Trimmed tight to the strike (the
@@ -92,23 +102,17 @@ const CLIPS := {
 	# Judge them with tests/preview_sword_swings.tscn, which lays each one out as
 	# a strip of eight frames. A single still cannot tell a slash from a wave.
 	#
-	# The V4 clips are the IN-PLACE (_IP) variants, not the root-motion ones: the
-	# game drives its own movement, and a root track would fight the lunge. The
-	# Mocap Online take is the deep-crouch one, which is why only its overhead
-	# chop is used and it is the HEAVY — a fighter dropping their weight into a
-	# two-handed cut is what that swing is supposed to be.
-	#
 	# "speed" only matters if something plays one outside an attack:
 	# on_attack_started always stretches it onto the punch's own window.
-	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/SwordCombo5.fbx", "speed": 1.55,
+	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
 			"loop": false, "unspin": true,
-			"slice": [1.33, 1.83]},                  # down across, ending point-first
-	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/SwordCombo3.fbx", "speed": 1.55,
+			"slice": [0.50, 1.00]},                  # down across, left to right
+	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
 			"loop": false, "unspin": true,
-			"slice": [1.20, 1.60]},                  # flat, back the other way
-	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/SwordCombo3.fbx", "speed": 1.55,
+			"slice": [1.30, 1.80]},                  # back the other way
+	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
 			"loop": false, "unspin": true,
-			"slice": [2.00, 2.45]},                  # the ender: the longest cut of the three
+			"slice": [2.30, 2.80]},                  # the ender
 	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.35,
 			"loop": false, "unspin": true,
 			"slice": [3.73, 4.13]},                  # overhead, straight down
