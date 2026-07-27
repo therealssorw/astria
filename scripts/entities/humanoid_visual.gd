@@ -99,6 +99,17 @@ const CLIPS := {
 	# first pass, by the peak of the arm's angular speed) a clip starts and ends
 	# mid-motion, and the body snaps into a pose instead of swinging.
 	#
+	# AND THE BLADE HAS TO MISS THE FIGHTER. Two of this take's five strikes
+	# bring the hand across the chest, which on the actor is a blade passing in
+	# FRONT of it — his arms are long and he is narrow. Ours are voxel people,
+	# wide with short arms, so the same motion drags a metre of sword straight
+	# through the torso. Neither is fixable by shortening the blade (the clash is
+	# at the grip, not the point), so those strikes are simply not used, and the
+	# heavy is the opening cut again over a longer wind-up rather than the
+	# overhead chop that reads best and clips worst.
+	# tests/diag_blade_clip.tscn measures it: the blade against the body, every
+	# frame of every clip, and it wants to stay positive.
+	#
 	# Judge them with tests/preview_sword_swings.tscn, which lays each one out as
 	# a strip of eight frames. A single still cannot tell a slash from a wave.
 	#
@@ -106,16 +117,16 @@ const CLIPS := {
 	# on_attack_started always stretches it onto the punch's own window.
 	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
 			"loop": false, "unspin": true,
-			"slice": [0.50, 1.00]},                  # down across, left to right
+			"slice": [0.50, 1.00]},                  # across, right to left
 	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
 			"loop": false, "unspin": true,
-			"slice": [1.30, 1.80]},                  # back the other way
+			"slice": [2.30, 2.80]},                  # back the other way
 	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.55,
 			"loop": false, "unspin": true,
-			"slice": [2.30, 2.80]},                  # the ender
+			"slice": [4.30, 4.80]},                  # the ender, coming down
 	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/Sword Combo.fbx", "speed": 1.35,
 			"loop": false, "unspin": true,
-			"slice": [3.73, 4.13]},                  # overhead, straight down
+			"slice": [0.30, 1.05]},                  # the opener again, with the whole wind-up
 }
 ## Clip swaps applied while a sword is in hand. Anything not listed keeps its
 ## bare-handed clip, so blocking, sliding and jumping are unchanged. Each swing
