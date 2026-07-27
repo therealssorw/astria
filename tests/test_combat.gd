@@ -106,7 +106,7 @@ func _test_clips() -> void:
 		ok(a != null and a.length > 0.1, "guard-move clip " + key,
 				"len=%.2f" % (a.length if a else -1.0))
 	# every anim string a pawn can report has to map to a real clip
-	for anim in Player.ANIM_WHITELIST:
+	for anim in PlayerNetState.ANIM_WHITELIST:
 		v.tick(0.016, anim, 0.0, 0.8)
 		ok(v.anim_player.current_animation != "", "tick(%s)" % anim,
 				"-> %s @%.2f" % [v.anim_player.current_animation, v.anim_player.speed_scale])
@@ -336,16 +336,18 @@ func _test_stance() -> void:
 	b.global_position = Vector3(0, 0, 4.0)
 
 	_face(a, b.global_position)
-	ok(a._locomotion_anim(Vector3(0, 0, 3.0)) == "run", "toward the target -> run")
-	ok(a._locomotion_anim(Vector3(0, 0, -3.0)) == "walk_back", "away -> backpedal")
-	ok(a._locomotion_anim(Vector3(3.0, 0, 0.2)) == "strafe_l"
-			and a._locomotion_anim(Vector3(-3.0, 0, 0.2)) == "strafe_r",
+	# the pose table is pure now (PlayerAnim), so it is asked directly with the
+	# same facing and stance the pawn would hand it
+	var step := func(v: Vector3, guard: bool) -> String:
+		return PlayerAnim.locomotion(v, a._body_forward(), a._in_stance(), guard)
+	ok(step.call(Vector3(0, 0, 3.0), false) == "run", "toward the target -> run")
+	ok(step.call(Vector3(0, 0, -3.0), false) == "walk_back", "away -> backpedal")
+	ok(step.call(Vector3(3.0, 0, 0.2), false) == "strafe_l"
+			and step.call(Vector3(-3.0, 0, 0.2), false) == "strafe_r",
 			"sideways -> matching strafe")
-	a.blocking = true
-	ok(a._locomotion_anim(Vector3(0, 0, -3.0)) == "block_back"
-			and a._locomotion_anim(Vector3(3.0, 0, 0)) == "block_l",
+	ok(step.call(Vector3(0, 0, -3.0), true) == "block_back"
+			and step.call(Vector3(3.0, 0, 0), true) == "block_l",
 			"guarding keeps the fists up while moving")
-	a.blocking = false
 
 	var fwd: float = a._directional_mult(Vector3(0, 0, 1))
 	var side: float = a._directional_mult(Vector3(1, 0, 0))

@@ -167,13 +167,6 @@ var is_local := true
 enum Guard { HIT = 0, BLOCKED = 1, PARRIED = 2, BROKEN = 3 }
 
 const NET_SEND_INTERVAL := 1.0 / 20.0
-const ANIM_WHITELIST := ["idle", "run", "air", "block", "slide", "dive",
-		"strafe_l", "strafe_r", "walk_back",
-		"block_fwd", "block_back", "block_l", "block_r",
-		"attack_heavy", "attack_light_0", "attack_light_1", "attack_light_2"]
-# movement validation: fastest legit burst (slide jump 13 + knockback 7.5)
-const MAX_H_SPEED := 26.0
-const MAX_UP_SPEED := 14.0
 
 var health: float
 var stamina: float
@@ -213,7 +206,6 @@ var cached_press_heavy := false
 var fx_hitmarker_time := 0.0
 var fx_parry_time := 0.0
 var fx_break_time := 0.0
-var _shake := 0.0
 var _stam_hold := 0.0 # regen pause after spending stamina
 var _hurt_hold := 0.0 # SERVER: heal pause after taking damage
 
@@ -259,11 +251,11 @@ var _srv_pending_aim := 0.0 # yaw the queued swing was aimed along
 var _srv_combo_deadline := -10.0
 
 var _time := 0.0
-var _grunt_player: AudioStreamPlayer3D
-var _impact_player: AudioStreamPlayer3D
-var _block_player: AudioStreamPlayer3D
-var _death_player: AudioStreamPlayer3D
-var _woosh_player: AudioStreamPlayer3D
+## Every noise this fighter makes (see PlayerAudio).
+var _sfx: PlayerAudio
+## The camera rig and the lock-on that steers it (see PlayerCamera). Only the
+## local pawn has one — a puppet's rig is freed in _ready.
+var _view: PlayerCamera
 
 func _ready() -> void:
 	health = max_health
@@ -274,6 +266,14 @@ func _ready() -> void:
 		add_to_group("local_player")
 		camera.current = true
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_view = PlayerCamera.new(cam_rig, spring_arm, camera)
+		# the lock-on tuning stays exported on the pawn, so it is still edited
+		# where every other gameplay number in this file is
+		_view.pick_cone_deg = lockon_cone_deg
+		_view.pick_range = lockon_range
+		_view.break_range = lockon_break_range
+		_view.track_speed = lock_camera_speed
+		_view.view_cone_deg = lock_view_cone_deg
 	else:
 		# puppets don't collide or self-simulate — the owner + server do
 		collision_layer = 0
@@ -284,31 +284,8 @@ func _ready() -> void:
 		spring_arm = null
 		camera = null
 		_make_nametag()
-	if hurt_grunts:
-		_grunt_player = AudioStreamPlayer3D.new()
-		_grunt_player.stream = hurt_grunts
-		_grunt_player.position.y = 1.4
-		add_child(_grunt_player)
-	if punch_impacts:
-		_impact_player = AudioStreamPlayer3D.new()
-		_impact_player.stream = punch_impacts
-		_impact_player.position.y = 1.2
-		add_child(_impact_player)
-	if block_impacts:
-		_block_player = AudioStreamPlayer3D.new()
-		_block_player.stream = block_impacts
-		_block_player.position.y = 1.2
-		add_child(_block_player)
-	if death_sounds:
-		_death_player = AudioStreamPlayer3D.new()
-		_death_player.stream = death_sounds
-		_death_player.position.y = 1.2
-		add_child(_death_player)
-	if swing_wooshes:
-		_woosh_player = AudioStreamPlayer3D.new()
-		_woosh_player.stream = swing_wooshes
-		_woosh_player.position.y = 1.2
-		add_child(_woosh_player)
+	_sfx = PlayerAudio.new(self, {"grunt": hurt_grunts, "impact": punch_impacts,
+			"block": block_impacts, "death": death_sounds, "woosh": swing_wooshes})
 	# what this pawn is holding rides along with the public registry, so every
 	# peer draws the same thing in its hand
 	Net.player_list_changed.connect(_refresh_held_item)
@@ -352,11 +329,9 @@ func _make_nametag() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		if not _lock_in_view(): # tracking camera owns yaw; pitch stays free
-			cam_rig.rotation.y -= event.relative.x * mouse_sensitivity
-		spring_arm.rotation.x = clampf(spring_arm.rotation.x - event.relative.y * mouse_sensitivity, deg_to_rad(-75), deg_to_rad(60))
-		if event.relative.length_squared() > 0.5:
-			look_input_time = _time
+		_view.look_mouse((event as InputEventMouseMotion).relative, mouse_sensitivity,
+				_lock_in_view(), _time)
+		look_input_time = _view.look_input_time
 	elif event.is_action_pressed("ui_cancel"):
 		# an open panel owns Esc — it closes with it, and the pointer comes back
 		# on its own. The pawn only uses Esc to let go when nothing is up, or a
@@ -489,17 +464,11 @@ func _tick_local_fx(delta: float) -> void:
 	fx_hitmarker_time = maxf(0.0, fx_hitmarker_time - delta)
 	fx_parry_time = maxf(0.0, fx_parry_time - delta)
 	fx_break_time = maxf(0.0, fx_break_time - delta)
-	if _shake <= 0.0 or camera == null:
-		return
-	_shake = maxf(0.0, _shake - delta * 3.2)
-	# offsets, not rotation: a shake must never fight the player's aim
-	var s := _shake * _shake
-	camera.h_offset = sin(_time * 61.0) * 0.07 * s
-	camera.v_offset = cos(_time * 47.0) * 0.05 * s
+	_view.tick_shake(delta, _time)
 
 func _add_shake(amount: float) -> void:
-	if is_local:
-		_shake = minf(_shake + amount, 1.0)
+	if is_local and _view:
+		_view.add_shake(amount)
 
 func _net_send(delta: float) -> void:
 	_net_send_accum += delta
@@ -590,21 +559,16 @@ func server_facing() -> Vector3:
 ## SERVER: apply + validate an owner's state report. False = rejected.
 func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 		ratio: float, blocking_flag: bool, sprint_flag := false) -> bool:
-	if not pos.is_finite() or not is_finite(yaw):
+	if not is_finite(yaw):
 		return false
 	var prev := net_pos if _net_has_state else global_position
-	var dt := 0.1
-	if _last_report_time >= 0.0:
-		dt = clampf(_time - _last_report_time, 1.0 / 60.0, 0.5)
+	var dt := PlayerNetState.report_dt(_time, _last_report_time)
 	_last_report_time = _time
-	var dv := pos - prev
-	if Vector2(dv.x, dv.z).length() > MAX_H_SPEED * dt + 0.4:
+	if not PlayerNetState.plausible_move(prev, pos, dt):
 		return false
-	if dv.y > MAX_UP_SPEED * dt + 0.5:
-		return false # falling (negative) is unrestricted
 	net_pos = pos
 	net_yaw = yaw
-	net_anim = anim if ANIM_WHITELIST.has(anim) else "idle"
+	net_anim = PlayerNetState.clip_name(anim)
 	net_anim_t = clampf(anim_t, 0.0, 10.0)
 	net_ratio = clampf(ratio, 0.0, 3.0)
 	# the guard going up is what the parry window is measured from; a report
@@ -616,7 +580,7 @@ func net_report_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	# than a walk would — the drain below is charged off the server's own
 	# measurement, never off the client saying "I'm running"
 	net_sprinting = sprint_flag \
-			and Vector2(dv.x, dv.z).length() > walk_speed * dt * 0.9
+			and PlayerNetState.plausible_sprint(prev, pos, dt, walk_speed)
 	_net_has_state = true
 	return true
 
@@ -626,7 +590,7 @@ func net_apply_state(pos: Vector3, yaw: float, anim: String, anim_t: float,
 	net_pos = pos
 	net_yaw = yaw
 	net_sprinting = sprint_flag
-	net_anim = anim if ANIM_WHITELIST.has(anim) else "idle"
+	net_anim = PlayerNetState.clip_name(anim)
 	net_anim_t = anim_t
 	net_ratio = ratio
 	net_blocking = blocking_flag
@@ -767,8 +731,8 @@ func _stance_forward() -> Vector3:
 		to_t.y = 0
 		if to_t.length_squared() > 0.001:
 			return to_t.normalized()
-	if camera:
-		var cam_fwd := -camera.global_transform.basis.z
+	if _view:
+		var cam_fwd := _view.forward()
 		cam_fwd.y = 0
 		if cam_fwd.length_squared() > 0.001:
 			return cam_fwd.normalized()
@@ -896,8 +860,7 @@ func _start_swing(heavy: bool, section: int) -> void:
 	# chaining itself now that a chain starts well before the clip ends
 	cached_press_time = -10.0
 	cached_press_heavy = false
-	if _woosh_player:
-		_woosh_player.play()
+	_sfx.play_swing()
 	if body_visual.has_method("on_attack_started"):
 		body_visual.on_attack_started(heavy, section)
 	# Facing: the locked target if there is one, otherwise straight down the
@@ -908,7 +871,7 @@ func _start_swing(heavy: bool, section: int) -> void:
 	if lock_target:
 		attack_face_dir = lock_target.global_position - global_position
 	else:
-		attack_face_dir = -camera.global_transform.basis.z
+		attack_face_dir = _view.forward()
 	attack_face_dir.y = 0
 	if attack_face_dir.length_squared() > 0.001:
 		attack_face_dir = attack_face_dir.normalized()
@@ -1012,8 +975,7 @@ func _srv_try_start(heavy: bool, lock_path: NodePath, aim_yaw: float) -> void:
 
 ## Cosmetic swing on a puppet (the server already validated it).
 func puppet_play_swing(heavy: bool, section: int) -> void:
-	if _woosh_player:
-		_woosh_player.play()
+	_sfx.play_swing()
 	if body_visual.has_method("on_attack_started"):
 		body_visual.on_attack_started(heavy, clampi(section, 0, 2))
 
@@ -1159,10 +1121,8 @@ func _update_lockon(_delta: float) -> void:
 			lock_target = null
 		else:
 			lock_target = _pick_lockon_target()
-	if lock_target:
-		if not is_instance_valid(lock_target) or lock_target.get("dead") \
-				or global_position.distance_to(lock_target.global_position) > lockon_break_range:
-			lock_target = null
+	if lock_target and _view.lock_lost(lock_target, global_position):
+		lock_target = null
 
 ## Enemies plus every other living player (PvP lock-on).
 func _lockon_candidates() -> Array:
@@ -1175,61 +1135,19 @@ func _lockon_candidates() -> Array:
 	return out
 
 func _pick_lockon_target() -> Node3D:
-	var cam_fwd := -camera.global_transform.basis.z
-	var cone_cos := cos(deg_to_rad(lockon_cone_deg))
-	var best: Node3D = null
-	var best_dist := INF
-	var nearest: Node3D = null
-	var nearest_dist := INF
-	for e: Node3D in _lockon_candidates():
-		if not is_instance_valid(e) or e.get("dead"):
-			continue
-		var to_e: Vector3 = e.global_position - camera.global_position
-		var dist := global_position.distance_to(e.global_position)
-		if dist < nearest_dist:
-			nearest_dist = dist
-			nearest = e
-		if dist <= lockon_range and cam_fwd.dot(to_e.normalized()) >= cone_cos and dist < best_dist:
-			best_dist = dist
-			best = e
-	return best if best else nearest
+	return _view.pick(_lockon_candidates(), global_position)
 
 func _gamepad_look(delta: float) -> void:
-	var x := Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
-	var y := Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
-	if absf(x) > 0.15 or absf(y) > 0.15:
-		if not _lock_in_view(): # tracking camera owns yaw; pitch stays free
-			cam_rig.rotation.y -= x * 2.5 * delta
-		spring_arm.rotation.x = clampf(spring_arm.rotation.x - y * 1.8 * delta, deg_to_rad(-75), deg_to_rad(60))
-		look_input_time = _time
+	_view.look_stick(delta, _lock_in_view(), _time)
+	look_input_time = _view.look_input_time
 
 ## True when the locked target is within the tracking cone of the camera view.
 func _lock_in_view() -> bool:
-	if not lock_target:
-		return false
-	var to_t := lock_target.global_position - camera.global_position
-	to_t.y = 0
-	if to_t.length_squared() < 0.01:
-		return true
-	var fwd := -camera.global_transform.basis.z
-	fwd.y = 0
-	if fwd.length_squared() < 0.001:
-		return true
-	return fwd.normalized().angle_to(to_t.normalized()) <= deg_to_rad(lock_view_cone_deg)
+	return lock_target != null and _view.tracking(lock_target)
 
 func _camera_assist(delta: float) -> void:
-	# hard lock: while a target is locked AND in view the camera owns yaw and
-	# keeps the enemy framed; the body stays fully player-driven. A target
-	# behind the view must be brought back manually before tracking resumes.
-	if not _lock_in_view():
-		return
-	var to_t := lock_target.global_position - camera.global_position
-	to_t.y = 0
-	if to_t.length_squared() < 0.01:
-		return
-	var target_yaw := atan2(-to_t.x, -to_t.z)
-	var weight := 1.0 - exp(-lock_camera_speed * delta)
-	cam_rig.rotation.y = lerp_angle(cam_rig.rotation.y, target_yaw, weight)
+	if lock_target:
+		_view.track(lock_target, delta)
 
 # ---------------- stamina / health ----------------
 
@@ -1345,23 +1263,12 @@ func net_stagger(duration: float) -> void:
 	body_visual.play_stagger(duration)
 	_add_shake(0.4)
 
-## A hit the guard ate thuds off the block; only one that got through sounds
-## like flesh. A parry is the same thud pitched up — it IS a block, just a
-## perfect one, and the gold flash and banner carry the rest of the read.
-func _play_impact_sound(result: int) -> void:
-	if result == Guard.BLOCKED or result == Guard.PARRIED:
-		if _block_player:
-			_block_player.pitch_scale = 1.25 if result == Guard.PARRIED else 1.0
-			_block_player.play()
-	elif _impact_player:
-		_impact_player.play()
-
 ## Damage feedback on every peer; the owner also takes the knockback.
 func net_apply_damage(new_health: float, result: int, knockback: Vector3,
 		new_stamina: float, attacker := 0) -> void:
 	health = new_health
 	stamina = new_stamina # the guard meter is server-owned, no drift allowed
-	_play_impact_sound(result)
+	_sfx.play_impact(result)
 	match result:
 		Guard.PARRIED:
 			body_visual.flash(Color(1.0, 0.95, 0.6), 0.25)
@@ -1379,8 +1286,7 @@ func net_apply_damage(new_health: float, result: int, knockback: Vector3,
 			if is_local:
 				fx_break_time = 0.9
 			_add_shake(0.6)
-			if _grunt_player and health > 0.0:
-				_grunt_player.play()
+			_sfx.play_grunt(health > 0.0)
 			if is_local and not dead:
 				velocity += knockback * 0.5
 		_:
@@ -1388,8 +1294,7 @@ func net_apply_damage(new_health: float, result: int, knockback: Vector3,
 			body_visual.hit_react(0.3)
 			body_visual.hitstop(0.06)
 			_add_shake(0.5)
-			if _grunt_player and health > 0.0:
-				_grunt_player.play() # lethal hits voice the death sound instead
+			_sfx.play_grunt(health > 0.0) # a lethal hit voices the death sound
 			if is_local and not dead:
 				velocity += knockback * 0.5
 	if attacker != 0 and attacker == multiplayer.get_unique_id():
@@ -1435,8 +1340,7 @@ func net_die() -> void:
 	collision_layer = 0
 	if is_local:
 		_restore_capsule() # dying mid-slide must not leave the short capsule
-	if _death_player:
-		_death_player.play()
+	_sfx.play_death()
 	body_visual.play_death()
 
 func _restore_capsule() -> void:
@@ -1479,13 +1383,10 @@ func net_respawn(pos: Vector3) -> void:
 	_hurt_hold = 0.0
 	if is_local:
 		_restore_capsule()
-		_shake = 0.0
+		_view.clear_shake()
 		fx_hitmarker_time = 0.0
 		fx_parry_time = 0.0
 		fx_break_time = 0.0
-		if camera:
-			camera.h_offset = 0.0
-			camera.v_offset = 0.0
 	_srv_combo_deadline = -10.0
 	net_pos = pos
 	net_anim = "idle"
@@ -1498,50 +1399,17 @@ func net_respawn(pos: Vector3) -> void:
 
 # ---------------- animation ----------------
 
-## Directional locomotion: squared up, the legs pick a sidestep or a backpedal
-## from where we are actually going relative to the guard — and keep the fists
-## up while blocking. Free-running just plays the run cycle.
-func _locomotion_anim(h_vel: Vector3) -> String:
-	if not _in_stance():
-		return "run"
-	var fwd := _body_forward()
-	fwd.y = 0
-	if fwd.length_squared() < 0.001:
-		return "run"
-	fwd = fwd.normalized()
-	var ahead := h_vel.dot(fwd)
-	var to_left := h_vel.dot(Vector3.UP.cross(fwd))
-	var lateral := absf(to_left) > absf(ahead)
-	if blocking:
-		if lateral:
-			return "block_l" if to_left > 0.0 else "block_r"
-		return "block_back" if ahead < 0.0 else "block_fwd"
-	if lateral:
-		return "strafe_l" if to_left > 0.0 else "strafe_r"
-	return "walk_back" if ahead < 0.0 else "run"
-
+## What pose to show, and therefore what to replicate. The CHOICE is a pure
+## table in PlayerAnim; this is only the state it reads and the ticking.
 func _animate(delta: float) -> void:
 	var h_vel := Vector3(velocity.x, 0, velocity.z)
-	var h_speed := h_vel.length()
-	var ratio := h_speed / walk_speed
-	var anim := "idle"
-	var t := 0.0
-	if attacking:
-		anim = "attack_heavy" if attack_is_heavy else "attack_light_%d" % combo_index
-		t = attack_timer / attack_duration
-	elif sliding:
-		anim = "slide"
-	elif diving:
-		anim = "dive"
-	elif not is_on_floor():
-		anim = "air"
-	elif stagger_time > 0.0:
-		anim = "idle" # the visual holds its own recoil pose over this
-	elif h_speed > 0.3:
-		anim = _locomotion_anim(h_vel)
-	elif blocking:
-		anim = "block"
-	last_anim = anim
-	last_anim_t = t
-	last_ratio = ratio
-	body_visual.tick(delta, anim, t, ratio)
+	last_anim = PlayerAnim.pose({
+		"attacking": attacking, "attack_is_heavy": attack_is_heavy,
+		"combo_index": combo_index, "sliding": sliding, "diving": diving,
+		"on_floor": is_on_floor(), "staggered": stagger_time > 0.0,
+		"blocking": blocking, "in_stance": _in_stance(),
+		"h_vel": h_vel, "facing": _body_forward(),
+	})
+	last_anim_t = attack_timer / attack_duration if attacking else 0.0
+	last_ratio = h_vel.length() / walk_speed
+	body_visual.tick(delta, last_anim, last_anim_t, last_ratio)
