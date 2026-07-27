@@ -75,6 +75,10 @@ func _ready() -> void:
 		push_error("[preview_dungeon] nothing was built")
 		get_tree().quit(1)
 		return
+	# Where a player is really put down, which is not where the marker is: the
+	# anchor sits in the air over the floor and the teleport rays down for it.
+	var arrival: Vector3 = anchor.landing_point() if anchor.has_method("landing_point") \
+			else anchor.global_position
 	var foot := nearest.global_position
 	var into := (eye - foot)
 	into.y = 0.0
@@ -82,6 +86,8 @@ func _ready() -> void:
 	var at_wall: Vector3 = foot + into * 3.0
 	print("  floor at y=%.2f, ceiling at y=%.2f — %.2f m of head room"
 		% [foot.y, here.y + ceiling, here.y + ceiling - foot.y])
+	print("  arrival marker at y=%.2f, feet land at y=%.2f — a %.2f m drop if nothing caught it"
+		% [anchor.global_position.y, arrival.y, anchor.global_position.y - arrival.y])
 
 	_shots = [
 		# Ankle height, nose to the wall: the crack lived down here, and an
@@ -89,6 +95,12 @@ func _ready() -> void:
 		{"name": "seam", "at": Vector3(at_wall.x, foot.y + 0.35, at_wall.z),
 			"look": Vector3(foot.x, foot.y + 0.05, foot.z)},
 		{"name": "room", "at": eye, "look": Vector3(foot.x, eye.y, foot.z)},
+		# WHAT ARRIVING LOOKS LIKE: eye height over the spot the pawn is actually
+		# put down on (TeleportAnchor.landing_point), looking into the room. The
+		# anchor itself hangs 3 m over the floor — coming through the door used to
+		# start with that drop, which is what "falling through the floor" was.
+		{"name": "arrival", "at": Vector3(eye.x, arrival.y + EYE, eye.z),
+			"look": Vector3(eye.x, arrival.y + EYE, eye.z) + into * 8.0},
 		# Up at 60 degrees rather than straight up: a look_at along the up
 		# vector itself is degenerate and quietly leaves the camera where it was.
 		{"name": "ceiling", "at": eye,

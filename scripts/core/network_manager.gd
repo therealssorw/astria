@@ -77,6 +77,7 @@ const SERVER_REQUESTS := {
 	"hotbar_assign": "_server_hotbar_assign",
 	"use_item": "_server_use_item",
 	"use_special": "_server_use_special",
+	"portal_enter": "_server_portal_enter",
 	"tutorial_ready": "_server_tutorial_ready",
 	"tutorial_pressed": "_server_tutorial_pressed",
 	"cheat_give": "_server_cheat_give",
@@ -743,10 +744,44 @@ func server_teleport_to(id: int, dest_id: String) -> bool:
 	var pawn := _pawn(id)
 	if anchor == null or pawn == null or pawn.dead:
 		return false
-	_move_pawn(id, anchor.global_position)
+	# ON THE FLOOR under the marker, not on the marker: see
+	# TeleportAnchor.landing_point. Arriving in mid-air is what made entering the
+	# catacombs read as falling through them.
+	_move_pawn(id, anchor.landing_point() if anchor.has_method("landing_point")
+			else anchor.global_position)
 	return true
 
+## A client pressed interact at a door. The request NAMES NOTHING — no portal, no
+## destination — so there is nothing in it to lie about: the server looks for a
+## press-to-enter portal that ITS OWN copy of that pawn is standing in, and there
+## is exactly one answer or none. Same shape as `request_use_special`, and for
+## the same reason.
+##
+## `may_enter` is respected here as well as in the walk-in poll: a player who
+## ARRIVED on top of a door has not walked up to it, and the button they are
+## still holding must not send them back where they came from.
+func _server_portal_enter(id: int) -> void:
+	var pawn := _pawn(id)
+	if pawn == null or pawn.dead:
+		return
+	var at: Vector3 = pawn.server_body_pos()
+	for portal in get_tree().get_nodes_in_group(Portal.GROUP):
+		if not is_instance_valid(portal) or not portal.require_interact:
+			continue
+		if portal.destination_id == "" or not portal.contains(at):
+			continue
+		if not portal.may_enter(id):
+			continue
+		portal.consume(id)
+		server_teleport_to(id, portal.destination_id)
+		return
+
 # ---------------- hotbar, using and wearing (server-owned) ----------------
+
+## "I am pressing interact at a door." Carries nothing on purpose — see
+## `_server_portal_enter`.
+func request_portal_enter() -> void:
+	_ask("portal_enter")
 
 func request_hotbar_select(slot: int) -> void:
 	_ask("hotbar_select", [slot])

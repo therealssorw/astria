@@ -41,6 +41,10 @@ var _height := -1.0
 
 func _ready() -> void:
 	add_to_group("npc_interactable")
+	# ...and the group everything with a press-me bubble over it is in, which is
+	# what the HUD actually draws (see PromptTarget). The one above stays: it is
+	# how NPCs find EACH OTHER, so that two standing together never both prompt.
+	add_to_group(PromptTarget.GROUP)
 
 func _process(delta: float) -> void:
 	_focused = _can_interact()

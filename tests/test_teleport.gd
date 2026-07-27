@@ -79,16 +79,22 @@ class Runner:
 			_fail("anchored teleport refused: %s" % _last_message)
 			return
 		var landed: Vector3 = pawn.global_position
-		# the pawn falls to the ground from the anchor, so only the horizontal
-		# placement is checked — and net_pos must move with it, or the owner's
-		# next report from over there reads as a speedhack
+		# Where a marker says, but on the FLOOR under it — see
+		# TeleportAnchor.landing_point, which is why the vertical is compared
+		# against the landing point and not against the marker. net_pos must move
+		# with the pawn, or the owner's next report from over there reads as a
+		# speedhack.
+		var spot: Vector3 = anchor.landing_point()
 		if _flat_gap(landed, anchor.global_position) > 0.5:
 			_fail("pawn did not land on the anchor (%s vs %s)" % [landed, anchor.global_position])
 			return
-		if pawn.net_pos != anchor.global_position:
-			_fail("net_pos did not move with the pawn")
+		if pawn.net_pos != spot:
+			_fail("net_pos did not move with the pawn (%s vs %s)" % [pawn.net_pos, spot])
+			return
+		if absf(landed.y - spot.y) > 1.0:
+			_fail("pawn settled %.2f m off its landing spot" % (landed.y - spot.y))
 			return
 
-		print("TPTEST landed=", landed, " reply=", _last_message)
+		print("TPTEST landed=", landed, " spot=", spot, " reply=", _last_message)
 		print("TPTEST RESULT=PASS")
 		tree.quit(0)

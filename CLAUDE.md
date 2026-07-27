@@ -793,6 +793,14 @@ mixed pile.
   anchor with the camera and draws a speech bubble there. It is deliberately
   the same technique as the enemy wind-up star in `hud.gd`'s
   `TelegraphControl`, down to the gold accent — keep the two consistent.
+- THE BUBBLE IS NOT ABOUT NPCs, and the overlay does not know what it is drawing
+  over: anything in `PromptTarget.GROUP` that answers those same two things gets
+  one. A talkable NPC was the first and the catacombs door is the second; a
+  chest or a lever costs nothing. `scripts/ui/prompt/prompt_target.gd` owns the
+  group name and documents the contract, so it is written down once rather than
+  typed out in three files. (`NpcInteractable` stays in `npc_interactable` too —
+  that group is how NPCs find EACH OTHER, so two standing together never both
+  prompt.)
 - The button inside the bubble follows the last-used device via the
   `InputDevice` autoload: `E` on keyboard, `Y` on Xbox pads, a drawn triangle
   on PlayStation pads. Everything is vector-drawn, so there are no glyph
@@ -1918,36 +1926,70 @@ mixed pile.
   no error and built no walls. Hence the grid lives in members and the
   triangles are collected into a plain `Array`. Anything new that accumulates
   into a Packed array through a function call has the same trap.
-- YOU GET IN BY WALKING INTO THE DOOR. `scripts/world/portal/portal.gd` is a
-  `Portal`: stand within its `radius` and you come out at whatever
-  `TeleportAnchor` wears its `destination_id`. Both ends are NAMES, so moving
-  either in the editor moves it — the same trick as `TeleportAnchor`,
-  `QuestAnchor` and `spawn_point.gd`. Today: `catacombs_entrance.tscn` on the
-  island sends you to `catacombs`, and the `ExitPortal` inside the dungeon
-  sends you back to `catacombs_exit` beside the door.
-- Server-authoritative like every other way a pawn moves. The portal is polled
-  on the SERVER against its own speed-validated copy of each pawn, and moves it
-  through `Net.server_teleport_to` — the same call the teleport cheat uses, so
-  there is one place that knows how a pawn crosses the level. Deliberately NOT
-  an Area3D: a trigger volume answers "is a body touching my shape", which
-  needs the pawn on the right collision layer and reports on the CLIENT too,
-  where the answer means nothing.
-- A portal does NOT fire on somebody who ARRIVED inside it (`_seen_outside`), and
-  that is load-bearing rather than tidy: a return portal and the anchor players
-  land on are near each other by nature, so without it the two ends bounce a
-  player between them forever. Walking up to a portal is always seen from
-  outside first, so the ordinary case is unaffected. Any new portal pair
-  inherits this; do not "simplify" it away.
+- A DOOR IS A `Portal` (`scripts/world/portal/portal.gd`): stand within its
+  `radius` and you come out at whatever `TeleportAnchor` wears its
+  `destination_id`. Both ends are NAMES, so moving either in the editor moves it
+  — the same trick as `TeleportAnchor`, `QuestAnchor` and `spawn_point.gd`.
+- IT COMES IN TWO FLAVOURS AND IT IS ONE EXPORT. Default is WALK-IN: you are
+  through the moment you are inside it, which is what a way OUT should be —
+  nobody wants to press a button to leave a room they are done with. Set
+  `require_interact` and it is a PRESS instead: E / pad Y, the same binding that
+  talks to an NPC (no new binding — see Controls), with the same speech bubble
+  over it. That is what a way IN should be, because a door that swallows anyone
+  who walks past it cannot be walked past. Today: `catacombs_entrance.tscn` on
+  the island is a press, the `ExitPortal` inside the dungeon is walk-in.
+- Server-authoritative like every other way a pawn moves. A walk-in portal is
+  polled on the SERVER against its own speed-validated copy of each pawn. A
+  press is a REQUEST THAT NAMES NOTHING — no portal, no destination
+  (`Net.request_portal_enter` / `_server_portal_enter`): the server looks for the
+  press-to-enter portal ITS OWN copy of that pawn is standing in, so the worst a
+  patched client can do is press a button at a door it is really standing at. It
+  is the same shape as `request_use_special`, and for the same reason. Both ends
+  go through `Net.server_teleport_to`, so there is one place that knows how a
+  pawn crosses the level.
+- Deliberately NOT an Area3D: a trigger volume answers "is a body touching my
+  shape", which needs the pawn on the right collision layer and reports on the
+  CLIENT too, where the answer means nothing. `Portal.contains()` is the one
+  place the shape of a doorway is decided, and the walk-in poll, the prompt and
+  the server's check of a press all ask it — so the thing you can SEE you are
+  standing in is the thing that opens.
+- A DOOR YIELDS TO A PERSON. One button means two prompts at once would be two
+  things it might do, and which one won would come down to tree order, so a
+  portal shows nothing while any NPC prompt is up.
+- A portal does NOT fire on somebody who ARRIVED inside it (`_seen_outside` /
+  `may_enter`), and that is load-bearing rather than tidy: a return portal and
+  the anchor players land on are near each other by nature, so without it the two
+  ends bounce a player between them forever. It guards the PRESS as well as the
+  walk-in, because a button still held down as you arrive would send you straight
+  back. Walking up to a portal is always seen from outside first, so the ordinary
+  case is unaffected. Any new portal pair inherits this; do not "simplify" it away.
+- YOU LAND ON THE FLOOR, not on the marker. `TeleportAnchor.landing_point()` rays
+  down from the marker and hands back the floor under it, and
+  `Net.server_teleport_to` puts the pawn there — so every destination in the game
+  lands on its feet and an anchor dragged into place by eye is good enough. That
+  is not a nicety: the catacombs' own anchor hangs 3.00 m over the dungeon floor,
+  so every entry used to begin with a drop into a dark room, which is exactly
+  what "falling through the floor on first entry" looked like. The ray starts
+  only `HEAD_ROOM` above the marker for the reason `BanditSpawner` documents —
+  the catacombs have a ceiling now, and a ray from high above would find it and
+  stand the player on the roof — and it gives up past `MAX_DROP` rather than
+  posting somebody into a hole ten metres down.
 - The dungeon is parked at `-3000, 0, 0` — far enough that the two ends of the
   portal cannot sit in each other's radius, which `test_catacombs` asserts. It
   is at its natural height rather than buried; now that it has a lid, burying it
   is a level-editing decision nothing in the code cares about either way. Where
   it belongs is the same kind of decision: drag the `Catacombs` node.
 - Test: `--headless res://tests/test_catacombs.tscn` (prints
-  `CATATEST RESULT=PASS/FAIL`) — the round trip on a real listen server: the
-  door really lands you in the dungeon, the dungeon really is somewhere else,
-  standing where you arrived does not throw you back out, and the way home
-  comes out beside the door. Plus that the quest finally has a star.
+  `CATATEST RESULT=PASS/FAIL`) — the round trip on a real listen server:
+  STANDING in the door does nothing, a press from 60 m away does nothing, a press
+  at the door lands you in the dungeon, the dungeon really is somewhere else,
+  standing where you arrived does not throw you back out, and the way home comes
+  out beside the door and is still walk-in. Plus WHERE YOU LAND: on the floor,
+  measured against a ray rather than against the anchor, and still there a second
+  later — a fall-through is either "never landed" or "landed and kept going", and
+  measuring twice catches both. It prints the floor height and the drop. It
+  graduates itself out of the tutorial first, because the box the lesson is
+  talking through owns the interact button while it is up.
 - Test: `--headless res://tests/test_dungeon_walls.tscn` (prints
   `DUNGEONTEST RESULT=PASS/FAIL`). It re-measures the floor ITSELF off the mesh
   rather than reading the builder's grid back, then checks that no wall stands
@@ -2250,7 +2292,8 @@ is one line for the same reason: it is third party and unmodified.
 - `scripts/ui/scoreboard.gd` — the hold-P scoreboard, read from the server registry.
 - `scripts/ui/main_menu.gd` — the boot screen: name, connect, and the voice mode switch.
 - `scripts/ui/dialog/dialog_data.gd` — every line of conversation text in the game.
-- `scripts/ui/dialog/npc_prompt_overlay.gd` — the speech bubble drawn over a talkable NPC.
+- `scripts/ui/dialog/npc_prompt_overlay.gd` — the speech bubble drawn over anything you can press at.
+- `scripts/ui/prompt/prompt_target.gd` — the contract for "a thing you can press interact at".
 - `scripts/ui/shop/shop_data.gd` — which NPC stocks what.
 - `scripts/ui/quest/quest_tracker.gd` — the quest heading panel in the top-right corner.
 - `scripts/ui/quest/quest_marker_overlay.gd` — the gold star to the objective, edge-clamped when off screen.
@@ -2271,7 +2314,7 @@ is one line for the same reason: it is third party and unmodified.
 - `scripts/world/quest/quest_data.gd` — every quest: name, target, giver, and where it is handed in.
 - `scripts/world/quest/quest_anchor.gd` — a marker that IS a quest's destination.
 - `scripts/world/teleport/teleport_data.gd` — the places the teleport cheat can send you.
-- `scripts/world/teleport/teleport_anchor.gd` — a marker that IS a teleport destination.
+- `scripts/world/teleport/teleport_anchor.gd` — a marker that IS a teleport destination, and the floor under it.
 - `scripts/world/tutorial/tutorial_data.gd` — the lesson as a table, plus where the island copies sit.
 - `scripts/world/tutorial/tutorial_arena.gd` — one player's private island copy, its waves and its villager.
 - `scripts/effects/fire_flicker.gd` — flickers a fire's light with layered sines.

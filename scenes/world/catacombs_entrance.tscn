@@ -7,6 +7,7 @@
 [node name="CatacombsEntrance" type="Node3D"]
 script = ExtResource("1_portal")
 destination_id = "catacombs"
+require_interact = true
 
 [node name="QuestAnchor" parent="." instance=ExtResource("2_quest")]
 target_id = "catacombs"

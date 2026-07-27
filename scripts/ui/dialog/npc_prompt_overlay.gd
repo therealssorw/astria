@@ -1,9 +1,13 @@
 extends Control
-## HUD marker for talkable NPCs — the same trick as the enemy wind-up star in
-## hud.gd (project a point above the head with the camera and draw a 2D shape
-## there), but it draws a speech bubble carrying the interact button instead.
-## Which button is inside follows the last device used: "E" on keyboard, "Y" on
-## an Xbox pad, a drawn triangle on a PlayStation pad.
+## HUD marker for anything you can press interact at — the same trick as the
+## enemy wind-up star in hud.gd (project a point in the world with the camera and
+## draw a 2D shape there), but it draws a speech bubble carrying the interact
+## button instead. Which button is inside follows the last device used: "E" on
+## keyboard, "Y" on an Xbox pad, a drawn triangle on a PlayStation pad.
+##
+## It does not know what it is drawing over. Anything in `PromptTarget.GROUP`
+## that answers `prompt_alpha` and `prompt_anchor()` gets one — a talkable NPC,
+## the door into the catacombs, and whatever is added next. See PromptTarget.
 
 const BUBBLE_W := 48.0
 const BUBBLE_H := 38.0
@@ -34,13 +38,13 @@ func _draw() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	for npc in get_tree().get_nodes_in_group("npc_interactable"):
-		if not is_instance_valid(npc) or not (npc is NpcInteractable):
+	for target in get_tree().get_nodes_in_group(PromptTarget.GROUP):
+		if not is_instance_valid(target) or not target.has_method("prompt_anchor"):
 			continue
-		var a: float = (npc as NpcInteractable).prompt_alpha
+		var a := float(target.get("prompt_alpha"))
 		if a <= 0.001:
 			continue
-		var anchor: Vector3 = (npc as NpcInteractable).prompt_anchor()
+		var anchor: Vector3 = target.call("prompt_anchor")
 		if cam.is_position_behind(anchor):
 			continue
 		_draw_bubble(cam.unproject_position(anchor), a)
