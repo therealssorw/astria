@@ -17,6 +17,7 @@ extends Control
 const OUT_DIR := "user://ui_preview"
 const TUTORIAL_OVERLAY := preload("res://scripts/ui/tutorial/tutorial_overlay.gd")
 const INVENTORY := preload("res://scripts/ui/inventory_ui.gd")
+const MENU := preload("res://scenes/ui/main_menu.tscn")
 ## Frames to let a screen settle before the shot — the dialog box types itself
 ## in, so a shot on frame one catches an empty panel.
 const SETTLE := 45
@@ -134,6 +135,34 @@ func _ready() -> void:
 	await _shot("inventory_drag")
 	inv._toggle()
 	inv.queue_free()
+
+	# The menu, in BOTH of its states — the one thing a player sees before
+	# anything else, and the one screen with a rule that only a picture proves:
+	# signed out there must be no way into the world at all, not the main server
+	# and not an address of your own.
+	#
+	# Posed, not driven: setting Net.last_error makes the menu treat this as a
+	# return from a dropped connection, which is the one path through its _ready
+	# that neither auto-joins nor hosts. Without it, opening the menu from the
+	# editor starts a server.
+	for signed_in: bool in [false, true]:
+		var was := [Auth.access_token, Auth.user_id, Auth.username]
+		if signed_in:
+			Auth.access_token = "preview"
+			Auth.user_id = "preview"
+			Auth.username = "Ada"
+		else:
+			Auth.access_token = ""
+			Auth.user_id = ""
+		Net.last_error = "Connection to the host was lost."
+		var menu: Control = MENU.instantiate()
+		add_child(menu)
+		await _shot("menu_signed_in" if signed_in else "menu_signed_out")
+		menu.queue_free()
+		Auth.access_token = was[0]
+		Auth.user_id = was[1]
+		Auth.username = was[2]
+		Net.last_error = ""
 
 	print("PREVIEW saved=", ProjectSettings.globalize_path(OUT_DIR))
 	get_tree().quit()

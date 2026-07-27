@@ -10,10 +10,16 @@ extends Control
 ##   saved session      -> silently refresh it, then join. No screen at all.
 ##   signed in, failed  -> the reason, and a PLAY button to try again
 ##
-## There is no guest path on the main server: your gold and your bag live in
+## There is no guest path and no address box: your gold and your bag live in
 ## the database under your account, so playing without one would mean playing
-## with nothing to save into. The address row below is still there for LAN and
-## localhost testing, which pairs with the server's --allow-guests flag.
+## with nothing to save into — and there is one world to play in, so a player
+## has nowhere else to point. Signing in is the only door, and PLAY is the only
+## button behind it. LAN and localhost testing moved to --join, below, which
+## pairs with a server started --allow-guests.
+##
+## The name field is what a player wants to be CALLED, which is not the same as
+## who they are. The server still takes the name from Discord — this is kept for
+## next time and sent on join, ready for the server half that honours it.
 ##
 ## Running from the editor hosts locally instead of joining that box, so a test
 ## run never disturbs the live world (and works with the server down).
@@ -22,19 +28,30 @@ extends Control
 ## the UI entirely and hosts headlessly from here.
 ##
 ## CLI conveniences (work on any build, and each one suppresses the auto-join):
-##   --username=NAME   prefill the guest username
+##   --username=NAME   the name to play under (a guest server's only one)
 ##   --host            host locally instead (LAN and development)
 ##   --join=IP[:PORT]  join some other address, e.g. 127.0.0.1 for a local test
 
 const SETTINGS_PATH := "user://settings.cfg"
+## Most of the window height the panel may take before it starts scrolling
+## inside itself instead of growing off the bottom. Signed in is taller than
+## signed out (there is a name to set), and someone's window is smaller than
+## both — so the panel MEASURES its content every frame rather than being told
+## a height that only suits one of the three.
+const PANEL_MAX_SCREEN := 0.88
 
 var name_edit: LineEdit
-var ip_edit: LineEdit
+## The name field, which only means anything once there is an account behind
+## it. Held as a container so `_refresh_account_ui` shows or hides it in ONE
+## place, the same way it does the buttons.
+var name_box: VBoxContainer
+var scroll: ScrollContainer
+var panel_box: VBoxContainer
+var bar_gap: MarginContainer
 var status_label: Label
 var account_label: Label
 var login_btn: Button
 var play_btn: Button
-var join_btn: Button
 var logout_btn: Button
 var _join_timeout := 0.0
 
@@ -88,10 +105,26 @@ func _ready() -> void:
 		_refresh_account_ui()
 
 func _process(delta: float) -> void:
+	_fit_panel()
 	if _join_timeout > 0.0:
 		_join_timeout -= delta
 		if _join_timeout <= 0.0:
 			Net.return_to_menu("Connection timed out.")
+
+## Grow the panel to whatever is on it, up to PANEL_MAX_SCREEN of the window,
+## and let it scroll past that. A ScrollContainer reports no minimum height on
+## the axis it scrolls, so the height has to be handed to it — and it changes
+## with the state, since signing in adds a name field and an address row.
+func _fit_panel() -> void:
+	if scroll == null or panel_box == null:
+		return
+	var cap := get_viewport_rect().size.y * PANEL_MAX_SCREEN
+	scroll.custom_minimum_size.y = minf(bar_gap.get_combined_minimum_size().y, cap)
+	# Inset the content by the scrollbar only while there IS one, so the short
+	# signed-out panel is not left with a stripe of nothing down its side.
+	var bar := scroll.get_v_scroll_bar()
+	bar_gap.add_theme_constant_override("margin_right",
+			int(bar.size.x) if bar.visible else 0)
 
 # ---------------- account ----------------
 
@@ -122,14 +155,23 @@ func _refresh_account_ui() -> void:
 	login_btn.visible = not signed_in
 	play_btn.visible = signed_in
 	logout_btn.visible = signed_in
+	# Signed out there is no way into the world at all, and nothing to be
+	# called. Discord is the only door.
+	name_box.visible = signed_in
+	# First sign-in fills the box with the Discord name, so the field shows what
+	# the player is ALREADY called rather than an empty box that means "Player".
+	if signed_in and name_edit.text.strip_edges().is_empty():
+		name_edit.text = Auth.username
 
 # ---------------- actions ----------------
 
+## What this player would like to be called: their own choice if they have made
+## one, and the name Discord knows them by otherwise.
 func _username() -> String:
-	if Auth.logged_in():
-		return Auth.username
-	var n := name_edit.text.strip_edges()
-	return n if not n.is_empty() else "Player"
+	var chosen := name_edit.text.strip_edges()
+	if not chosen.is_empty():
+		return chosen
+	return Auth.username if Auth.logged_in() else "Player"
 
 func _on_host_pressed() -> void:
 	_save_settings()
@@ -140,14 +182,6 @@ func _on_host_pressed() -> void:
 ## The normal way in: the one server everybody plays on.
 func _on_play_pressed() -> void:
 	_connect_to(Net.DEFAULT_SERVER)
-
-## The address box, for a LAN game or a local test build.
-func _on_join_pressed() -> void:
-	var addr := ip_edit.text.strip_edges()
-	if addr.is_empty():
-		status_label.text = "Enter an address, or press PLAY for the main server."
-		return
-	_connect_to(addr)
 
 func _connect_to(address: String) -> void:
 	_save_settings()
@@ -164,7 +198,6 @@ func _connect_to(address: String) -> void:
 		token = await Auth.fresh_token()
 	status_label.text = "Connecting to %s..." % addr
 	play_btn.disabled = true
-	join_btn.disabled = true
 	if Net.join_game(addr, _username(), port, token) == OK:
 		_join_timeout = 12.0
 	else:
@@ -174,7 +207,6 @@ func _on_join_failed(reason: String) -> void:
 	_join_timeout = 0.0
 	status_label.text = reason
 	play_btn.disabled = false
-	join_btn.disabled = false
 
 ## True if any flag took over, so the caller knows not to auto-join as well.
 func _handle_cli_args() -> bool:
@@ -187,8 +219,10 @@ func _handle_cli_args() -> bool:
 			_on_host_pressed()
 			return true
 		if a.begins_with("--join="):
-			ip_edit.text = a.get_slice("=", 1)
-			_on_join_pressed()
+			# The only way to reach an address other than the main server. There
+			# is no box for it any more: a player has exactly one world, and a
+			# test run says so on the command line.
+			_connect_to(a.get_slice("=", 1))
 			return true
 	return false
 
@@ -198,7 +232,6 @@ func _load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) == OK:
 		name_edit.text = cfg.get_value("net", "username", "")
-		ip_edit.text = cfg.get_value("net", "last_ip", "")
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
@@ -206,7 +239,6 @@ func _save_settings() -> void:
 	# ConfigFile over the top would quietly wipe whatever else is in it
 	cfg.load(SETTINGS_PATH)
 	cfg.set_value("net", "username", name_edit.text.strip_edges())
-	cfg.set_value("net", "last_ip", ip_edit.text.strip_edges())
 	cfg.save(SETTINGS_PATH)
 
 # ---------------- construction ----------------
@@ -222,10 +254,24 @@ func _build_ui() -> void:
 	var panel := UiTheme.panel(UiTheme.INK, 0.96, Vector4i(28, 28, 28, 28))
 	center.add_child(panel)
 
+	# Everything below sits inside a scroller, so the menu cannot run off the
+	# bottom of a short window — see PANEL_MAX_SCREEN and _fit_panel.
+	scroll = ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	UiTheme.body(panel).add_child(scroll)
+
+	# The bar is drawn INSIDE the scroller, over its right edge, so the content
+	# is inset by exactly its width when it appears — otherwise it sits on top
+	# of the JOIN button. _fit_panel keeps the inset honest.
+	bar_gap = MarginContainer.new()
+	scroll.add_child(bar_gap)
+
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(360, 0)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 10)
-	UiTheme.body(panel).add_child(box)
+	bar_gap.add_child(box)
+	panel_box = box
 
 	var title := Label.new()
 	title.text = "ASTRIA"
@@ -286,27 +332,23 @@ func _build_ui() -> void:
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(status_label)
 
-	# LAN / localhost testing. Pairs with a server started --allow-guests, which
-	# the live server never is.
-	box.add_child(_spacer(10))
-	box.add_child(_small_label("OR JOIN ANOTHER ADDRESS (LAN / TESTING)"))
+	# The name you play under. Your account is your Discord account, but the
+	# thing above everyone else's head does not have to be your Discord name.
+	name_box = VBoxContainer.new()
+	name_box.add_theme_constant_override("separation", 4)
+	box.add_child(name_box)
+	name_box.add_child(_spacer(6))
+	name_box.add_child(_small_label("DISPLAY NAME"))
 	name_edit = LineEdit.new()
-	name_edit.placeholder_text = "guest name"
-	name_edit.max_length = 20
-	box.add_child(name_edit)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	box.add_child(row)
-	ip_edit = LineEdit.new()
-	ip_edit.placeholder_text = "ip (e.g. 127.0.0.1 for a local test)"
-	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ip_edit.text_submitted.connect(func(_t: String) -> void: _on_join_pressed())
-	row.add_child(ip_edit)
-	join_btn = Button.new()
-	join_btn.text = "JOIN"
-	join_btn.custom_minimum_size = Vector2(84, 0)
-	join_btn.pressed.connect(_on_join_pressed)
-	row.add_child(join_btn)
+	name_edit.placeholder_text = "your Discord name"
+	name_edit.max_length = NetRegistry.NAME_LIMIT
+	name_edit.text_submitted.connect(func(_t: String) -> void: _on_play_pressed())
+	name_box.add_child(name_edit)
+	# Said out loud rather than left to be discovered: the server still takes
+	# the name from Discord, so until it accepts this one, changing it here
+	# changes nothing anybody else can see.
+	name_box.add_child(_small_label(
+		"Kept for next time. Other players still see your Discord name\nuntil the server accepts the change."))
 
 	box.add_child(_spacer(10))
 	box.add_child(_small_label("VOICE CHAT"))
