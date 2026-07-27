@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bcq57gd8a6emi"]
+
+[ext_resource type="Script" path="res://tests/diag_grip_fit.gd" id="1_gf"]
+
+[node name="DiagGripFit" type="Node3D"]
+script = ExtResource("1_gf")

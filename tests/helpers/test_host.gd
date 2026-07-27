@@ -37,6 +37,7 @@ const PORTS := {
 	"gift": 27200,
 	"catacombs": 27210,
 	"boss": 27220,
+	"swing": 27230,
 }
 const BAND := 6              # ports tried, counting up from the band's base
 const BIND_PASSES := 3       # walks of the band before giving up

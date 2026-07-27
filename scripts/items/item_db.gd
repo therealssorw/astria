@@ -259,14 +259,34 @@ static func is_armor(id: String) -> bool:
 static func armor_covers(id: String) -> Array:
 	return (EQUIP_COVERS.get(armor_slot(id), []) as Array).duplicate()
 
-## How a held model sits in the hand bone before per-item tweaks. The sword
-## art runs up its own +Y with the grip at the origin, and a humanoid-profile
-## hand bone has the fingers along +Y too, so the blade needs turning to run
-## along the palm rather than out of the wrist.
+## How a held model sits in the hand bone before per-item tweaks. The sword art
+## runs up its own +Y with the grip at the origin.
+##
+## THESE NUMBERS ARE MEASURED, NOT EYEBALLED, and that is what makes the swings
+## read: the Mocap Online FBXs ship the sword they were performed with
+## (`TonySword_01` on a prop bone in the hand — the very model the game carries),
+## so the animator's own grip is in the file, and every sword clip in the game
+## was authored around it. tests/diag_grip_fit.tscn plays a clip on both rigs at
+## once and works out what rotation of OUR hand bone puts the blade where the
+## pack's own sword is; it reproduces it to a fifth of a degree.
+##
+## Before that it was a guess — 35° about X, which runs the blade out along the
+## fingers like a bayonet, a good 90° off the palm. It looked passable standing
+## still, which is how it survived: the arm hangs down in the idle, so a blade
+## in line with it hangs down too and reads fine. In a SWING it is the whole
+## fight, because the clips turn the wrist expecting the blade to be across the
+## palm — so the sword sailed through the cut flat, trailed behind the arm and
+## ended up pointing at the sky.
+##
+## The rotation carries between rigs unchanged (both are retargeted onto the
+## humanoid profile, so a hand bone means the same thing on either). The
+## POSITION does not — it is a length, measured on a full-sized mocap actor —
+## so it is scaled by the two rigs' forearms, which is what the 0.72 in the fit
+## tool's output is.
 const HOLD_DEFAULTS := {
 	"scale": 1.0,
-	"pos": Vector3(0.0, 0.06, 0.0),
-	"rot": Vector3(35.0, 0.0, 0.0),
+	"pos": Vector3(0.027, -0.057, 0.102),
+	"rot": Vector3(44.7, 137.9, 52.0),
 	"tint": Color(1, 1, 1),
 }
 
