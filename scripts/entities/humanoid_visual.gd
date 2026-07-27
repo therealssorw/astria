@@ -210,17 +210,17 @@ func build_animations() -> void:
 	var keys := _clip_keys()
 	for key in keys:
 		var cfg: Dictionary = CLIPS[key]
-		var anim := _load_clip(cfg.path)
+		var anim := HumanoidClips.load_clip(cfg.path)
 		# Read the neutral standing hips off the FULL clip before any slicing:
 		# a slice starting mid-motion has no neutral frame of its own.
 		var neutral_hips := Vector3.ZERO
 		if cfg.has("pin_hips_at"):
-			neutral_hips = _sample_hips(anim, cfg.pin_hips_at)
+			neutral_hips = HumanoidClips.sample_hips(anim, cfg.pin_hips_at)
 		if cfg.has("slice"):
-			anim = _slice(anim, cfg.slice[0], cfg.slice[1])
+			anim = HumanoidClips.slice(anim, cfg.slice[0], cfg.slice[1])
 		_repath_tracks(anim, skel_path)
 		if cfg.has("pin_hips_at"):
-			_pin_hips(anim, _adapt_hips(neutral_hips))
+			HumanoidClips.pin_hips(anim, _adapt_hips(neutral_hips))
 		if cfg.loop:
 			anim.loop_mode = Animation.LOOP_LINEAR
 		clip_lengths[key] = anim.length
@@ -238,36 +238,20 @@ func build_animations() -> void:
 			if base_key not in keys:
 				continue
 			var moving: Animation = lib.get_animation(base_key).duplicate(true)
-			_graft_upper_body(moving, block_anim)
+			HumanoidClips.graft_upper_body(moving, block_anim)
 			clip_lengths[key] = moving.length
 			lib.add_animation(key, moving)
 	# Layered strafes: keep only the legs of the strafe clips and graft the
 	# upper body from Bouncing Fight Idle on top, so strafing keeps a combat
 	# guard up. The fight idle is used ONLY as this upper-body source.
 	if "strafe_l" in keys or "strafe_r" in keys:
-		var stance_anim := _load_clip(ANIM_DIR + "Combat/Stances/Bouncing Fight Idle.fbx")
+		var stance_anim := HumanoidClips.load_clip(ANIM_DIR + "Combat/Stances/Bouncing Fight Idle.fbx")
 		_repath_tracks(stance_anim, skel_path)
 		for strafe_key in ["strafe_l", "strafe_r"]:
 			if strafe_key in keys:
-				_graft_upper_body(lib.get_animation(strafe_key), stance_anim)
+				HumanoidClips.graft_upper_body(lib.get_animation(strafe_key), stance_anim)
 
 	anim_player.add_animation_library("lib", lib)
-
-## The one animation out of an imported clip FBX, as a copy we can chew on.
-## Mixamo exports call theirs "mixamo_com"; the sword pack names its take after
-## the file, so take whatever single animation is in there rather than a name.
-func _load_clip(path: String) -> Animation:
-	var src: Node = (load(path) as PackedScene).instantiate()
-	var src_ap: AnimationPlayer = src.find_children("*", "AnimationPlayer", true, false)[0]
-	var name := "mixamo_com"
-	if not src_ap.has_animation(name):
-		for candidate in src_ap.get_animation_list():
-			if candidate != "RESET":
-				name = candidate
-				break
-	var anim: Animation = src_ap.get_animation(name).duplicate(true)
-	src.free()
-	return anim
 
 ## Override to create `model` (added as a child, holding `skeleton`) and fill
 ## `_mats` with the materials `flash` should tint.
@@ -285,131 +269,13 @@ func _clip_keys() -> Array:
 func _adapt_hips(v: Vector3) -> Vector3:
 	return v
 
-## Upper body = spine chain and everything hanging off it; legs + hips stay.
-func _is_upper_bone(bone: String) -> bool:
-	if bone in ["Spine", "Chest", "UpperChest", "Neck", "Head"]:
-		return true
-	for part in ["Shoulder", "Arm", "Hand", "Thumb", "Index", "Middle", "Ring", "Little"]:
-		if bone.contains(part):
-			return true
-	return false
-
-## Replaces target's upper-body tracks with source's (legs keep target's).
-## The Hips ROTATION also comes from source: the strafe clips turn the hips
-## toward the travel direction (with the spine counter-rotating to face
-## forward), so once the spine is replaced the torso would face sideways --
-## sourcing the hips orientation keeps the whole torso squared at the player,
-## while the hips POSITION (bounce) and leg tracks stay from the strafe.
-## The source loop is TILED over the target's length: a short guard bob keeps
-## cycling under a longer stride instead of freezing on its last pose.
-func _graft_upper_body(target: Animation, source: Animation) -> void:
-	for i in range(target.get_track_count() - 1, -1, -1):
-		if _is_grafted_track(target.track_get_path(i).get_subname(0), target.track_get_type(i)):
-			target.remove_track(i)
-	var cycles := 1
-	if source.length > 0.05:
-		cycles = clampi(ceili(target.length / source.length), 1, 8)
-	for i in source.get_track_count():
-		var path := source.track_get_path(i)
-		var type := source.track_get_type(i)
-		if not _is_grafted_track(path.get_subname(0), type):
-			continue
-		var t := target.add_track(type)
-		target.track_set_path(t, path)
-		for c in cycles:
-			for k in source.track_get_key_count(i):
-				var time := c * source.length + source.track_get_key_time(i, k)
-				if time > target.length:
-					break
-				target.track_insert_key(t, time, source.track_get_key_value(i, k))
-
-func _is_grafted_track(bone: String, type: int) -> bool:
-	if bone == "Hips":
-		return type == Animation.TYPE_ROTATION_3D
-	return _is_upper_bone(bone)
-
 func _find_skeleton(n: Node) -> Skeleton3D:
-	if n is Skeleton3D:
-		return n
-	for c in n.get_children():
-		var r := _find_skeleton(c)
-		if r:
-			return r
-	return null
+	return HumanoidClips.find_skeleton(n)
 
+## Onto OUR skeleton, and through THIS character's hips remap — which is the
+## only part of the import pipeline that varies per rig.
 func _repath_tracks(anim: Animation, skel_path: String) -> void:
-	# imported tracks target %GeneralSkeleton:<bone>; rewrite to our skeleton's
-	# real path and drop tracks for bones the target rig doesn't have
-	for i in range(anim.get_track_count() - 1, -1, -1):
-		var p := anim.track_get_path(i)
-		if p.get_subname_count() < 1:
-			anim.remove_track(i)
-			continue
-		var bone := p.get_subname(0)
-		if skeleton.find_bone(bone) == -1:
-			anim.remove_track(i)
-			continue
-		anim.track_set_path(i, NodePath(skel_path + ":" + bone))
-		# The Mixamo clips are not "in place": the Hips position track carries
-		# real root motion, which drags the visual off the collision capsule
-		# and snaps it back on loop (rubber banding). Gameplay code moves the
-		# capsule, so pin the horizontal hips motion to the first frame and
-		# keep only the vertical bounce.
-		if bone == "Hips" and anim.track_get_type(i) == Animation.TYPE_POSITION_3D \
-				and anim.track_get_key_count(i) > 0:
-			var first: Vector3 = anim.track_get_key_value(i, 0)
-			for k in anim.track_get_key_count(i):
-				var v: Vector3 = anim.track_get_key_value(i, k)
-				anim.track_set_key_value(i, k, _adapt_hips(Vector3(first.x, v.y, first.z)))
-
-## Hips position at `time` in an un-repathed imported clip (the neutral pose
-## reference for _pin_hips).
-func _sample_hips(anim: Animation, time: float) -> Vector3:
-	for i in anim.get_track_count():
-		var p := anim.track_get_path(i)
-		if p.get_subname_count() > 0 and p.get_subname(0) == "Hips" \
-				and anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
-			return anim.position_track_interpolate(i, time)
-	return Vector3.ZERO
-
-## Extracts [from, to] of `anim` as a standalone clip, resampled at the 30 fps
-## import rate so nothing is lost. Lets one imported cycle provide a phase of
-## itself (the jump's airborne portion) instead of needing a pre-trimmed FBX.
-func _slice(anim: Animation, from: float, to: float) -> Animation:
-	const FPS := 30.0
-	var out := Animation.new()
-	var dur := to - from
-	out.length = dur
-	for i in anim.get_track_count():
-		var type := anim.track_get_type(i)
-		if type not in [Animation.TYPE_POSITION_3D, Animation.TYPE_ROTATION_3D,
-				Animation.TYPE_SCALE_3D]:
-			continue
-		var t := out.add_track(type)
-		out.track_set_path(t, anim.track_get_path(i))
-		for s in int(ceil(dur * FPS)) + 1:
-			var local := minf(float(s) / FPS, dur)
-			var at := from + local
-			match type:
-				Animation.TYPE_POSITION_3D:
-					out.track_insert_key(t, local, anim.position_track_interpolate(i, at))
-				Animation.TYPE_ROTATION_3D:
-					out.track_insert_key(t, local, anim.rotation_track_interpolate(i, at))
-				_:
-					out.track_insert_key(t, local, anim.scale_track_interpolate(i, at))
-	return out
-
-## Freezes the hips at `neutral`, killing the clip's vertical root motion too
-## (unlike _repath_tracks, which keeps the Y bounce). The jump clip lifts the
-## hips ~1m, but gameplay physics already moves the capsule -- keeping that rise
-## would double-count it and float the model off the collision shape.
-func _pin_hips(anim: Animation, neutral: Vector3) -> void:
-	for i in anim.get_track_count():
-		var p := anim.track_get_path(i)
-		if p.get_subname_count() > 0 and p.get_subname(0) == "Hips" \
-				and anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
-			for k in anim.track_get_key_count(i):
-				anim.track_set_key_value(i, k, neutral)
+	HumanoidClips.repath(anim, skeleton, skel_path, _adapt_hips)
 
 ## The clip actually played for a logical key: with a sword in hand the sword
 ## set stands in wherever it has an entry, and falls back to the bare-handed
