@@ -1269,10 +1269,28 @@ mixed pile.
   into each clip's `.import` exactly like the Mixamo ones.
 - SWINGING it is Awesome Sword Animations V4, on the UE mannequin — so it reuses
   `bonemap_manny.tres`, the map Rouge already needed, with no new map to write.
-  There are FOUR cuts, one per swing: three lights that chain and a heavy. Each
-  is trimmed to its strike, and the slices were not eyeballed — the peak of the
-  right arm's angular speed was measured and widened out to where it falls under
-  a quarter of that peak.
+  There are FOUR cuts, one per swing: three lights that chain and a heavy.
+- THE PACK'S TAKES ARE SPINS, and that is the thing to know before touching
+  them. Each is a choreographed combo that turns the fighter through a full
+  circle over three or four strikes, so a cut lifted out of the middle of one
+  plays with their back to whatever they are swinging at — which is exactly
+  what "the sword animations are wrong and weird" was. `HumanoidClips.unspin`
+  takes the YAW out of a clip's hips and keeps the lean: DE-ROOT FOR ROTATION,
+  and there for the same reason, since gameplay already owns which way a
+  fighter faces (a swing SNAPS the body to its aim). Any future clip cut out of
+  a combo wants `"unspin": true` in its `CLIPS` row.
+  Note it divides the yaw out on the LEFT — a leaning turned body is
+  `yaw * lean`, so cancelling on the right leaves the lean pointing the way the
+  WORLD was, and the fighter folds in half instead of standing up.
+- A SLICE IS A WHOLE STRIKE, not the strike's fastest frames: from the blade
+  starting to lift, through the cut, out to the hand coming to rest. Trimming
+  tight to the peak of the arm's speed (which the first pass did, and it
+  measured well) leaves 0.3s of blur that begins and ends mid-motion, so the
+  body snaps into a pose and out of it. Which strike to take is decided by
+  where the blade ENDS: a cut finishing behind the shoulder spends its last
+  frames with the sword hidden behind the character. `tests/diag_sword.tscn`
+  prints the hand's position and speed and the hips' yaw per frame of every
+  take in the pack, which is how a slice gets picked without guessing.
 - It replaced a real limitation, which is worth knowing if a future pack is being
   judged: the Mocap Online take is ONE 5.5s combo danced in a deep mocap crouch
   (hips from 1.00 down to 0.67 in the lunge), so exactly one cut of it was usable
@@ -2280,6 +2298,7 @@ is one line for the same reason: it is third party and unmodified.
 - `scripts/entities/boss_visual.gd` — the boss's body: the "Juggernaut" voxel character, fully clipped.
 - `scripts/entities/fighter_audio.gd` — every noise a fighter makes, and the shape of its voice.
 - `scripts/entities/humanoid_visual.gd` — the shared rig, the clip table, and the tick that picks a pose.
+- `scripts/entities/humanoid/humanoid_clips.gd` — turning an imported FBX into a playable clip: repath, de-root, unspin, slice, graft.
 - `scripts/entities/player_visual.gd` — the player's body: the "Player" voxel character with the full clip list.
 - `scripts/entities/rouge_visual.gd` — Rouge, the enemies' model and the skeleton every voxel NPC borrows.
 - `scripts/combat/combat_levels.gd` — the ONE place weapon level, enemy level and armor become a damage number.
@@ -2399,6 +2418,7 @@ is one line for the same reason: it is third party and unmodified.
 - `tests/preview_dialog_camera.gd` — the shot each conversation opens on, speakers starting turned away.
 - `tests/preview_get_up.gd` — the intro's getting-up, four frames across the clip.
 - `tests/preview_sword_swings.gd` — each sword swing going in, at the strike, and out.
+- `tests/diag_sword.gd` — hand, speed and hips yaw per frame of the sword pack: how a swing's slice gets picked.
 - `tests/preview_held_item.gd` — a weapon in the player's hand, for fitting the grip.
 - `tests/preview_dungeon.gd` — inside the catacombs: the wall's foot, the room, the ceiling, a lamp.
 - `tests/preview_npc_armor.gd` — a villager bare, suited, and in a recoloured suit.

@@ -72,19 +72,42 @@ const CLIPS := {
 	# do not move a millimetre through the whole take, so there is no crouch to
 	# dodge — the only trimming needed is to the cut itself.
 	#
-	# Each is sliced to its strike, found by the peak of the right arm's angular
-	# speed and widened to where that falls under a quarter of the peak. The
-	# numbers in the names are the pack's own combo numbers, kept so a clip can be
-	# traced back to it. "speed" only matters if something plays one outside an
-	# attack: on_attack_started always stretches it onto the punch's own window.
-	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/SwordCombo6.fbx", "speed": 1.55,
-			"loop": false, "slice": [1.14, 1.45]},   # sharpest of them: the opener
+	# EVERY ONE OF THEM IS UNSPUN — see HumanoidClips.unspin. The pack's takes
+	# are choreographed combos that turn the fighter through a full circle, so a
+	# strike cut out of one arrives with its back to the camera. That is what
+	# these looked like before: a swing thrown backwards, at nothing.
+	#
+	# Each slice is ONE strike, and it is cut WIDE — from where the blade starts
+	# to lift, through the strike, out to where the hand comes to rest again.
+	# Cutting tight to the strike itself (which is what the first pass did, by
+	# the peak of the arm's angular speed) leaves a clip that begins and ends
+	# mid-motion: 0.3s of blur with no wind-up to read and no follow-through, so
+	# what the player saw was the body snapping into a pose and out of it. The
+	# numbers in the names are the pack's own combo numbers, kept so a clip can
+	# be traced back to it. Boundaries were measured with the sword hand's speed
+	# and the hips' yaw, both printed per frame by tests/diag_sword.tscn.
+	#
+	# WHICH strike, out of the dozen the pack holds, is a matter of where the
+	# blade ENDS UP: the ones kept here travel across the front of the body,
+	# because a cut that finishes behind the shoulder spends its last frames
+	# with the sword hidden by the character swinging it. Two of them come out
+	# of the same take (combo 3 opens and closes the chain) rather than take a
+	# fourth file's only strike, which was one of those.
+	#
+	# "speed" only matters if something plays one outside an attack:
+	# on_attack_started always stretches it onto the punch's own window.
+	"sword_light_0": {"path": ANIM_DIR + "Sword/Attack/SwordCombo3.fbx", "speed": 1.55,
+			"loop": false, "unspin": true,
+			"slice": [1.20, 1.57]},                  # the opener: high left down to low right
 	"sword_light_1": {"path": ANIM_DIR + "Sword/Attack/SwordCombo5.fbx", "speed": 1.55,
-			"loop": false, "slice": [1.10, 1.53]},
-	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/SwordCombo10.fbx", "speed": 1.55,
-			"loop": false, "slice": [1.54, 1.95]},   # the combo ender
-	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/SwordCombo3.fbx", "speed": 1.35,
-			"loop": false, "slice": [1.18, 1.62]},   # widest wind-up
+			"loop": false, "unspin": true,
+			"slice": [1.33, 1.75]},                  # overhead, the fastest hand in the pack
+	"sword_light_2": {"path": ANIM_DIR + "Sword/Attack/SwordCombo3.fbx", "speed": 1.55,
+			"loop": false, "unspin": true,
+			"slice": [2.05, 2.47]},                  # the combo ender: full overhead chop
+	"sword_heavy": {"path": ANIM_DIR + "Sword/Attack/SwordCombo10.fbx", "speed": 1.35,
+			"loop": false, "unspin": true,
+			"slice": [1.47, 1.95]},                  # widest wind-up, widest arc
 }
 ## Clip swaps applied while a sword is in hand. Anything not listed keeps its
 ## bare-handed clip, so blocking, sliding and jumping are unchanged. Each swing
@@ -218,6 +241,8 @@ func build_animations() -> void:
 			neutral_hips = HumanoidClips.sample_hips(anim, cfg.pin_hips_at)
 		if cfg.has("slice"):
 			anim = HumanoidClips.slice(anim, cfg.slice[0], cfg.slice[1])
+		if cfg.get("unspin", false):
+			HumanoidClips.unspin(anim)
 		_repath_tracks(anim, skel_path)
 		if cfg.has("pin_hips_at"):
 			HumanoidClips.pin_hips(anim, _adapt_hips(neutral_hips))

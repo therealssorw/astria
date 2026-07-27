@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c8swdiagsword1"]
+
+[ext_resource type="Script" path="res://tests/diag_sword.gd" id="1_diag"]
+
+[node name="DiagSword" type="Node3D"]
+script = ExtResource("1_diag")

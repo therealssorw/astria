@@ -16,6 +16,9 @@ class_name HumanoidClips
 ##     the horizontal hips motion is pinned and only the vertical bounce kept.
 ##   * SLICE. One imported cycle can provide a phase of itself (the jump's
 ##     airborne portion) instead of needing a pre-trimmed FBX.
+##   * UNSPIN. De-root's twin for rotation: the sword pack's takes are
+##     choreographed spins, and the game turns its own fighters, so the yaw a
+##     clip carries has to come off the same way its travel does.
 ##   * GRAFT. An upper body from one clip over the legs of another, which is how
 ##     a guarding fighter circles without dropping their hands.
 ##
@@ -98,6 +101,45 @@ static func pin_hips(anim: Animation, neutral: Vector3) -> void:
 				and anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
 			for k in anim.track_get_key_count(i):
 				anim.track_set_key_value(i, k, neutral)
+
+## Takes the YAW out of a clip's hips, keeping their lean. DE-ROOT FOR ROTATION,
+## and needed for exactly the same reason: gameplay code owns where a fighter
+## is and which way they face (a swing SNAPS the body to its aim — see
+## player.gd), so a clip that turns them is fighting it.
+##
+## It is what makes the sword pack usable at all. Its takes are choreographed
+## COMBOS — the fighter spins through a full 180° across three or four cuts —
+## so a strike lifted out of the middle of one plays with their back to whoever
+## they are swinging at. Yaw is the only part of a pelvis rotation that says
+## which way a body points; drop it and the strike itself is untouched, it just
+## happens facing front.
+##
+## The lean (pitch and roll) is deliberately kept: that is the fighter throwing
+## their weight into the cut, and it is most of what makes one read as heavy.
+static func unspin(anim: Animation) -> void:
+	for i in anim.get_track_count():
+		var p := anim.track_get_path(i)
+		if p.get_subname_count() < 1 or p.get_subname(0) != "Hips":
+			continue
+		if anim.track_get_type(i) != Animation.TYPE_ROTATION_3D:
+			continue
+		for k in anim.track_get_key_count(i):
+			anim.track_set_key_value(i, k, _drop_yaw(anim.track_get_key_value(i, k)))
+
+## `q` with its turn about Y removed — the twist half of a swing-twist
+## decomposition about the up axis, divided out.
+##
+## Divided out on the LEFT, and that is the whole trick rather than a detail.
+## A turned, leaning body is `yaw * lean`: the lean is written in the body's own
+## frame and the yaw carries it round. Cancel the yaw on the right instead and
+## the lean is left expressed in WORLD terms — a fighter who was leaning into a
+## cut while facing backwards comes out leaning backwards, which reads as
+## somebody folding in half rather than swinging.
+static func _drop_yaw(q: Quaternion) -> Quaternion:
+	var twist := Quaternion(0.0, q.y, 0.0, q.w)
+	if twist.length_squared() < 0.000001:
+		return q   # a half turn about a horizontal axis: no yaw in it to take
+	return twist.normalized().inverse() * q
 
 ## Extracts [from, to] of `anim` as a standalone clip, resampled at the import
 ## rate so nothing is lost.
