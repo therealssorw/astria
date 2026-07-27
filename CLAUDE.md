@@ -1854,6 +1854,14 @@ mixed pile.
   dungeon/dungeon_walls.gd` on the `Walls` node under it. Nothing is
   hand-placed, so do not add wall transforms to the .tscn — reshape the floor
   in Blender and the walls follow it.
+- NEVER COMMIT A SAVED `starterDungeon.tscn` WITH WALLS IN IT. `dungeon_walls.gd`
+  is a `@tool` script and `_own()` hands every block it builds to the edited
+  scene — that is what makes the shell visible in the editor at all — so SAVING
+  the scene serialises all ~700 of them into the file. It has happened once
+  already (an editor pass upgrading the scene's format re-saved it, and 2500
+  lines of generated geometry landed in a commit). The file is 29 lines; if it is
+  thousands, the walls got baked in. `git checkout` it and carry on — nothing at
+  runtime needs them, because `_clear()` throws them away and rebuilds anyway.
 - THE WALLS COME FROM THE FLOOR'S OWN OUTLINE. Every triangle is rasterised
   straight DOWN into a grid, the outside is flood-filled, and a wall goes on
   each edge between a cell the flood reached and one it did not. There is no
