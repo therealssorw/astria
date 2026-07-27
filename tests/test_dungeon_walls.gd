@@ -25,6 +25,10 @@ const PLAYER_HEIGHT := 1.92   # capsule in scenes/player.tscn
 ## Resolution of this file's own copy of the floor plan, in metres.
 const SAMPLE := 0.5
 
+## How far below the surface you can SEE you are allowed to end up standing.
+## A floor drawn as one flat face measures 0.00; this is slack for the grid.
+const STEP := 0.35
+
 var _failures: Array[String] = []
 var _floor := {}          # Vector2i cell -> highest floor Y in it
 var _walls: Array = []    # {node, at, perp, half_len, half_thick}
@@ -42,7 +46,12 @@ func _ready() -> void:
 	_sample_floor(walls.get_parent(), walls)
 	_measure_walls(walls)
 
+	# the floor's own collision only answers a ray once physics has stepped
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+
 	_test_something_was_built()
+	_test_you_stand_on_the_floor_you_can_see(walls.get_parent(), walls)
 	_test_the_floor_was_found()
 	_test_no_wall_stands_in_open_floor()
 	_test_the_floor_is_walled_all_the_way_round()
@@ -427,3 +436,83 @@ func _all(n: Node, skip: Node) -> Array:
 	for c in n.get_children():
 		out.append_array(_all(c, skip))
 	return out
+##
+## THE FLOOR HAS TO BE SOLID WHERE IT IS DRAWN, which is a different claim from
+## "the walls have collision". A floor is art, and art arrives with faces
+## pointing the wrong way, faces missing, and faces tilted by a nudged vertex.
+## All three read to a player as one bug - you walk onto something you can see
+## and drop through it, or sink into it - and none of them show up in a
+## screenshot of the shell or in any count of blocks built.
+##
+## Measured the way a player meets it: stand on every interior spot of the plan
+## this file measured off the MESH, ray down with back faces OFF (a face
+## pointing at the cellar is not something you can stand on, and Jolt agrees),
+## and demand ground within a step. The walls and the roof are excluded, so the
+## verdict is on the FLOOR rather than on the shell around it. Rim cells are
+## skipped: the outline is deliberately conservative and a wall stands there.
+func _test_you_stand_on_the_floor_you_can_see(root: Node3D, walls: Node) -> void:
+	var space := root.get_world_3d().direct_space_state
+	var skip: Array[RID] = []
+	for n in _all(walls, null):
+		if n is CollisionObject3D:
+			skip.append((n as CollisionObject3D).get_rid())
+	var missing := 0
+	var sunk := 0
+	var worst := 0.0
+	var checked := 0
+	var where: Array[String] = []
+	for cell in _floor:
+		if not (_floor.has(cell + Vector2i(1, 0)) and _floor.has(cell + Vector2i(-1, 0))
+				and _floor.has(cell + Vector2i(0, 1)) and _floor.has(cell + Vector2i(0, -1))):
+			continue
+		checked += 1
+		var at: Vector3 = root.global_transform * Vector3(
+			(float(cell.x) + 0.5) * SAMPLE, _floor[cell], (float(cell.y) + 0.5) * SAMPLE)
+		var hit := _ground_under(space, skip, at)
+		if hit.is_empty():
+			missing += 1
+			if where.size() < 6:
+				where.append("(%.1f, %.1f)" % [at.x, at.z])
+			continue
+		var drop: float = at.y - (hit["position"] as Vector3).y
+		if drop > STEP:
+			sunk += 1
+			worst = maxf(worst, drop)
+			if where.size() < 6:
+				where.append("(%.1f, %.1f) -%.2f m" % [at.x, at.z, drop])
+	_check(checked > 0, "there is no interior floor to stand on at all")
+	_check(missing == 0,
+		"%d of %d spots of floor have nothing solid under them, e.g. %s - you fall through the model"
+			% [missing, checked, ", ".join(where)])
+	_check(sunk == 0,
+		"%d of %d spots stand you over %.2f m under the floor you can see (worst %.2f m), e.g. %s"
+			% [sunk, checked, STEP, worst, ", ".join(where)])
+	print("  floor: %d interior spots, %d hollow, %d sunk" % [checked, missing, sunk])
+	var anchor := root.find_child("ArrivalAnchor", false, false) as Node3D
+	if anchor == null:
+		return
+	var a: Vector3 = anchor.global_position
+	var aq := PhysicsRayQueryParameters3D.create(a + Vector3.UP * 0.5, a + Vector3.DOWN * 30.0)
+	aq.exclude = skip
+	aq.hit_back_faces = false
+	var ah := space.intersect_ray(aq)
+	_check(not ah.is_empty(),
+		"nothing solid under the ArrivalAnchor - arriving drops you out of the level")
+	if not ah.is_empty():
+		print("  arrival: anchor y=%.2f, floor y=%.2f, drop %.2f m"
+			% [a.y, (ah["position"] as Vector3).y, a.y - (ah["position"] as Vector3).y])
+
+## A hole a player can fall into is wider than a point, and a single ray down
+## the middle of a cell lands on the seam between two faces often enough to
+## report a crack nobody can fit through. A miss is retried off-centre first.
+func _ground_under(space: PhysicsDirectSpaceState3D, skip: Array[RID], at: Vector3) -> Dictionary:
+	for off in [Vector3.ZERO, Vector3(SAMPLE * 0.25, 0.0, 0.0), Vector3(-SAMPLE * 0.25, 0.0, 0.0),
+			Vector3(0.0, 0.0, SAMPLE * 0.25), Vector3(0.0, 0.0, -SAMPLE * 0.25)]:
+		var from: Vector3 = at + off + Vector3.UP * 1.0
+		var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 3.0)
+		q.exclude = skip
+		q.hit_back_faces = false
+		var hit := space.intersect_ray(q)
+		if not hit.is_empty():
+			return hit
+	return {}
