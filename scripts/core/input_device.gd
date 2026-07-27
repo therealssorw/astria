@@ -67,6 +67,27 @@ func menu_accept_label() -> String:
 		return "E / Enter"
 	return accept_label()
 
+## THE NUMBER ROW, and it belongs to whoever is on top. 1-9 pick a hotbar slot
+## out in the world and an answer in the dialog box, which are the same gesture
+## in two places — "the thing labelled 3" — so they are ONE set of bindings read
+## through one function rather than a set per screen that could drift apart.
+## Nine actions rather than reading a keycode: a number key is still a control a
+## player presses, so it lives in the input map like every other one.
+##
+## Keyboard only, deliberately. There is no pad equivalent of nine buttons, and
+## everything they reach has a pad way already (R1/L1 walk the bar, the stick
+## walks a menu).
+const NUMBER_ACTIONS := ["number_1", "number_2", "number_3", "number_4",
+		"number_5", "number_6", "number_7", "number_8", "number_9"]
+
+## Which number this event just pressed, 1-9, or 0 for anything else. The caller
+## decides what its Nth thing is; nothing here knows about hotbars or answers.
+func number_pressed(event: InputEvent) -> int:
+	for i in NUMBER_ACTIONS.size():
+		if event.is_action_pressed(NUMBER_ACTIONS[i]):
+			return i + 1
+	return 0
+
 ## True when this event picks the focused menu entry. On a pad that is strictly
 ## the bottom face button (PS5 Cross / Xbox A — the same physical place), never
 ## the interact button: Y / triangle is the world's "press at a thing" and

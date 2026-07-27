@@ -349,14 +349,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_free_cursor = false
 		_recapture_frames = 2
 
-## The number row: 1-9 jump STRAIGHT to a slot, where the wheel walks to it.
-## Named once so nothing has to build an action name inside an input handler, and
-## the list is the mapping — slot i is the (i+1)th key, which is the only thing
-## that could go wrong here.
-const HOTBAR_KEYS := ["hotbar_slot_1", "hotbar_slot_2", "hotbar_slot_3",
-		"hotbar_slot_4", "hotbar_slot_5", "hotbar_slot_6", "hotbar_slot_7",
-		"hotbar_slot_8", "hotbar_slot_9"]
-
 ## Choosing a hotbar slot — the wheel, ] and [, R1 and L1, and the number row —
 ## read as EVENTS, and the ONLY place it happens. It used to be polled with
 ## is_action_just_pressed on the physics step, which cannot carry the wheel: a
@@ -367,11 +359,14 @@ const HOTBAR_KEYS := ["hotbar_slot_1", "hotbar_slot_2", "hotbar_slot_3",
 func _hotbar_event(event: InputEvent) -> bool:
 	if ui_open or dead:
 		return false # an open panel owns the wheel — it may be scrolling a list
-	for i in mini(HOTBAR_KEYS.size(), Net.HOTBAR_SLOTS):
-		if event.is_action_pressed(HOTBAR_KEYS[i]):
-			Net.request_hotbar_select(i)
-			get_viewport().set_input_as_handled()
-			return true
+	# the number row jumps STRAIGHT to a slot, where the wheel walks to it. The
+	# keys are InputDevice's, not the hotbar's — the dialog box picks its answers
+	# with the same nine (see InputDevice.NUMBER_ACTIONS)
+	var number := InputDevice.number_pressed(event)
+	if number >= 1 and number <= Net.HOTBAR_SLOTS:
+		Net.request_hotbar_select(number - 1)
+		get_viewport().set_input_as_handled()
+		return true
 	var step := 0
 	if event.is_action_pressed("hotbar_next"):
 		step = 1
