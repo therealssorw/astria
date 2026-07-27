@@ -28,6 +28,7 @@ static func make_entry(username: String, starting_items: Dictionary) -> Dictiona
 		"quest_kills": 0,  # kills counted towards it, when it asks for kills
 		"gifts": {},       # GiftData ids already handed over, so none is given twice
 		"equipped": empty_equipment(), # armor slot -> item id worn there
+		"bosses": {},      # boss kind -> how many times this player has felled it
 		"seen": {},        # items already offered a hotbar slot (server-side only)
 	}
 	refill_hotbar(entry) # --dev-items handouts land on the bar like anything else
@@ -59,6 +60,133 @@ static func sanitize_name(raw: String, taken: Array) -> String:
 		candidate = "%s(%d)" % [cleaned, n]
 		n += 1
 	return candidate
+
+# ---------------- what survives a logout ----------------
+
+## THE list of what a save carries: entry field -> how to clean it on the way
+## back in. Both directions walk this one table — `snapshot` writes exactly
+## these keys and `apply_save` reads exactly these keys — so persisting a new
+## piece of progress is ONE ROW HERE plus its column in the migration, and no
+## new code on either side of the wire.
+##
+## What is deliberately NOT here: `name` and `user_id` come from the account on
+## every login (so a Discord rename follows the player), and `seen` is derived
+## from the bag in `apply_save` rather than stored.
+##
+## The cleaners are not politeness. A row is only as good as the build that
+## wrote it — items leave the catalogue, quests get renamed, a hand-edited row
+## can hold anything at all — and a bad save must degrade to a sane player
+## rather than lock somebody out of their own account.
+const PERSISTED := {
+	"gold": "nonneg_int",
+	"items": "items",
+	"kills": "nonneg_int",
+	"deaths": "nonneg_int",
+	"hotbar": "hotbar",
+	"hot_slot": "slot",
+	"quest": "quest",
+	"quest_kills": "nonneg_int",
+	"gifts": "gifts",
+	"equipped": "equipped",
+	"bosses": "counts",
+}
+
+## Everything of this entry that is worth keeping, deep-copied so the writer
+## cannot be handed a dictionary the game is still mutating underneath it.
+static func snapshot(entry: Dictionary) -> Dictionary:
+	var out := {}
+	for key: String in PERSISTED:
+		var v: Variant = entry.get(key)
+		out[key] = v.duplicate(true) if v is Dictionary or v is Array else v
+	return out
+
+## Lay a loaded save over a FRESH entry (see Net._server_register). Starting
+## from a complete entry is what lets a row written by an older build come back
+## in: a field the save does not carry keeps the default the rest of the game
+## already expects, instead of arriving missing.
+static func apply_save(entry: Dictionary, save: Dictionary) -> void:
+	for key: String in PERSISTED:
+		if save.has(key):
+			entry[key] = _cleaned(str(PERSISTED[key]), save[key], entry[key])
+	# The bar is the one restored field that can contradict another: a slot
+	# pointing at something the bag no longer holds would put nothing in a hand.
+	var bar: Array = entry["hotbar"]
+	for i in bar.size():
+		if bar[i] != "" and not carries(entry, str(bar[i])):
+			bar[i] = ""
+	entry["hot_slot"] = clampi(int(entry.get("hot_slot", 0)), 0, HOTBAR_SLOTS - 1)
+	# `seen` is derived, never stored: everything in the bag was already offered
+	# a slot in some earlier session, and re-deriving it here is exactly what
+	# makes a slot the player CLEARED stay clear instead of refilling itself on
+	# every login.
+	var seen := {}
+	for item_id: String in (entry["items"] as Dictionary):
+		seen[item_id] = true
+	entry["seen"] = seen
+
+## One value out of a save, or `fallback` when it is not something this build
+## can use. Every branch is total: nothing here can fail on a hostile row.
+static func _cleaned(kind: String, raw: Variant, fallback: Variant) -> Variant:
+	match kind:
+		"nonneg_int":
+			return maxi(0, int(raw)) if raw is int or raw is float else fallback
+		"slot":
+			return clampi(int(raw), 0, HOTBAR_SLOTS - 1) if raw is int or raw is float else fallback
+		"quest":
+			return raw if raw is String and (raw == "" or QuestData.has(raw)) else ""
+		"items":
+			return _counts(raw, func(id: String) -> bool: return ItemDb.has(id))
+		"counts":
+			return _counts(raw, func(_id: String) -> bool: return true)
+		"gifts":
+			var gifts := {}
+			if raw is Dictionary:
+				for id: Variant in (raw as Dictionary):
+					if id is String and GiftData.has(id):
+						gifts[id] = true
+			return gifts
+		"hotbar":
+			var bar := empty_hotbar()
+			if raw is Array:
+				for i in mini((raw as Array).size(), HOTBAR_SLOTS):
+					var id: Variant = (raw as Array)[i]
+					if id is String and ItemDb.has(id):
+						bar[i] = id
+			return bar
+		"equipped":
+			var worn := empty_equipment()
+			if raw is Dictionary:
+				for slot: String in worn:
+					var id := str((raw as Dictionary).get(slot, ""))
+					# the SLOT comes from the item, so a row claiming a helmet is
+					# trousers puts nothing on
+					if ItemDb.armor_slot(id) == slot:
+						worn[slot] = id
+			return worn
+	return fallback
+
+## id -> positive whole number, for any of the "how many of these" fields.
+static func _counts(raw: Variant, known: Callable) -> Dictionary:
+	var out := {}
+	if not raw is Dictionary:
+		return out
+	for id: Variant in (raw as Dictionary):
+		if not (id is String) or not known.call(id):
+			continue
+		var n: Variant = (raw as Dictionary)[id]
+		if (n is int or n is float) and int(n) > 0:
+			out[id] = int(n)
+	return out
+
+## This player felled a named enemy — a boss, since ordinary bandits have no
+## kind. Counted rather than flagged, so "beat the juggernaut once" and "beat it
+## forty times" are both answerable off the same field.
+static func record_boss_kill(entry: Dictionary, kind: String) -> void:
+	if kind.is_empty():
+		return
+	var beaten: Dictionary = entry.get("bosses", {})
+	beaten[kind] = int(beaten.get(kind, 0)) + 1
+	entry["bosses"] = beaten
 
 # ---------------- reading one ----------------
 
