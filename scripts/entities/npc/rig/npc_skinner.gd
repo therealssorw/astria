@@ -23,9 +23,10 @@ class_name NpcSkinner
 ## hinges in it. Adding a bone back is a visible cost, not a free improvement.
 const BIND_SETS := {
 	# Toes left out: a boot two voxels long has nothing to flex, and the joint
-	# only ever sheared the front of it off the back.
-	"feet": ["Hips", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
-			"RightUpperLeg", "RightLowerLeg", "RightFoot"],
+	# only ever sheared the front of it off the back. The ANKLE is out for the
+	# same reason and was costing a whole voxel: a boot is a solid block on the
+	# end of a shin, so the only thing the joint could do was tear the two apart.
+	"feet": ["Hips", "LeftUpperLeg", "RightUpperLeg"],
 	# One hinge, at the waist: below it the torso rides the hips, above it the
 	# chest. Spine/UpperChest/Neck used to sit in here too and bought nothing
 	# except three more places for the body to come apart.
@@ -46,8 +47,11 @@ const BIND_SETS := {
 	# UpperChest is NOT for the arms themselves. It is what catches the copy of
 	# the torso every arms model carries, so that section stays put instead of
 	# grabbing an arm bone and flying off with it.
-	"arms": ["UpperChest", "LeftUpperArm", "LeftLowerArm",
-			"RightUpperArm", "RightLowerArm"],
+	# No ELBOW either, and it is the same argument as the wrist one bone along: a
+	# forearm three voxels square has nothing in it that bends, so the hinge could
+	# only ever hold the sleeve's two halves apart -- close to two voxels of
+	# daylight at the bottom of a block. A voxel arm swings whole.
+	"arms": ["UpperChest", "LeftUpperArm", "RightUpperArm"],
 	# Head only, never Neck: Head is a child of Neck, so it already inherits the
 	# neck's motion, and binding it whole keeps a voxel skull from shearing.
 	"head": ["Head"],
@@ -58,8 +62,15 @@ const BIND_SETS := {
 # ---------------------------------------------------------------------------
 
 ## Bone index -> the [start, end] line segment a vertex measures its distance
-## to. A bone's segment runs to its bindable children; a tip bone (hand, head,
-## toes) gets a stub carrying on the way its parent pointed.
+## to. A bone's segment runs to the average of its bindable children; a tip bone
+## reaches to the end of the chain hanging off it instead.
+##
+## The AVERAGE, deliberately, even though the Hips fork three ways and the
+## average of a spine and two legs points at nothing much. Giving each fork its
+## own line was tried and reverted: a full-length line down each leg let the Hips
+## claim the top of both thighs, which cut each leg in two at a joint that then
+## opened a voxel and a quarter. A short stub keeps the pelvis to itself and
+## leaves each leg whole, which is worth more than a tidier waist seam.
 static func segments(skeleton: Skeleton3D) -> Dictionary:
 	var bindable := {}
 	for set_name: String in BIND_SETS:
@@ -88,11 +99,40 @@ static func segments(skeleton: Skeleton3D) -> Dictionary:
 				sum += origin[c] as Vector3
 			b = sum / float(kids[i].size())
 		else:
-			var at := _bindable_parent(skeleton, bindable, i)
-			var dir := (a - (origin[at] as Vector3)) if at >= 0 else Vector3.UP
-			b = a + (dir.normalized() if dir.length() > 0.0001 else Vector3.UP) * 0.08
-		out[i] = [a, b]
+			# No bindable child, so this bone now carries the WHOLE chain hanging
+			# below it -- the sleeve down to the fingers, the shin down to the sole
+			# -- and its segment has to cover all of it, or the far half of the limb
+			# is nearer some other bone's stub and gets torn off. Reaching for the
+			# end of the chain is also what makes dropping a joint out of BIND_SETS
+			# safe: the bone above simply inherits its reach.
+			var tip := _chain_tip(skeleton, bindable, i)
+			if tip != i:
+				b = skeleton.get_bone_global_rest(tip).origin
+			else:
+				# Nothing below it either: carry on the way its parent pointed.
+				var at := _bindable_parent(skeleton, bindable, i)
+				var dir := (a - (origin[at] as Vector3)) if at >= 0 else Vector3.UP
+				b = a + (dir.normalized() if dir.length() > 0.0001 else Vector3.UP) * 0.08
+		out[i] = [[a, b]]
 	return out
+
+## The far end of the run of NON-bindable bones below `bone` — the furthest one
+## from it, so a chain that forks (a hand into fingers) still measures its reach.
+static func _chain_tip(skeleton: Skeleton3D, bindable: Dictionary, bone: int) -> int:
+	var from: Vector3 = skeleton.get_bone_global_rest(bone).origin
+	var best := bone
+	var best_d := 0.0
+	var stack := Array(skeleton.get_bone_children(bone))
+	while not stack.is_empty():
+		var at: int = stack.pop_back()
+		if bindable.has(at):
+			continue
+		var d := from.distance_squared_to(skeleton.get_bone_global_rest(at).origin)
+		if d > best_d:
+			best_d = d
+			best = at
+		stack.append_array(Array(skeleton.get_bone_children(at)))
+	return best
 
 ## The nearest ancestor that is in a bind set — the bones between are skipped,
 ## which is exactly what keeping BIND_SETS short means for the chain.
@@ -106,12 +146,12 @@ static func nearest_bone(point: Vector3, candidates: Array[int], segs: Dictionar
 	var best := candidates[0]
 	var best_d := INF
 	for i in candidates:
-		var seg: Array = segs[i]
-		var d := point.distance_squared_to(
-				Geometry3D.get_closest_point_to_segment(point, seg[0], seg[1]))
-		if d < best_d:
-			best_d = d
-			best = i
+		for seg: Array in segs[i]:
+			var d := point.distance_squared_to(
+					Geometry3D.get_closest_point_to_segment(point, seg[0], seg[1]))
+			if d < best_d:
+				best_d = d
+				best = i
 	return best
 
 # ---------------------------------------------------------------------------

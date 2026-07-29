@@ -25,6 +25,8 @@ func _ready() -> void:
 		_check_no_coincident_surfaces(category)
 	for category in NpcRig.list_categories():
 		_check_joins_are_capped(category)
+	for category in NpcRig.list_categories():
+		_check_joints_stay_shut(category)
 	_check_armor_library()
 	_check_armor_is_a_layer()
 	_check_armor_fits_what_it_covers()
@@ -228,6 +230,103 @@ func _check_joins_are_capped(category: String) -> void:
 			"%s leaves %d open edges -- a bone is carrying a surface with a hole in it (e.g. %s), and it opens as soon as that bone moves"
 					% [category, found["count"], found["example"]])
 	_drop(visual)
+
+## How wide a part tears itself open while it is ANIMATING.
+##
+## _check_joins_are_capped asks whether a bone's surface is closed; this asks the
+## next question, which is whether the closed pieces stay TOGETHER. They are
+## different failures: a capped joint that swings wide is not a hole you see
+## through, it is a wedge of daylight in the silhouette, and the caps are what
+## make it a wedge instead of a window.
+##
+## The measurement needs no seam list to be written down anywhere. Two vertices
+## that sit on top of each other in the bind pose and ride DIFFERENT bones are a
+## joint, by definition -- so pose the character and the distance between that
+## pair IS the opening, in metres, with nothing hand-authored to fall out of date
+## when a bind set changes.
+##
+## Within one part only. A cross-part pair is the arm hanging down the side of
+## the torso it was drawn beside: those two surfaces slide past each other by a
+## long way every clip and are supposed to, and counting it would drown the thing
+## being looked for. What a part must not do is come apart from ITSELF -- and it
+## did, by around two voxels at the elbow and the knee, because a forearm three
+## voxels square was being hinged in the middle as if it had a bend in it.
+const JOINT_OPENING_VOXELS := 1.0
+
+func _check_joints_stay_shut(category: String) -> void:
+	var visual := _spawn(_definition_for(category))
+	if not _expect(visual.skeleton != null, "%s joint test built no skeleton" % category):
+		_drop(visual)
+		return
+	var scale: float = visual.layout["voxel_scale"]
+	var worst := 0.0
+	var worst_at := ""
+	for mi: MeshInstance3D in visual.skeleton.find_children("*", "MeshInstance3D", false, false):
+		for pair in _joint_pairs(visual.skeleton, mi):
+			for clip: String in visual.clip_lengths:
+				var opened := _widest_opening(visual, clip, pair)
+				if opened > worst:
+					worst = opened
+					worst_at = "%s %s|%s in %s" % [mi.name,
+							visual.skeleton.get_bone_name(pair[0]),
+							visual.skeleton.get_bone_name(pair[2]), clip]
+	# Printed whatever happens: "no joint opened more than a third of a voxel" is
+	# the useful reading, and PASS on its own does not say whether the margin is
+	# comfortable or one frame from failing.
+	print("NPCTEST %s worst joint opening %.3f voxels%s"
+			% [category, worst / scale, "" if worst_at.is_empty() else " (%s)" % worst_at])
+	_expect(worst <= scale * JOINT_OPENING_VOXELS,
+			("%s tears itself open by %.2f voxels at %s -- a part hinged where the art "
+			+ "has no bend in it, see NpcSkinner.BIND_SETS")
+					% [category, worst / scale, worst_at])
+	_drop(visual)
+
+## Every joint inside one mesh, as [bone_a, rest_a, bone_b, rest_b] vertex pairs
+## that coincide in the bind pose but ride different bones.
+func _joint_pairs(skeleton: Skeleton3D, mi: MeshInstance3D) -> Array:
+	var arrays := mi.mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+	var at_cell := {}
+	for i in verts.size():
+		# Half a millimetre, so "the same corner" survives the exporter's rounding
+		# without ever merging two corners a voxel apart.
+		at_cell.get_or_add(Vector3i((verts[i] * 2000.0).round()), {})[bones[i * 4]] = verts[i]
+	var seen := {}
+	var out := []
+	for cell: Vector3i in at_cell:
+		var riders: Dictionary = at_cell[cell]
+		if riders.size() < 2:
+			continue
+		var list: Array = riders.keys()
+		list.sort()
+		for a in list.size():
+			for b in range(a + 1, list.size()):
+				# One pair per bone pair is enough: they all open together, and the
+				# widest is found by the sweep, not by measuring every corner.
+				var key := Vector2i(list[a], list[b])
+				if seen.has(key):
+					continue
+				seen[key] = true
+				out.append([list[a], riders[list[a]], list[b], riders[list[b]]])
+	return out
+
+## The widest that one joint gets pulled apart over a whole clip, walked a frame
+## at a time -- the worst moment of a clip rarely lands where you happen to look.
+func _widest_opening(visual: NpcVisual, clip: String, pair: Array) -> float:
+	var skeleton := visual.skeleton
+	visual.preview_clip(clip)
+	var length: float = visual.clip_lengths[clip]
+	var steps := maxi(int(length * 15.0), 4)
+	var worst := 0.0
+	for i in steps + 1:
+		visual.anim_player.seek(length * float(i) / float(steps), true)
+		var a: Vector3 = skeleton.get_bone_global_pose(pair[0]) \
+				* (skeleton.get_bone_global_rest(pair[0]).affine_inverse() * (pair[1] as Vector3))
+		var b: Vector3 = skeleton.get_bone_global_pose(pair[2]) \
+				* (skeleton.get_bone_global_rest(pair[2]).affine_inverse() * (pair[3] as Vector3))
+		worst = maxf(worst, a.distance_to(b))
+	return worst
 
 ## Boundary edges: every edge of a closed surface is shared by exactly two of
 ## its triangles, so an edge used ONCE is the rim of a hole. Counted per bone

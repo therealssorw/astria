@@ -30,15 +30,20 @@ static func apply(skeleton: Skeleton3D, layout: Dictionary) -> void:
 	# Kept so NpcVisual can rebase the clips' Hips position track: it was
 	# authored around a pelvis at this height, and ours has just moved.
 	layout["ref_hip_y"] = ref["hip_y"]
-	# Height is remapped through the shared landmarks; width is a per-chain
-	# factor, because arms, legs and torso widen by different amounts.
+	# Height is remapped through the shared landmarks; width is settled per chain,
+	# because arms, legs and torso are each fitted to a different thing.
 	var y_from: Array[float] = [0.0, ref["hip_y"], ref["arm_y"], ref["neck_y"], ref["head_y"], ref["crown"]]
 	var y_to: Array[float] = [0.0, layout["hip_y"], layout["arm_y"], layout["neck_y"],
 			layout["head_y"], layout["crown"]]
-	var k := {
-		"leg": _ratio(layout["leg_x"], ref["leg_x"]),
-		"body": _ratio(layout["shoulder_x"], ref["shoulder_x"]),
-	}
+	var body_k := _ratio(layout["shoulder_x"], ref["shoulder_x"])
+	# A voxel leg is a straight column, so its bones go STRAIGHT down the middle of
+	# it rather than tracing the human's. Scaled by one factor the human's own
+	# slight splay came out doubled -- hip, knee and ankle at 0.19, 0.24 and 0.28 on
+	# a leg whose centre line is 0.19 -- which stood the character in a wide stance
+	# AND, because a hinge off the middle of the limb swings it sideways as well as
+	# round, tore the knee open by a voxel and a half. Both go away when the joints
+	# sit on the leg's own centre.
+	var leg_x: float = layout["leg_x"]
 	# The arm is fitted at TWO points -- the shoulder and the hand -- where the
 	# other chains get away with one scale. One factor can only ever put the hand
 	# in the right place OR the shoulder, and the human rig it is scaled from has
@@ -54,8 +59,11 @@ static func apply(skeleton: Skeleton3D, layout: Dictionary) -> void:
 		var g: Transform3D = src[i]
 		var chain: String = _chain_of(skeleton, i)
 		# Sign carries the side: the ladder is measured on the left and mirrored.
-		var x: float = signf(g.origin.x) * _remap(absf(g.origin.x), arm_from, arm_to) \
-				if chain == "arm" else g.origin.x * k[chain]
+		var x: float = g.origin.x * body_k
+		if chain == "arm":
+			x = signf(g.origin.x) * _remap(absf(g.origin.x), arm_from, arm_to)
+		elif chain == "leg":
+			x = signf(g.origin.x) * leg_x
 		fitted[i] = Transform3D(g.basis, Vector3(x, _remap(g.origin.y, y_from, y_to), g.origin.z * depth))
 	for i in skeleton.get_bone_count():
 		var parent := skeleton.get_bone_parent(i)
@@ -79,7 +87,8 @@ static func _reference_landmarks(skeleton: Skeleton3D, src: Dictionary) -> Dicti
 		"crown": crown * 1.07,
 		"hand_x": _bone(skeleton, src, "LeftHand", 0.74, false),
 		"upper_arm_x": _bone(skeleton, src, "LeftUpperArm", 0.19, false),
-		"leg_x": _bone(skeleton, src, "LeftUpperLeg", 0.10, false),
+		# No leg landmark: the legs are not scaled from the human's at all, they
+		# are stood on the voxel legs' own centre line.
 		"shoulder_x": _bone(skeleton, src, "LeftShoulder", 0.015, false),
 	}
 
