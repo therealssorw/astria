@@ -560,11 +560,15 @@ func _check_arms_swing_clear_of_the_body(category: String) -> void:
 	var root_x: float = absf(visual.skeleton.get_bone_global_rest(joint).origin.x)
 	# Swung down to the side, an arm sweeps out the slab half its own thickness
 	# either side of the joint it hangs from. The near edge of that slab is what
-	# must clear the torso.
-	_expect(root_x - thick * 0.5 >= torso_x - 0.001,
+	# must clear the torso -- except for NpcLayout.SHOULDER_TUCK, the deliberate
+	# overlap that stops the joint opening a see-through slot at the top of the
+	# shoulder. Anything deeper than the tuck is an arm ploughing through a chest.
+	var tuck: float = thick * NpcLayout.SHOULDER_TUCK
+	_expect(root_x - thick * 0.5 >= torso_x - tuck - 0.001,
 			("%s hangs its arms from x=%.3f, so swung down they reach in to %.3f "
-			+ "and the torso only ends at %.3f -- the arms will swing through the chest")
-					% [category, root_x, root_x - thick * 0.5, torso_x])
+			+ "and the torso only ends at %.3f (tuck allows %.3f) "
+			+ "-- the arms will swing through the chest")
+					% [category, root_x, root_x - thick * 0.5, torso_x, tuck])
 	# ...and not so far out that the shoulder leaves the body behind.
 	_expect(root_x <= torso_x + thick,
 			"%s hangs its arms from x=%.3f, clear off the side of a torso ending at %.3f"

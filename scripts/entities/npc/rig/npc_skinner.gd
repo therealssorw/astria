@@ -419,3 +419,13 @@ static func add_seam_caps(mine: Dictionary, occupied: Dictionary, drawn: Diction
 					norms.append(dir)
 					cols.append(cell["colour"])
 					bind(bones, weights, bone)
+				# A flat cap closes the join only while it is SHUT, and a joint on two
+				# bones does swing open -- the shoulder shows a sub-voxel notch at full
+				# extension. Filling that wedge with extra geometry was tried and
+				# REVERTED: a sleeve skinned across the joint (one bone or two, however
+				# inset) fringes the shoulder into a sawtooth on every frame of the
+				# idle, which is far worse than the notch it hides. See
+				# tests/preview_player.tscn, which lays the whole clip out as a strip
+				# and is what caught it -- the fringe is invisible in any single still.
+				# The notch is the arm's proportions meeting the torso, so that is
+				# where a fix belongs (NpcLayout), not in more triangles here.

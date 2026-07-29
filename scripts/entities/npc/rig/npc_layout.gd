@@ -12,6 +12,21 @@ class_name NpcLayout
 ## Goxel models are built facing +X; the game's characters face +Z.
 const MODEL_YAW := -PI / 2.0
 
+## How far the arm is tucked INTO the torso, as a fraction of its own thickness.
+##
+## Sat exactly flush against the chest, a sleeve is only sealed while it hangs
+## straight down: the moment a clip rotates it the top corner swings away and
+## opens a slot you can see daylight through from above -- which is the "arms are
+## see-through at the very top" that tests/preview_player.tscn shoots overhead
+## against a magenta background. Real shoulders overlap; this is that overlap.
+##
+## It buys sealing at the cost of the sleeve intersecting the chest when the arm
+## swings forward, so it wants to be the SMALLEST value that closes the slot: the
+## worst opening the idle measures is about a third of a voxel, and a quarter of
+## an arm's thickness is comfortably more. test_npc_builder allows exactly this
+## much overlap and no more.
+const SHOULDER_TUCK := 0.25
+
 static func build(def: NpcDefinition, parts: Dictionary) -> Dictionary:
 	var metrics := _metrics(def, parts)
 	var feet_h: float = metrics["feet"]["size"].y if metrics.has("feet") else 0.0
@@ -181,8 +196,11 @@ static func _measure_shoulder(layout: Dictionary, parts: Dictionary, part_xf: Di
 		layout["shoulder_x"] = maxf(torso_x * 0.5, 0.01)
 	# Never past the hand: a character with stubby arms on a broad body would
 	# otherwise put the shoulder outboard of its own fist and turn the arm inside
-	# out.
-	layout["arm_root_x"] = minf(torso_x + layout["arm_thick"] * 0.5, layout["hand_x"] * 0.75)
+	# out. SHOULDER_TUCK sinks it back in so the sleeve overlaps the chest instead
+	# of resting flush against it -- see the constant for why flush leaks.
+	layout["arm_root_x"] = minf(
+			torso_x + layout["arm_thick"] * (0.5 - SHOULDER_TUCK),
+			layout["hand_x"] * 0.75)
 
 ## The part's vertices in character space, keeping only those with a mirror twin
 ## across the centre line.

@@ -1,0 +1,19 @@
+[gd_scene load_steps=3 format=3 uid="uid://b8pyaplayerprev1"]
+
+[ext_resource type="Script" path="res://tests/preview_player.gd" id="1_playerprev"]
+
+[sub_resource type="PlaneMesh" id="1_ground"]
+size = Vector2(14, 14)
+
+[node name="PlayerPreview" type="Node3D"]
+script = ExtResource("1_playerprev")
+
+[node name="Players" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+
+[node name="Light" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7, 0.7, 0, -0.7, 0.7, 0, 6, 0)
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("1_ground")
