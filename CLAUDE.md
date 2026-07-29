@@ -29,6 +29,14 @@ When it is done, the whole reply is a bulleted list:
 
 Anything longer belongs in a comment, in CLAUDE.md, or in the commit message.
 
+## Branches (IMPORTANT)
+
+Work merges into master — that is the dev line, and where everything lands.
+`release` is for releases ONLY: it moves when I am cutting a release, never as a
+place to park work in progress, and it never merges back into master. When
+something is ready it goes to master; release waits until I call for one. Only
+merge to dev unless it is for a release.
+
 ## The file index (IMPORTANT)
 
 The bottom of this file lists every file in the project and what it does. It is
