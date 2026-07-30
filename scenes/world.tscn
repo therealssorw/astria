@@ -97,17 +97,6 @@ script = ExtResource("14_spawner")
 [node name="InventoryUI" type="CanvasLayer" parent="." unique_id=1012517542]
 script = ExtResource("15_inv")
 
-; THE CATACOMBS ARE OUT OF THE LEVEL while the place is being built. Both
-; scenes are still here — put them back with:
-;   [node name="Catacombs" parent="." instance=ExtResource("30_catacombs")]
-;   transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3000, 0, 0)
-;   [node name="CatacombsEntrance" parent="." instance=ExtResource("31_cataent")]
-;   transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 176, 92.2, -192)
-; ...and their two ext_resources (scenes/starterDungeon.tscn as "30_catacombs",
-; scenes/world/catacombs_entrance.tscn as "31_cataent") at the top of the file.
-; The BossSpawner lives inside starterDungeon.tscn, so this takes the boss with
-; it: nothing spawns one anywhere else.
-
 [node name="Players" type="Node3D" parent="." unique_id=1940836347]
 
 [node name="Enemies" type="Node3D" parent="." unique_id=294465096]
