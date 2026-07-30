@@ -12,6 +12,12 @@
 # scripts/core/discord_notifier.gd; put one beside the server binary too.
 /discord_webhook.txt
 
+# Discord bot: its login token is a secret like the webhook above, and its
+# tallies are live data that belongs on the box it runs on, not in the repo.
+/tools/discord_bot/token.txt
+/tools/discord_bot/data/
+/tools/discord_bot/node_modules/
+
 # Python bytecode from the asset pipeline scripts in tools/
 __pycache__/
 *.pyc
